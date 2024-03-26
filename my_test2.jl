@@ -76,28 +76,31 @@ function encode_theory_rules(theory_rules)
     return encoding
 end
 
-function get_adjacency_matrix1(g::EGraph)
-    adj_matrix = zeros(length(g.memo), length(g.memo))
-    for (i, j) in g.memo
-        adj_matrix[] .= 1 
+function get_nodes_number(egraph::EGraph)
+    counter = 0
+    for (_, nodes) in egraph.classes
+        for _ in nodes
+            counter += 1
+        end
     end
+    return counter
 end
 
-
 function get_adjacency_matrix(egraph::EGraph)
-    num_nodes = length(egraph.memo)
+    num_nodes = get_nodes_number(egraph)
+    println(num_nodes)
     adj_matrix = zeros(Int, num_nodes, num_nodes)
     counter = 1
     for (id, nodes) in egraph.classes
         for node in nodes
             for edge in egraph.memo[node]
-                adj_matrix[counter, edge] .= 1
+                adj_matrix[counter, edge] = 1
                 counter += 1
             end
         end
     end
     
-    return adj_matrix
+    return adj_matrix    
 end
 
 # Example expression
@@ -115,8 +118,9 @@ end
 # Get the one-hot encoding for the rules
 #rules_encoding = encode_theory_rules(my_rules)
 
+adjacency_matrix = get_adjacency_matrix(EGraph(ex))
 
-adj_matrix = get_adjacency_matrix(EGraph(ex))
+
 
 
 
