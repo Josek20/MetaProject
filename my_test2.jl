@@ -4,7 +4,7 @@ using Statistics
 # Define a function to create a one-hot encoding for an expression
 function encode_expression(expr)
     # encodings schema: [+,-,*,/,<constant>,variable1,variable2,...]
-    encoding = zeros(Float64, 10)  # Create an array for one-hot encoding with 10 elements
+    encoding = zeros(Int, 10)  # Create an array for one-hot encoding with 10 elements
     
     if isa(expr, ENodeTerm)
         # Check the operation of the expression
@@ -56,9 +56,17 @@ end
 function preprosses_rule(rule)
     result = []
     for i in rule.args
-        tmp1 = string(i)
-        tmp2 = last(tmp1, length(tmp1) - 1)
-        push!(result, Symbol(tmp2))
+        if typeof(i) == PatTerm
+            for j in i.args
+                tmp1 = string(j)
+                tmp2 = last(tmp1, length(tmp1) - 1)
+                push!(result, Symbol(tmp2))
+            end
+        else
+            tmp1 = string(i)
+            tmp2 = last(tmp1, length(tmp1) - 1)
+            push!(result, Symbol(tmp2))
+        end
     end
     return result
 end
@@ -67,7 +75,8 @@ function encode_theory_rules(theory_rules)
     encoding = zeros(length(theory_rules), 10)
     for (index, rule) in enumerate(theory_rules)
         lhs_expr = Expr(rule.left.exprhead,Symbol(rule.left.operation),preprosses_rule(rule.left)...) 
-        println(lhs_expr)
+        #println(lhs_expr)
+        #left_encoding = encode_egraph_classes(EGraph(rule.left))
         left_encoding = encode_egraph_classes(EGraph(lhs_expr))
         #right_encoding = encode_expression(rule.right)
         #rule_encoding = vcat(left_encoding, right_encoding)
@@ -91,7 +100,7 @@ function get_adjacency_matrix(egraph::EGraph)
     println(num_nodes)
     adj_matrix = zeros(Int, num_nodes, num_nodes)
     counter = 1
-    for (id, nodes) in egraph.classes
+    for (_, nodes) in egraph.classes
         for node in nodes
             for edge in egraph.memo[node]
                 adj_matrix[counter, edge] = 1
@@ -116,10 +125,12 @@ my_rules = @theory a b c begin
 end
 
 # Get the one-hot encoding for the rules
-#rules_encoding = encode_theory_rules(my_rules)
+rules_encoding = encode_theory_rules(my_rules)
 
+# Get the adjacency matrix for the graph
 adjacency_matrix = get_adjacency_matrix(EGraph(ex))
 
+rules_encoding * (graph_encoding * adjacency_matrix)
 
 
 
