@@ -1,7 +1,7 @@
 using Metatheory
 using Statistics
 
-# Define a function to create a one-hot encoding for an expression
+
 function encode_expression(expr)
     # encodings schema: [+,-,*,/,<constant>,variable1,variable2,...]
     encoding = zeros(Int, 10)  # Create an array for one-hot encoding with 10 elements
@@ -45,13 +45,6 @@ function encode_egraph_classes(g::EGraph)
     return hcat(encodings...)
 end
 
-#function encode_egraph_nodes(g::EGraph)
-#    encodings = []
-#    for (node) in g.memo
-#
-#    end
-#    return hcat(encodings...)
-#end
 
 function preprosses_rule(rule)
     result = []
@@ -97,7 +90,6 @@ end
 
 function get_adjacency_matrix(egraph::EGraph)
     num_nodes = get_nodes_number(egraph)
-    println(num_nodes)
     adj_matrix = zeros(Int, num_nodes, num_nodes)
     counter = 1
     for (_, nodes) in egraph.classes
@@ -130,8 +122,7 @@ rules_encoding = encode_theory_rules(my_rules)
 # Get the adjacency matrix for the graph
 adjacency_matrix = get_adjacency_matrix(EGraph(ex))
 
-rules_encoding * (graph_encoding * adjacency_matrix)
-
+#rules_encoding * (graph_encoding * adjacency_matrix)
 
 
 
