@@ -1,9 +1,6 @@
 using Metatheory
 using StatsBase
 
-function class_encoder()
-
-end
 
 all_literals = [[Symbol("v$i") for i in 0:12]; [:a, :b, :c, -1, 0]]
 all_terms = [:+, :-, :*, :/]
@@ -30,6 +27,7 @@ node_graph_encoding = node_encoding(test_egraph)
 
 graph_encoding = [classes_graph_encoding; node_graph_encoding]
 
+graph_encoding = transpose(hcat(graph_encoding...))
 
 
 my_rules = @theory a b c begin
@@ -81,3 +79,27 @@ function get_adjacency_matrix(egraph::EGraph)
 end
 
 adjacency_matrix = get_adjacency_matrix(test_egraph)
+
+
+using Flux
+using Flux
+using Flux: crossentropy, ADAM
+using Statistics: mean
+
+# Define the GNN architecture
+function GNN(input_dim::Int, hidden_dim::Int, output_dim::Int)
+    return Chain(
+        Dense(input_dim, hidden_dim, relu),
+        Dense(hidden_dim, output_dim, softmax)
+    )
+end
+
+
+
+input_dim = size(graph_encoding, 2)
+#input_dim = size(adjacency_matrix * graph_encoding, 2)
+
+gnn_model = GNN(input_dim, 128, length(my_rules))
+loss(y_pred, y_true) = crossentropy(y_pred, y_true)
+
+
