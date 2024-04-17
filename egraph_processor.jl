@@ -1,14 +1,15 @@
 module EGraphProcessor
     using Metatheory
-    export encode_graph, extract_adjacency_matrix, get_number_of_nodes
+    export encode_graph, extract_adjacency_matrix, get_number_of_nodes, update_terms
 
+    #all_terms = [:+, :-, :*, :/, :>=, :<=, :<, :>]
     all_terms = [:+, :-, :*, :/]
     term_encoding = unique(all_terms) .== permutedims(all_terms)
     term_encoding_map = Dict(all_terms[x] => term_encoding[x, :] for x in 1:length(all_terms))
 
-    encode_node(node::EClass) = [1, 0, 0, 0, 0, 0]
+    encode_node(node::EClass) = vcat([1, 0], zeros(length(all_terms)))
     encode_node(node::ENodeTerm) = vcat([0, 0], term_encoding_map[node.operation])
-    encode_node(node::ENodeLiteral) = [0, 1, 0, 0, 0, 0]
+    encode_node(node::ENodeLiteral) = vcat([0, 1], zeros(length(all_terms)))
     
     function encode_graph(g::EGraph)
         eclasses_encoding = [encode_node(eclass) for (eclass_id, eclass) in g.classes] 
@@ -42,11 +43,20 @@ module EGraphProcessor
         end
         return adj_matrix
     end
+
+
+    function update_terms(new_terms::Vector{Symbol})
+        global all_terms
+        all_terms = new_terms
+        global term_encoding_map
+        term_encoding = unique(all_terms) .== permutedims(all_terms)
+        term_encoding_map = Dict(all_terms[x] => term_encoding[x, :] for x in 1:length(all_terms))
+    end
     
+
     function get_enode_to_index_mapping(g::EGraph)
         all_enodes = [enode for (eclass_id, eclass) in g.classes for enode in eclass]
         node_to_id_mapping = Dict(zip(vcat(keys(g.classes)..., all_enodes), collect(1:length(all_enodes)+g.numclasses)))
         return node_to_id_mapping
     end
-
 end
