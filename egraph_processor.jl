@@ -1,8 +1,7 @@
 module EGraphProcessor
     using Metatheory
-    export encode_graph, extract_adjacency_matrix, get_number_of_nodes, update_terms
+    export encode_graph, extract_adjacency_matrix, get_number_of_enodes, update_terms
 
-    #all_terms = [:+, :-, :*, :/, :>=, :<=, :<, :>]
     all_terms = [:+, :-, :*, :/]
     term_encoding = unique(all_terms) .== permutedims(all_terms)
     term_encoding_map = Dict(all_terms[x] => term_encoding[x, :] for x in 1:length(all_terms))
