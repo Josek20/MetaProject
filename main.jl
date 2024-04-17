@@ -4,6 +4,7 @@ include("graph_neural_network_module.jl")
 using .SmallDataLoader
 using .EGraphProcessor
 using .GraphNeuralNetwork
+using Flux
 using Metatheory
 using Statistics
 using Metatheory.EGraphs: apply_rule!
@@ -36,6 +37,8 @@ for ex in data[1:2]
 
     symplified_expression = model(adj_matrix * graph_encoding, g, my_theory)
 
-    #loss()
+    #my_loss = GraphNeuralNetwork.loss(ex, symplified_expression)
+    #Flux.back!(my_loss)
+    #Flux.update!(optimizer, model)
     println("==>$symplified_expression")
 end

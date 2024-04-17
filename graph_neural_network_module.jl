@@ -101,8 +101,9 @@ module GraphNeuralNetwork
         eqsat_apply!(g, theory, report, params)
     end
 
-    function loss()
-
+    function loss(initial_expression::Symbol, symplified_expression::Symbol)
+        length_difference = abs(length(initial_expression) - length(symplified_expression))
+        return length_difference
     end
 
 end
