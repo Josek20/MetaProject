@@ -44,18 +44,15 @@ module GraphNeuralNetwork
     end
 
 
-    function (m::GraphNN)(x::Matrix, g::EGraph, theory::Vector{<:AbstractRule})
+    function (m::GraphNN)(x::Matrix, rule_applicability_matrix::Matrix)
         updated_graph_encoding = m.activation(x * m.W)
 
-        node_to_id_mapping = EGraphProcessor.get_enode_to_index_mapping(g)
-        rule_applicability_matrix = get_rule_applicability_matrix(g, theory, node_to_id_mapping)
 
         enode_to_rule_probability = my_softmax((updated_graph_encoding * transpose(m.R)) .* rule_applicability_matrix)
 
-        rule_prob_dict = extract_and_apply_max_rule(enode_to_rule_probability, g, theory, node_to_id_mapping)
 
         #symplified_expression = extract!(g, astsize)
-        return updated_graph_encoding, rule_prob_dict, enode_to_rule_probability
+        return enode_to_rule_probability
     end
 
 

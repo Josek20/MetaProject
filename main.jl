@@ -19,15 +19,39 @@ my_theory = @theory a b c begin
     a - b == a + -b
     a - a --> 0
     a <= a --> 1
+    (a / b::Number) * b::Number --> a * 1
+end
+
+
+algebra_rules = @theory a b c begin
+  a * (b * c) == (a * b) * c
+  a + (b + c) == (a + b) + c
+
+  a + b == b + a
+  a * (b + c) == (a * b) + (a * c)
+  (a + b) * c == (a * c) + (b * c)
+
+  -a == -1 * a
+  a - b == a + -b
+  1 * a == a
+
+  0 * a --> 0
+  a + 0 --> a
+
+  a::Number * b == b * a::Number
+  a::Number * b::Number => a * b
+  a::Number + b::Number => a + b
 end
 
 EGraphProcessor.update_terms([:+, :-, :*, :/, :<=, :min])
 
-model = GraphNeuralNetwork.GraphNN(length(EGraphProcessor.all_terms) + 2, 32, size(my_theory, 1))
+model = GraphNeuralNetwork.GraphNN(length(EGraphProcessor.all_terms) + 2, 32, size(algebra_rules, 1))
 optimizer = ADAM()
 max_iterations = 10
 
 pc = Flux.params(model)
+
+loss(x::Vector) = sum(log.(1 .+ exp.(x[begin + 1: end] .- x[begin])))
 
 for ex in data[1:2]
     println("$ex")
@@ -37,15 +61,26 @@ for ex in data[1:2]
         graph_encoding = EGraphProcessor.encode_graph(g)
         adj_matrix = EGraphProcessor.extract_adjacency_matrix(g)
 
-        _, rule_prob_dict, tmp = model(adj_matrix * graph_encoding, g, my_theory)
+        node_to_id_mapping = EGraphProcessor.get_enode_to_index_mapping(g)
+
+        rule_applicability_matrix = GraphNeuralNetwork.get_rule_applicability_matrix(g, algebra_rules, node_to_id_mapping)
+        
+        enode_to_rule_probability = model(adj_matrix * graph_encoding, rule_applicability_matrix)
+        
+        rule_prob_dict = GraphNeuralNetwork.extract_and_apply_max_rule(enode_to_rule_probability, g, algebra_rules, node_to_id_mapping)
+        
         symplified_expression = extract!(g, astsize)
         println("==>$symplified_expression")
-        #=
+        
+        prob_vector = sort(collect(values(rule_prob_dict)), rev=true)
         grad = gradient(pc) do 
-            my_loss = GraphNeuralNetwork.loss(rule_prob_dict)
+            if length(prob_vector) == 1
+                return log(1 + exp(-prob_vector[1]))
+            end
+            #my_loss = GraphNeuralNetwork.loss(rule_prob_dict)
+            my_loss = loss(prob_vector)
             return my_loss
         end
-        =#
-        #Flux.update!(optimizer, pc, grad)
+        Flux.update!(optimizer, pc, grad)
     end
 end
