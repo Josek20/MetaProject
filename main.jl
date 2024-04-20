@@ -7,7 +7,7 @@ using .GraphNeuralNetwork
 using Flux
 using Metatheory
 using Statistics
-using Metatheory.EGraphs: apply_rule!
+using Metatheory.EGraphs: apply_rule!, extract!
 
 
 data = SmallDataLoader.load_data("data/test.json")
@@ -37,12 +37,15 @@ for ex in data[1:2]
         graph_encoding = EGraphProcessor.encode_graph(g)
         adj_matrix = EGraphProcessor.extract_adjacency_matrix(g)
 
-        updated_graph_encoding, symplified_expression = model(adj_matrix * graph_encoding, g, my_theory)
+        _, rule_prob_dict, tmp = model(adj_matrix * graph_encoding, g, my_theory)
+        symplified_expression = extract!(g, astsize)
         println("==>$symplified_expression")
+        #=
         grad = gradient(pc) do 
-            my_loss = GraphNeuralNetwork.loss(ex, symplified_expression)
+            my_loss = GraphNeuralNetwork.loss(rule_prob_dict)
             return my_loss
         end
-        Flux.update!(optimizer, pc, grad)
+        =#
+        #Flux.update!(optimizer, pc, grad)
     end
 end

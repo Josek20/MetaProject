@@ -17,12 +17,26 @@ module GraphNeuralNetwork
     Flux.params(l::GraphNN) = Flux.params([l.W, l.R])
 
 
-    function my_softmax(matrix::Matrix{T}) where T
-        matrix[matrix .== 0] .= -Inf
-        exp_matrix = exp.(matrix)
-        exp_sum = sum(exp_matrix, dims=2)
-        return exp_matrix ./ exp_sum
+    function my_softmax1(matrix::Matrix{T}) where T
+        matrix[matrix .!= 0] = softmax(matrix[matrix .!= 0])
+        return Flux.Tangent(matrix)
     end
+
+
+
+    function my_softmax(matrix::Matrix{T}) where T
+        # Get indices of non-zero elements
+        non_zero_indices = findall(matrix .!= 0)
+        
+        # Apply softmax to non-zero elements
+        softmax_values = softmax(matrix[non_zero_indices])
+        
+        # Assign softmax values back to the appropriate positions in the matrix
+        matrix[non_zero_indices] .= softmax_values
+        
+        return matrix
+    end
+
 
     
     function GraphNN(in_encoding_size::Integer, out_encoding_size::Integer, number_of_rules::Integer, activation_function=sigmoid, init=Flux.glorot_uniform)
@@ -33,14 +47,15 @@ module GraphNeuralNetwork
     function (m::GraphNN)(x::Matrix, g::EGraph, theory::Vector{<:AbstractRule})
         updated_graph_encoding = m.activation(x * m.W)
 
-        rule_applicability_matrix = get_rule_applicability_matrix(g, theory)
+        node_to_id_mapping = EGraphProcessor.get_enode_to_index_mapping(g)
+        rule_applicability_matrix = get_rule_applicability_matrix(g, theory, node_to_id_mapping)
 
         enode_to_rule_probability = my_softmax((updated_graph_encoding * transpose(m.R)) .* rule_applicability_matrix)
 
-        extract_and_apply_max_rule(enode_to_rule_probability, g, theory)
+        rule_prob_dict = extract_and_apply_max_rule(enode_to_rule_probability, g, theory, node_to_id_mapping)
 
-        symplified_expression = extract!(g, astsize)
-        return updated_graph_encoding, symplified_expression
+        #symplified_expression = extract!(g, astsize)
+        return updated_graph_encoding, rule_prob_dict, enode_to_rule_probability
     end
 
 
@@ -52,19 +67,18 @@ module GraphNeuralNetwork
     end
 
 
-    function get_rule_applicability_matrix(g::EGraph, theory::Vector{<:AbstractRule})
+    function get_rule_applicability_matrix(g::EGraph, theory::Vector{<:AbstractRule}, node_to_id_mapping::Dict)
         _ = rule_application_locations(g, theory) 
         rule_adjacency = zeros(g.numclasses + EGraphProcessor.get_number_of_enodes(g), size(theory, 1))
-        node_to_id_mapping = EGraphProcessor.get_enode_to_index_mapping(g)
         for applicable_rule in g.buffer
             rule_index = 0 
             for (k, j) in applicable_rule
                 if k == 0
                     rule_index = abs(j[1])
-                    node_index = node_to_id_mapping[j[2]]
+                    node_index = node_to_id_mapping[g.classes[j[2]]]
                     rule_adjacency[node_index, rule_index] = 1
                 elseif j[2] == 0
-                    node_index = node_to_id_mapping[j[1]]
+                    node_index = node_to_id_mapping[g.classes[j[1]]]
                     rule_adjacency[node_index, rule_index] = 1
                 else
                     node_index = node_to_id_mapping[g.classes[j[1]][j[2]]]
@@ -76,52 +90,57 @@ module GraphNeuralNetwork
     end
 
 
-    function extract_max_rule_id(enode_to_rule_probability::Matrix)    
-        max_rules_to_apply = argmax(enode_to_rule_probability, dims=2)
-
-        tmp = Dict()
-        for i in max_rules_to_apply
-            if enode_to_rule_probability[i] != 0 || !isnan(enode_to_rule_probability[i])
-                if i[2] in keys(tmp)
-                    tmp[i[2]] += 1
+    function get_rule_prob_dictionary(enode_to_rule_probability::Matrix, g::EGraph, node_to_ind_mapping::Dict)
+        rule_prob_dict = Dict()
+        for rule in g.buffer
+            rule_ind = abs(rule[0][1])  # Calculate rule_ind outside the loop
+            rule_prob_dict[rule] = 0
+            for (key, value) in rule
+                if key == 0
+                    node_ind = node_to_ind_mapping[g.classes[value[2]]]
+                elseif value[2] == 0
+                    node_ind = node_to_ind_mapping[g.classes[value[1]]]
                 else
-                    tmp[i[2]] = 1
+                    node_ind = node_to_ind_mapping[g.classes[value[1]][value[2]]]
                 end
+                rule_prob_dict[rule] += enode_to_rule_probability[node_ind, rule_ind]
             end
         end
-
-        return argmax(tmp)
-    end
-    
-    
-    function clear_non_max_rules!(g::EGraph, max_rule_id::Integer)
-        for applicable_rule in g.buffer
-            if applicable_rule[0][1] == max_rule_id
-                g.buffer = [applicable_rule]
-                break
-            end
-        end
+        return rule_prob_dict
     end
 
-    
-    function extract_and_apply_max_rule(enode_to_rule_probability::Matrix, g::EGraph, theory::Vector{<:AbstractRule})
-        max_rule_id = extract_max_rule_id(enode_to_rule_probability) 
-        clear_non_max_rules!(g, max_rule_id)
+
+    function extract_and_apply_max_rule(enode_to_rule_probability::Matrix, g::EGraph, theory::Vector{<:AbstractRule}, node_to_ind_mapping::Dict)
+        rule_probability_dictionary = get_rule_prob_dictionary(enode_to_rule_probability, g, node_to_ind_mapping)
+        max_rule = argmax(rule_probability_dictionary)
+        g.buffer = [max_rule]
         report = SaturationReport(g)
         eqsat_apply!(g, theory, report, params)
         rebuild!(g)
-    end
-
-    
-    function loss(initial_expression::Expr, symplified_expression::Expr)
-        length_difference = (length(string(initial_expression)) - length(string(symplified_expression)))^2
-        return length_difference
+        return rule_probability_dictionary
     end
 
 
-    function loss(initial_expression::Expr, symplified_expression::Integer)
-        length_difference = (length(string(initial_expression)) - 1)^2
-        return length_difference
+    function loss1(rule_prob_dict::Dict)
+        if length(rule_prob_dict) == 1
+            return log(1 + exp(1))
+        end
+        rule_prob_vector = collect(values(sort(rule_prob_dict, rev=true)))
+        return sum(log.(1 .+ exp.(rule_prob_vector[begin + 1: end] - rule_prob_vector[begin])))
+    end
+
+
+    function loss(rule_prob_dict::Dict)
+        if length(rule_prob_dict) == 1
+            return log(1 + exp(1))
+        end
+       
+        # Extract key-value pairs and sort by value
+        sorted_pairs = sort(collect(rule_prob_dict), by=x->x[2], rev=true)
+        
+        # Extract sorted values
+        sorted_values = [pair[2] for pair in sorted_pairs]
+        return sum(log.(1 .+ exp.(sorted_values[2:end] .- sorted_values[begin])))
     end
 
 end

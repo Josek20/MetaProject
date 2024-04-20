@@ -55,7 +55,7 @@ module EGraphProcessor
 
     function get_enode_to_index_mapping(g::EGraph)
         all_enodes = [enode for (eclass_id, eclass) in g.classes for enode in eclass]
-        node_to_id_mapping = Dict(zip(vcat(keys(g.classes)..., all_enodes), collect(1:length(all_enodes)+g.numclasses)))
+        node_to_id_mapping = Dict(zip(vcat(values(g.classes)..., all_enodes), 1:length(all_enodes)+g.numclasses))
         return node_to_id_mapping
     end
 end
