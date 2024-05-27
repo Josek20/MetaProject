@@ -1,5 +1,6 @@
 using Metatheory
 using Flux
+#: Dense, sigmoid, tanh, relu, \sigmoid
 
 struct MyNodes
     children::Union{Vector{MyNodes}, Nothing}
@@ -16,6 +17,8 @@ mutable struct TreeLSTM
     U_f::Dense
     U_o::Dense
     U_u::Dense
+    c::Vector{Float32}
+    h::Vector{Float32}
 end
 
 TreeLSTM(in_dim::Int, out_dim::Int) = TreeLSTM(
@@ -26,11 +29,14 @@ TreeLSTM(in_dim::Int, out_dim::Int) = TreeLSTM(
     Dense(out_dim, out_dim),
     Dense(out_dim, out_dim),
     Dense(out_dim, out_dim),
-    Dense(out_dim, out_dim)
+    Dense(out_dim, out_dim),
+    zeros(out_dim),
+    zeros(out_dim)
 )
 
 
-function forward(lstm::TreeLSTM, x::Vector{UInt32}, c::Vector{Float32}, h::Vector{Float32})
+function (lstm::TreeLSTM)(x::Vector{UInt32})
+    c, h = lstm.c, lstm.h
     i = sigmoid.(lstm.W_i(x) .+ lstm.U_i(h))
     f = sigmoid.(lstm.W_f(x) .+ lstm.U_f(h))
     o = sigmoid.(lstm.W_o(x) .+ lstm.U_o(h))
@@ -40,16 +46,16 @@ function forward(lstm::TreeLSTM, x::Vector{UInt32}, c::Vector{Float32}, h::Vecto
     return c_next, h_next
 end
 
-function tree_lstm(lstm::TreeLSTM, tree::MyNodes, c::Vector{Float32}, h::Vector{Float32})
+function tree_lstm(lstm::TreeLSTM, tree::MyNodes)
     if isnothing(tree.children)
         data = tree.encoding
-        return forward(lstm, data, c, h)
+        return lstm(data)
     else
         for child in tree.children
-            c, h = tree_lstm(lstm, child, c, h)
+          c, h = tree_lstm(lstm, child)
         end
         data = tree.encoding
-        return forward(lstm, data, c, h)
+        return lstm(data)
     end
 end
 
@@ -66,11 +72,12 @@ LikelihoodModel(input_size::Int, hidden_size::Int, mlp_hidden_size::Int) = Likel
 )
 
 
-function forward(m::LikelihoodModel, tree::MyNodes, c::Vector{Float32}, h::Vector{Float32})
-    h, _ = tree_lstm(m.tree_lstm, tree, c, h)
+function (m::LikelihoodModel)(ex::Expr)
+    tree = expression_encoder!(ex)
+    h, _ = tree_lstm(m.tree_lstm, tree)
     h = m.fc(h)
     output = m.output_layer(h)
-    return output
+    return output[1]
 end
 
 # Initialize model and example tree
@@ -82,36 +89,41 @@ ex = :(a - b + c)
 
 function expression_encoder!(ex)
     if ex isa Expr
-        println("new root node")
+        #println("new root node $ex")
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[symbols_to_index[ex.args[1]]] = 1
         new_root = MyNodes(Vector(), encoded_symbol)
-        push!(new_root.children, expression_encoder!(ex.args[2]))
-        push!(new_root.children, expression_encoder!(ex.args[3]))
+        if length(ex.args) == 3
+          push!(new_root.children, expression_encoder!(ex.args[2]))
+          push!(new_root.children, expression_encoder!(ex.args[3]))
+        else
+          push!(new_root.children, expression_encoder!(ex.args[2]))
+        end
         return new_root
     elseif ex isa Symbol && ex in all_symbols
-        println("new alg expressio node")
+        #println("new alg expressio node")
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[symbols_to_index[ex]] = 1
         return MyNodes(nothing, encoded_symbol)
     elseif ex isa Symbol 
-        println("new variable node")
+        #println("new variable node")
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[end] = 1
         return MyNodes(nothing, encoded_symbol)
     else
-        println("new integer node")
+        #println("new integer node")
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[end - 1] = 1
         return MyNodes(nothing, encoded_symbol)
     end
 end
+
+#loss(mode::LikelihoodModel, )
+loss(model::LikelihoodModel, expanded_nodes::Vector{Any}, not_expanded_nodes::Vector{Any}) = log(1 + exp(sum(model.(expanded_nodes)) - sum(model.(not_expanded_nodes))))
+
 model = LikelihoodModel(in_dim, out_dim, out_dim * 2)
 
-root = expression_encoder!(ex)
-c = zeros(Float32, out_dim)
-h = zeros(Float32, out_dim)
 
-result_prob = forward(model, root, c, h)
-println("Final result: $result_prob")
+result_prob = model(ex)
+#println("Final result: $result_prob")
 
