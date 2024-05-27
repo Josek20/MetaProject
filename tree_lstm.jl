@@ -117,9 +117,8 @@ function expression_encoder!(ex)
 end
 
 #loss(mode::LikelihoodModel, )
-
+loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::Nothing) = log(1 + exp(sum(model.(expanded_nodes))))
 function loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::AbstractVector)
-  #println(expanded_nodes)
   return log(1 + exp(sum(model.(expanded_nodes)) - sum(model.(not_expanded_nodes))))
 end
 #loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::AbstractVector) = log(1 + exp(sum(model.(expanded_nodes)) - sum(model.(not_expanded_nodes))))
