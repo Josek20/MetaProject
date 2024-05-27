@@ -64,6 +64,7 @@ mutable struct Node{E, P}
     node_id::UInt64
 end
 
+Node(ex::Int, rule_index, parent, depth) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex))
 function Node(ex::Expr, rule_index, parent, depth)
     Node(ex, rule_index, UInt64[],  parent, depth, hash(ex))
 end
@@ -93,16 +94,15 @@ function push_to_tree!(soltree::Dict, new_node::Node)
 end
 
 
-function expand_node!(parent::Node, soltree::Dict, heuristic::Union{LikelihoodModel, Function}, open_list::PriorityQueue, terminal_nodes::Vector{Node})
+function expand_node!(parent::Node, soltree::Dict, heuristic::Union{LikelihoodModel, Function}, open_list::PriorityQueue) 
     ex = parent.ex
     succesors = filter(r -> r[2] != ex, collect(enumerate(execute(ex, theory))))
 
     for (rule_index, new_exp) in succesors
         new_node = Node(new_exp, rule_index, parent, parent.depth + 1)
+        push!(parent.children, new_node.node_id)
         if push_to_tree!(soltree, new_node)
-            enqueue!(open_list, new_node, heuristic(new_node.ex))
-        else
-            push!(terminal_nodes, new_node)
+            enqueue!(open_list, new_node, heuristic(expression_encoder!(new_node.ex)))
         end
     end
 end
@@ -115,28 +115,31 @@ function prity_print(arguments)
 end
 
 function get_nodes_in_proof(expanded_node::Node)
-  buffer = Expr[]
+  buffer = Union{Expr, Int64}[]
   while true
-    push!(buffer, expand_node.ex)
-    if expand_node.depth == 0    
+    push!(buffer, expanded_node.ex)
+    if expanded_node.depth == 0    
       break
     end
-    expand_node = expand_node.parent 
+    expanded_node = expanded_node.parent 
   end
   return buffer
 end
 
-function build_tree!(node::Node, soltree::Dict, heuristic::Union{LikelihoodModel, Function}, open_list::PriorityQueue, pc, optimizer, close_list::Set{UInt64}) 
-    push!(close_list, node.node_id)
+function build_tree!(soltree::Dict, heuristic::Union{LikelihoodModel, Function}, open_list::PriorityQueue, pc, optimizer, close_list::Set{UInt64}) 
     while length(open_list) > 0
-        expand_node!(node, soltree, heuristic, open_list, close_list)
         node = dequeue!(open_list)
+        expand_node!(node, soltree, heuristic, open_list)
         #println(length(open_list))
         push!(close_list, node.node_id)
-        in_proof = get_nodes_in_proof(node)
-        not_in_proof = filter(node -> node.ex ∉ in_proof, values(soltree))
+        in_proof = length(open_list) != 0 ? get_nodes_in_proof(peek(open_list)[1]) : get_nodes_in_proof(node)
+        not_in_proof = map(node->node.ex, filter(node -> node.ex ∉ in_proof, collect(values(soltree))))
+        encoded_in_proof = expression_encoder!.(in_proof)
+        #println(encoded_in_proof)
+        #println("===========================================")
+        encoded_not_in_proof = expression_encoder!.(not_in_proof)
         grad = gradient(pc) do 
-            loss(heuristic, in_proof, not_in_proof)
+            loss(heuristic, encoded_in_proof, encoded_not_in_proof)
         end
         Flux.update!(optimizer, pc, grad)
     end
@@ -173,15 +176,16 @@ depth = 50
 pc = Flux.params(heuristic)
 
 
-for (index, ex) in enumerate(data)
+for (index, ex) in enumerate(data[1:67])
   soltree = Dict{UInt64, Node}()
   open_list = PriorityQueue{Node, Float32}()
   close_list = Set{UInt64}()
   println("Initial expression: $ex")
   root = Node(ex, 0, nothing, 0)
   soltree[root.node_id] = root
-  #enqueue!(open_list, root, heuristic(root.ex))
-  build_tree!(root, soltree, heuristic, open_list, pc, optimizer, close_list)
+  #push!(open_list, root.node_id)
+  enqueue!(open_list, root, heuristic(expression_encoder!(root.ex)))
+  build_tree!(soltree, heuristic, open_list, pc, optimizer, close_list)
   smallest_node = extract_smallest_terminal_node(soltree, close_list)
   simplified_expression = smallest_node.ex
   println("Simplified expression: $simplified_expression")

@@ -17,8 +17,7 @@ mutable struct TreeLSTM
     U_f::Dense
     U_o::Dense
     U_u::Dense
-    c::Vector{Float32}
-    h::Vector{Float32}
+    out_dim::Int
 end
 
 TreeLSTM(in_dim::Int, out_dim::Int) = TreeLSTM(
@@ -30,13 +29,11 @@ TreeLSTM(in_dim::Int, out_dim::Int) = TreeLSTM(
     Dense(out_dim, out_dim),
     Dense(out_dim, out_dim),
     Dense(out_dim, out_dim),
-    zeros(out_dim),
-    zeros(out_dim)
+    out_dim
 )
 
 
-function (lstm::TreeLSTM)(x::Vector{UInt32})
-    c, h = lstm.c, lstm.h
+function (lstm::TreeLSTM)(x::Vector{UInt32}, c::Vector{Float32}, h::Vector{Float32})
     i = sigmoid.(lstm.W_i(x) .+ lstm.U_i(h))
     f = sigmoid.(lstm.W_f(x) .+ lstm.U_f(h))
     o = sigmoid.(lstm.W_o(x) .+ lstm.U_o(h))
@@ -46,16 +43,16 @@ function (lstm::TreeLSTM)(x::Vector{UInt32})
     return c_next, h_next
 end
 
-function tree_lstm(lstm::TreeLSTM, tree::MyNodes)
+function tree_lstm(lstm::TreeLSTM, tree::MyNodes, c::Vector{Float32}, h::Vector{Float32})
     if isnothing(tree.children)
         data = tree.encoding
-        return lstm(data)
+        return lstm(data, c, h)
     else
         for child in tree.children
-          c, h = tree_lstm(lstm, child)
+          c, h = tree_lstm(lstm, child, c, h)
         end
         data = tree.encoding
-        return lstm(data)
+        return lstm(data, c, h)
     end
 end
 
@@ -71,10 +68,11 @@ LikelihoodModel(input_size::Int, hidden_size::Int, mlp_hidden_size::Int) = Likel
     Dense(mlp_hidden_size, 1, σ)
 )
 
-
-function (m::LikelihoodModel)(ex::Expr)
-    tree = expression_encoder!(ex)
-    h, _ = tree_lstm(m.tree_lstm, tree)
+function (m::LikelihoodModel)(tree::MyNodes)
+    out_dim = m.tree_lstm.out_dim
+    c_init = zeros(Float32, out_dim)
+    h_init = zeros(Float32, out_dim)
+    h, _ = tree_lstm(m.tree_lstm, tree, c_init, h_init)
     h = m.fc(h)
     output = m.output_layer(h)
     return output[1]
@@ -119,11 +117,15 @@ function expression_encoder!(ex)
 end
 
 #loss(mode::LikelihoodModel, )
-loss(model::LikelihoodModel, expanded_nodes::Vector{Any}, not_expanded_nodes::Vector{Any}) = log(1 + exp(sum(model.(expanded_nodes)) - sum(model.(not_expanded_nodes))))
 
-model = LikelihoodModel(in_dim, out_dim, out_dim * 2)
+function loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::AbstractVector)
+  #println(expanded_nodes)
+  return log(1 + exp(sum(model.(expanded_nodes)) - sum(model.(not_expanded_nodes))))
+end
+#loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::AbstractVector) = log(1 + exp(sum(model.(expanded_nodes)) - sum(model.(not_expanded_nodes))))
+#model = LikelihoodModel(in_dim, out_dim, out_dim * 2)
 
 
-result_prob = model(ex)
+#result_prob = model(expression_encoder!(ex))
 #println("Final result: $result_prob")
 
