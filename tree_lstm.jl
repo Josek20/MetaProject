@@ -1,10 +1,13 @@
 using Metatheory
+using Statistics
 using Flux
 #: Dense, sigmoid, tanh, relu, \sigmoid
 
-struct MyNodes
+struct MyNodes#{C, E<:Vector{UInt32}}
     children::Union{Vector{MyNodes}, Nothing}
+    #children::C
     encoding::Vector{UInt32}
+    #encoding::E
 end
 
 # Define the TreeLSTM model
@@ -17,19 +20,17 @@ mutable struct TreeLSTM
     U_f::Dense
     U_o::Dense
     U_u::Dense
-    out_dim::Int
 end
 
 TreeLSTM(in_dim::Int, out_dim::Int) = TreeLSTM(
-    Dense(in_dim, out_dim),
-    Dense(in_dim, out_dim),
-    Dense(in_dim, out_dim),
-    Dense(in_dim, out_dim),
+    Dense( in_dim, out_dim),
+    Dense( in_dim, out_dim),
+    Dense( in_dim, out_dim),
+    Dense( in_dim, out_dim),
     Dense(out_dim, out_dim),
     Dense(out_dim, out_dim),
     Dense(out_dim, out_dim),
-    Dense(out_dim, out_dim),
-    out_dim
+    Dense(out_dim, out_dim)
 )
 
 
@@ -43,16 +44,20 @@ function (lstm::TreeLSTM)(x::Vector{UInt32}, c::Vector{Float32}, h::Vector{Float
     return c_next, h_next
 end
 
-function tree_lstm(lstm::TreeLSTM, tree::MyNodes, c::Vector{Float32}, h::Vector{Float32})
+@inline function tree_lstm(lstm::TreeLSTM, tree::MyNodes, c::Vector{Float32}, h::Vector{Float32})
     if isnothing(tree.children)
         data = tree.encoding
         return lstm(data, c, h)
     else
+        c_combined = c
+        h_combined = h
         for child in tree.children
-          c, h = tree_lstm(lstm, child, c, h)
+            c_child, h_child = tree_lstm(lstm, child, c, h)
+            c_combined += c_child
+            h_combined += h_child
         end
         data = tree.encoding
-        return lstm(data, c, h)
+        return lstm(data, c_combined, h_combined)
     end
 end
 
@@ -68,10 +73,7 @@ LikelihoodModel(input_size::Int, hidden_size::Int, mlp_hidden_size::Int) = Likel
     Dense(mlp_hidden_size, 1, σ)
 )
 
-function (m::LikelihoodModel)(tree::MyNodes)
-    out_dim = m.tree_lstm.out_dim
-    c_init = zeros(Float32, out_dim)
-    h_init = zeros(Float32, out_dim)
+function (m::LikelihoodModel)(tree::MyNodes, c_init::Vector{Float32}=zeros(Float32, size(m.fc.weight)[2]), h_init::Vector{Float32}=zeros(Float32, size(m.fc.weight)[2]))::Float32
     h, _ = tree_lstm(m.tree_lstm, tree, c_init, h_init)
     h = m.fc(h)
     output = m.output_layer(h)
@@ -85,21 +87,22 @@ symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
 out_dim = in_dim * 2
 ex = :(a - b + c)
 
-function expression_encoder!(ex)
+function expression_encoder!(ex::Union{Expr, Symbol, Int64}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64})
     if ex isa Expr
         #println("new root node $ex")
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[symbols_to_index[ex.args[1]]] = 1
         new_root = MyNodes(Vector(), encoded_symbol)
         if length(ex.args) == 3
-          push!(new_root.children, expression_encoder!(ex.args[2]))
-          push!(new_root.children, expression_encoder!(ex.args[3]))
+          push!(new_root.children, expression_encoder!(ex.args[2], all_symbols, symbols_to_index))
+          push!(new_root.children, expression_encoder!(ex.args[3], all_symbols, symbols_to_index))
         else
-          push!(new_root.children, expression_encoder!(ex.args[2]))
+          push!(new_root.children, expression_encoder!(ex.args[2], all_symbols, symbols_to_index))
         end
         return new_root
     elseif ex isa Symbol && ex in all_symbols
         #println("new alg expressio node")
+        println(ex)
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[symbols_to_index[ex]] = 1
         return MyNodes(nothing, encoded_symbol)
@@ -116,12 +119,39 @@ function expression_encoder!(ex)
     end
 end
 
-#loss(mode::LikelihoodModel, )
+#=
 loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::Nothing) = log(1 + exp(sum(model.(expanded_nodes))))
 function loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::AbstractVector)
   return log(1 + exp(sum(model.(expanded_nodes)) - sum(model.(not_expanded_nodes))))
 end
-#loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::AbstractVector) = log(1 + exp(sum(model.(expanded_nodes)) - sum(model.(not_expanded_nodes))))
+
+function loss(model::LikelihoodModel, first_any::Vector, second_any::Vector)
+    my_loss = Float32[
+        log(1 + exp(model(i) - model(j)))
+        for (ind, i) in enumerate(first_any)
+        for j in second_any[ind]
+    ]
+    return mean(my_loss)
+end
+=#
+function lgbf_loss(model, h_pos, h_neg)
+  #return isempty(h_neg) ? mean(log(1 + exp(model(h_pos)))) : mean(log.(1 .+ exp.(model(h_pos) .- model.(h_neg))))
+  return mean(log(1 + exp(model(h_pos))))
+end
+
+
+function loss(model::LikelihoodModel, first_any::Vector, second_any::Vector, c_init::Vector{Float32}, h_init::Vector{Float32})
+    #result = [lgbf_loss(model, i, second_any[ind])
+              #for (ind, i) in enumerate(first_any)]
+    #println(first_any)
+    #println(length.(second_any))
+   # return mean(result)
+    #return mean(model(first_any[1]) .- model.(second_any[1]))
+  #return mean(log.(1 .+ exp.(model.(first_any))))
+  #return mean(log.(1 .+ exp.(model.(first_any, c_init, h_init))))
+  return mean([model(i, c_init, h_init) for i in first_any])
+end
+
 #model = LikelihoodModel(in_dim, out_dim, out_dim * 2)
 
 
