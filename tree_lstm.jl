@@ -85,40 +85,56 @@ all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select]
 in_dim = length(all_symbols) + 2
 symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
 out_dim = in_dim * 2
-ex = :(a - b + c)
+#ex = :(a - b + c * 100 / 200 - d - (a + b - c))
+#ex = :((a - b) + (c / d))
+ex = :(a - b + c) 
 
-function expression_encoder!(ex::Union{Expr, Symbol, Int64}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64})
+#symbol_encoding(sym::Symbol) = sym in all_symbols ? ones(length(all_symbols) + 2) * symbols_to_index[sym] : ones(length(all_symbols) + 2) * -2
+#symbol_encoding(sym) = ones(length(all_symbols) + 2) * -1
+
+function expression_encoder!(ex::Union{Expr, Symbol, Int64}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, depth::Int, buffer::Dict{Int, Vector}, bag_ids::Vector)
     if ex isa Expr
-        #println("new root node $ex")
-        encoded_symbol = zeros(length(all_symbols) + 2)
-        encoded_symbol[symbols_to_index[ex.args[1]]] = 1
-        new_root = MyNodes(Vector(), encoded_symbol)
-        if length(ex.args) == 3
-          push!(new_root.children, expression_encoder!(ex.args[2], all_symbols, symbols_to_index))
-          push!(new_root.children, expression_encoder!(ex.args[3], all_symbols, symbols_to_index))
-        else
-          push!(new_root.children, expression_encoder!(ex.args[2], all_symbols, symbols_to_index))
+        encoded_symbol_root = zeros(length(all_symbols) + 2)
+        encoded_symbol_root[symbols_to_index[ex.args[1]]] = 1
+        if depth == 1
+            buffer[depth] = Vector[encoded_symbol_root]
         end
-        return new_root
+        depth += 1
+        #push!(bag_ids, depth - 1 + )
+        encoded_symbol_first_child = expression_encoder!(ex.args[2], all_symbols, symbols_to_index, depth, buffer, bag_ids)
+        #encoded_symbol_first_child = symbol_encoding(ex.args[2])
+        if haskey(buffer, depth)
+            push!(buffer[depth], encoded_symbol_first_child)
+        else
+            buffer[depth] = Vector[encoded_symbol_first_child]
+        end
+        if length(ex.args) == 3
+            #push!(bag_ids, depth - 1)
+            encoded_symbol_second_child = expression_encoder!(ex.args[3], all_symbols, symbols_to_index, depth, buffer, bag_ids)
+            push!(buffer[depth], encoded_symbol_second_child)
+        end
+        return encoded_symbol_root
     elseif ex isa Symbol && ex in all_symbols
-        #println("new alg expressio node")
-        println(ex)
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[symbols_to_index[ex]] = 1
-        return MyNodes(nothing, encoded_symbol)
+        return encoded_symbol
     elseif ex isa Symbol 
-        #println("new variable node")
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[end] = 1
-        return MyNodes(nothing, encoded_symbol)
+        return encoded_symbol
     else
-        #println("new integer node")
         encoded_symbol = zeros(length(all_symbols) + 2)
         encoded_symbol[end - 1] = 1
-        return MyNodes(nothing, encoded_symbol)
+        return encoded_symbol
     end
 end
 
+
+buffer = Dict{Int, Vector}()
+bag_ids = Vector()
+expression_encoder!(ex, all_symbols, symbols_to_index, 1, buffer, bag_ids)
+#@assert length(buffer[6]) == 2
+#@assert length(buffer[5]) == 4
 #=
 loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::Nothing) = log(1 + exp(sum(model.(expanded_nodes))))
 function loss(model::LikelihoodModel, expanded_nodes::AbstractVector, not_expanded_nodes::AbstractVector)
@@ -140,7 +156,7 @@ function lgbf_loss(model, h_pos, h_neg)
 end
 
 
-function loss(model::LikelihoodModel, first_any::Vector, second_any::Vector, c_init::Vector{Float32}, h_init::Vector{Float32})
+function loss(model::LikelihoodModel, depth_dict::Dict{Int, Vector}, c_init::Vector{Float32}, h_init::Vector{Float32})
     #result = [lgbf_loss(model, i, second_any[ind])
               #for (ind, i) in enumerate(first_any)]
     #println(first_any)
@@ -149,7 +165,8 @@ function loss(model::LikelihoodModel, first_any::Vector, second_any::Vector, c_i
     #return mean(model(first_any[1]) .- model.(second_any[1]))
   #return mean(log.(1 .+ exp.(model.(first_any))))
   #return mean(log.(1 .+ exp.(model.(first_any, c_init, h_init))))
-  return mean([model(i, c_init, h_init) for i in first_any])
+  #return mean([model(i, c_init, h_init) for i in first_any])
+    return 1
 end
 
 #model = LikelihoodModel(in_dim, out_dim, out_dim * 2)
