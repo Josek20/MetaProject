@@ -1,25 +1,18 @@
-include("src/MyModule.jl")
+#include("src/MyModule.jl")
 using BenchmarkTools
-using .MyModule: load_data, preprosses_data_to_expressions
+#using .MyModule: load_data, preprosses_data_to_expressions
 using Metatheory
 using Statistics
 using Flux
 using Mill
-#: Dense, sigmoid, tanh, relu, \sigmoid
 
-#=
-struct MyNodes#{C, E<:Vector{UInt32}}
-    children::Union{Vector{MyNodes}, Nothing}
-    #children::C
-    encoding::Vector{UInt32}
-    #encoding::E
-end
-=#
+
 struct ExprEncoding{B, BI, PM}
     buffer::B
     bag_ids::BI
     parent_map::PM
 end
+
 # Define the TreeLSTM model
 mutable struct TreeLSTM
     W_i::Dense
@@ -171,37 +164,41 @@ function args2mill(args::Vector, symbols_to_index)
 end
 
 
-struct ExprModel{HM,A,JM}
+struct ExprModel{HM,A,JM,H}
     head_model::HM
     aggregation::A
     joint_model::JM    
+    heuristic::H
 end
 
 
 function (m::ExprModel)(ds::ProductNode)
-    tmp = vcat(m.head_model(ds.data.head.data), m(ds.data.args))
-    println(size(tmp))
+    m.heuristic(embed(m, ds))[1]
+end
+
+function embed(m::ExprModel, ds::ProductNode)
+    tmp = vcat(m.head_model(ds.data.head.data), embed(m, ds.data.args))
     m.joint_model(tmp)
 end
 
-function (m::ExprModel)(ds::BagNode)
-    m.aggregation(m(ds.data), ds.bags)
+function embed(m::ExprModel, ds::BagNode)
+    m.aggregation(embed(m, ds.data), ds.bags)
 end
 
-(m::ExprModel)(ds::Missing) = missing
+embed(m::ExprModel, ds::Missing) = missing
 
 
-#=
-data = load_data("data/test.json")[1:100]
-data = preprosses_data_to_expressions(data)
+#data = load_data("data/test.json")[1:100]
+#data = preprosses_data_to_expressions(data)
 
 hidden_size = 8
 m = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
-    Mill.SegmentedSumMax(7),
-    Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size,1))
+    Mill.SegmentedSumMax(hidden_size),
+    Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
+    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
-=#
+
 #dss = [ex2mill(ex, symbols_to_index) for ex in data[1:10]]
 #@benchmark [ex2mill(ex, symbols_to_index) for ex in data[1:10]]
 #ds = reduce(catobs, dss)
@@ -345,8 +342,11 @@ function expression_encoder(ex::Union{Expr, Int}, all_symbols::Vector{Symbol}, s
     return ExprEncoding(buffer, bag_ids, parent_map)  
 end
 
-function loss(model::LikelihoodModel, depth_dict::Dict{Int, Vector})
-    return model(depth_dict[1][1]) 
+function loss(model::ExprModel, depth_dict::Dict{Int, Vector{Any}})
+  expanded_node_out = model(depth_dict[1][1])
+  not_expanded_nodes_out = model.(depth_dict[1][2:end])
+  return mean(log.(1 .+ exp.(expanded_node_out .- not_expanded_nodes_out)))
+  #return mean([mean(log.(1 .+ exp.(model(depth_dict[i][1]) .- model.(depth_dict[i][2:end])))) for i in length(depth_dict):-1:1])
 end
 
 #function loss(model::LikelihoodModel, depth_dict::Dict{Int, Vector})
