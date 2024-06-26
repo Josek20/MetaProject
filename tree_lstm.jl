@@ -343,11 +343,44 @@ function expression_encoder(ex::Union{Expr, Int}, all_symbols::Vector{Symbol}, s
 end
 
 function loss(model::ExprModel, depth_dict::Dict{Int, Vector{Any}})
-  expanded_node_out = model(depth_dict[1][1])
-  not_expanded_nodes_out = model.(depth_dict[1][2:end])
-  return mean(log.(1 .+ exp.(expanded_node_out .- not_expanded_nodes_out)))
-  #return mean([mean(log.(1 .+ exp.(model(depth_dict[i][1]) .- model.(depth_dict[i][2:end])))) for i in length(depth_dict):-1:1])
+    total_loss = 0.0
+    num_depths = length(keys(depth_dict))
+    
+    for depth in keys(depth_dict)
+        nodes = depth_dict[depth]
+        
+        # Debugging: Print node types
+        #println("Depth: $depth")
+        #println(length(nodes))
+        #println("Node Types: ", [typeof(node) for node in nodes])
+        
+        expanded_node_out = model(nodes[1])
+        not_expanded_nodes_out = model.(nodes[2:end])
+        
+        # Ensure outputs are of correct type
+        if !(expanded_node_out isa Float32 && all(x -> x isa Float32, not_expanded_nodes_out))
+            throw(ArgumentError("Model outputs must be of type Float32"))
+        end
+        
+        # Efficient batch computation of the loss
+        diff = expanded_node_out .- not_expanded_nodes_out
+        #println(diff)
+        depth_loss = mean(log.(1 .+ exp.(diff)))
+        
+        total_loss += depth_loss
+    end
+    
+    return total_loss / num_depths
 end
+
+
+#function loss(model::ExprModel, depth_dict::Dict{Int, Vector{Any}})
+  #expanded_node_out = [model(depth_dict[i][1]) for i in length(depth_dict)]
+  #not_expanded_nodes_out = [model.(depth_dict[i][2:end]) for i in length(depth_dict)]
+  #return mean()
+  #return mean(log.(1 .+ exp.(expanded_node_out .- not_expanded_nodes_out)))
+  #return mean([mean(log.(1 .+ exp.(model(depth_dict[i][1]) .- model.(depth_dict[i][2:end])))) for i in length(depth_dict):-1:1])
+#end
 
 #function loss(model::LikelihoodModel, depth_dict::Dict{Int, Vector})
     #=

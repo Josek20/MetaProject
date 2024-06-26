@@ -108,8 +108,8 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
             encodings_buffer[hash(new_exp)] = ex2mill(new_exp, symbols_to_index)
         end
         new_node = Node(new_exp, rule_index, parent.node_id, parent.depth + 1, encodings_buffer[hash(new_exp)])
+        push!(parent.children, new_node.node_id)
         if push_to_tree!(soltree, new_node)
-            push!(parent.children, new_node.node_id)
             #println(new_exp)
             enqueue!(open_list, new_node, heuristic(new_node.expression_encoding))
         end
@@ -192,9 +192,9 @@ depth = 50
 #terminal_nodes = Node[] 
 
 pc = Flux.params(heuristic)
-ex = data[3]
+ex = data[2]
 
-for (index, ex) in enumerate(data)
+for (index, ex) in enumerate(data[1:100])
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
@@ -218,11 +218,25 @@ for (index, ex) in enumerate(data)
 
     proof_vector, depth_dict = extract_rules_applied1(smallest_node, soltree)
     #proof_vector = extract_rules_applied(smallest_node, soltree)
+    #=
     if isempty(proof_vector)
         continue
     end
+    =#
     println("Proof vector: $proof_vector")
-    @assert !isempty(depth_dict)
+    #=
+    for (k,v) in soltree
+           if soltree[v.parent].depth + 1 != v.depth
+               println(soltree[v.parent].depth)
+               println(v.depth)
+           end
+           println("===")
+    end
+    =#
+    if isempty(depth_dict)
+        println("Empty Error")
+        continue
+    end
     grad = gradient(pc) do 
         #println("Loss: $(loss(heuristic, depth_dict))")
         loss(heuristic, depth_dict)
