@@ -11,7 +11,7 @@ theory = @theory a b c begin
     (a - b) - c --> (a - c) - b
 end
 
-data = load_data("data/test.json")[1:100]
+data = load_data("data/train.json")[1:10000]
 data = preprosses_data_to_expressions(data)
 #data = [:(a - b + c / 109 * 109)]
 #abstract type LikelihoodModel end
@@ -89,6 +89,12 @@ function push_to_tree!(soltree::Dict, new_node::Node)
     node_id = new_node.node_id
     if haskey(soltree, node_id)
         old_node = soltree[node_id]
+        if new_node.depth < old_node.depth
+            soltree[node_id] = new_node
+            soltree[node_id].children = old_node.children
+        else
+            soltree[node_id] = old_node
+        end
         #soltree[node_id] = new_node.depth < old_node.depth ? new_node : old_node
         return (false)
     else
@@ -180,27 +186,12 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
 end
 
 #heuristic = LikelihoodModel(in_dim, out_dim, out_dim * 2)
-heuristic = m
-c_init = zeros(Float32, out_dim)
-h_init = zeros(Float32, out_dim)
-
-#heuristic = exp_size
-#
-optimizer = ADAM()
-depth = 50
-#nodes_expression_built = Vector()
-#terminal_nodes = Node[] 
-
-pc = Flux.params(heuristic)
-ex = data[2]
-
-for (index, ex) in enumerate(data[1:100])
+function heuristic_forward_pass(heuristic, ex::Expr)
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
     #encodings_buffer = Dict{UInt64, ExprEncoding}()
     encodings_buffer = Dict{UInt64, ProductNode}()
-    #encodings_buffer = Dict()
     println("Initial expression: $ex")
     #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
     encoded_ex = ex2mill(ex, symbols_to_index)
@@ -224,22 +215,48 @@ for (index, ex) in enumerate(data[1:100])
     end
     =#
     println("Proof vector: $proof_vector")
-    #=
-    for (k,v) in soltree
-           if soltree[v.parent].depth + 1 != v.depth
-               println(soltree[v.parent].depth)
-               println(v.depth)
-           end
-           println("===")
-    end
-    =#
-    if isempty(depth_dict)
-        println("Empty Error")
-        continue
-    end
-    grad = gradient(pc) do 
-        #println("Loss: $(loss(heuristic, depth_dict))")
-        loss(heuristic, depth_dict)
-    end
-    Flux.update!(optimizer, pc, grad)
+    return simplified_expression, depth_dict
 end
+
+function train_heuristic!(heuristic, data)  
+    optimizer = ADAM()
+    depth = 50
+
+    pc = Flux.params(heuristic)
+    for (index, i) in enumerate(data)
+        println("Index: $index")
+        #=
+        if index in [88, 3, 89, 2]
+            continue
+        end
+        =#
+        _, depth_dict = heuristic_forward_pass(heuristic, i)
+        if isempty(depth_dict)
+            println("Error")
+            continue
+        end
+        #=
+        grad = gradient(pc) do 
+            loss(heuristic, depth_dict)
+        end
+        Flux.update!(optimizer, pc, grad)
+        =#
+    end
+end
+
+function test_heuristic(heuristic, data)
+    result = []
+    for (index, i) in enumerate(data)
+        simplified_expression, _ = heuristic_forward_pass(heuristic, i)
+        original_length = exp_size(i)
+        simplified_length = exp_size(simplified_expression)
+        push!(result, original_length - simplified_length)
+    end
+    return mean(result)
+end
+
+heuristic = m
+
+train_heuristic!(heuristic, data)
+#avarage_length_reduction = test_heuristic(heuristic, data)
+#println("ALR: $avarage_length_reduction")
