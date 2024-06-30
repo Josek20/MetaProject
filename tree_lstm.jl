@@ -173,7 +173,7 @@ end
 
 
 function (m::ExprModel)(ds::ProductNode)
-    m.heuristic(embed(m, ds))[1]
+    m.heuristic(embed(m, ds))
 end
 
 function embed(m::ExprModel, ds::ProductNode)
@@ -291,44 +291,9 @@ end
 @inline function tree_lstm1(lstm::TreeLSTM, buffer::Dict, parent_map::Dict, bag_ids::Dict)
     h_tmp, c_tmp = lstm(buffer[1][1], zeros(Float32, out_dim), zeros(Float32, out_dim))
     return h_tmp, c_tmp
-    #=
-    all_nodes = length(parent_map)
-    all_depth = length(buffer)
-    out_dim = size(lstm.W_i.weight, 1)
-    if all_nodes == 1
-        h_tmp, c_tmp = lstm(buffer[1][1], zeros(Float32, out_dim), zeros(Float32, out_dim))
-        return h_tmp, c_tmp
-    end
-    #c_init = zeros(Float32, out_dim, length(buffer[all_depth]))
-    #h_init = zeros(Float32, out_dim, length(buffer[all_depth]))
-    #println(buffer)
-    c_tmp = zeros(Float32, out_dim, length(buffer[all_depth]))
-    h_tmp = zeros(Float32, out_dim, length(buffer[all_depth]))
-    while true
-        x = hcat(buffer[all_depth]...)
-        all_depth -= 1
-        c_tmp, h_tmp = lstm(x, c_tmp, h_tmp) 
-        if all_depth == 0
-            return h_tmp, c_tmp
-        end
-        c_new = zeros(Float32, out_dim, length(buffer[all_depth]))
-        h_new = zeros(Float32, out_dim, length(buffer[all_depth]))
-        for (node_index, node_id) in enumerate(bag_ids[all_depth + 1])
-            parent_index = findall(x-> x == parent_map[node_id], bag_ids[all_depth])[1]
-            if parent_index !== nothing
-                c_new[:, parent_index] += c_tmp[:, node_index]
-                h_new[:, parent_index] += h_tmp[:, node_index]
-            end
-        end
-        c_tmp = c_new
-        h_tmp = h_new
-    end
-    =#
 end
 
 
-#mod2 = LikelihoodModel(in_dim, out_dim, out_dim * 2)
-#for ex in data
 function expression_encoder(ex::Union{Expr, Int}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int})::ExprEncoding
     buffer = Dict{Int, Vector}()
     bag_ids = Dict{Int, Vector}()
@@ -374,6 +339,11 @@ function loss(model::ExprModel, depth_dict::Dict{Int, Vector{Any}})
 end
 
 
+function new_loss(heuristic, big_vector, hp=nothing, hm=nothing)
+    o = heuristic(big_vector) 
+    #diff = hp * o - hm * o
+    return mean(log.(1 .+ exp.(o)))
+end
 #function loss(model::ExprModel, depth_dict::Dict{Int, Vector{Any}})
   #expanded_node_out = [model(depth_dict[i][1]) for i in length(depth_dict)]
   #not_expanded_nodes_out = [model.(depth_dict[i][2:end]) for i in length(depth_dict)]

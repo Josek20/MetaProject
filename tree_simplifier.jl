@@ -1,6 +1,7 @@
-include("src/MyModule.jl")
+include("src/small_data_loader.jl")
 include("tree_lstm.jl")
-using .MyModule: load_data, preprosses_data_to_expressions
+using JSON
+using JLD2
 using Metatheory
 using Metatheory.Rewriters
 using DataStructures
@@ -11,11 +12,19 @@ theory = @theory a b c begin
     (a - b) - c --> (a - c) - b
 end
 
-data = load_data("data/train.json")[1:10000]
-data = preprosses_data_to_expressions(data)
+train_data = load_data("data/train.json")[1:10000]
+test_data = load_data("data/test.json")[1:1000]
+train_data = preprosses_data_to_expressions(train_data)
+test_data = preprosses_data_to_expressions(test_data)
 #data = [:(a - b + c / 109 * 109)]
 #abstract type LikelihoodModel end
 theory = @theory a b c begin
+    a::Number + b::Number => a + b
+    a::Number - b::Number => a - b
+    a::Number * b::Number => a * b
+    a::Number / b::Number => a / b
+
+
     a * (b * c) --> (a * b) * c
     (a * b) * c --> a * (b * c)
     a + (b + c) --> (a + b) + c
@@ -30,19 +39,26 @@ theory = @theory a b c begin
     a * (b + c) --> (a * b) + (a * c)
     (a + b) * c --> (a * c) + (b * c)
     (a / b) * c --> (a * c) / b
+    (a / b) * b --> a
+    (a * b) / b --> a
 
 
 
-    -a --> -1 * a
-    a - b --> a + -b
+    #-a --> -1 * a
+    #a - b --> a + -b
     1 * a --> a
     a + a --> 2*a
 
     0 * a --> 0
     a + 0 --> a
     a - a --> 0
+
     a <= a --> 1
-    (a / b) * b --> a
+    a + b <= c + b --> a <= c
+    a * b <= c * b --> a <= c
+    a / b <= c / b --> a <= c
+    a - b <= c - b --> a <= c
+    a::Number <= b::Number => a<=b ? 1 : 0
 
     min(a, min(a, b)) --> min(a, b)
     min(min(a, b), b) --> min(a, b)
@@ -53,6 +69,13 @@ theory = @theory a b c begin
     min(a, max(a, b)) --> a
     max(min(a, b), b) --> b
     min(max(a, b), b) --> b
+
+    min(a + b::Number, a + c::Number) => b < c ? :($a + $b) : :($a + $c)
+    max(a + b::Number, a + c::Number) => b < c ? :($a + $c) : :($a + $b)
+    min(a - b::Number, a - c::Number) => b < c ? :($a - $c) : :($a - $b)
+    max(a - b::Number, a - c::Number) => b < c ? :($a - $b) : :($a - $c)
+    min(a * b::Number, a * c::Number) => b < c ? :($a * $b) : :($a * $c)
+    max(a + b::Number, a + c::Number) => b < c ? :($a + $c) : :($a + $b)
     #min(a + b, a + c) --> min(b, c)
 end
 
@@ -77,6 +100,7 @@ exp_size(node::Node) = exp_size(node.ex)
 exp_size(ex::Expr) = sum(exp_size.(ex.args))
 exp_size(ex::Symbol) = 1f0
 exp_size(ex::Int) = 1f0
+exp_size(ex::Float64) = 1f0
 
 # get all availabel rules to apply
 execute(ex, theory) = map(th->Postwalk(Metatheory.Chain([th]))(ex), theory)
@@ -104,8 +128,9 @@ function push_to_tree!(soltree::Dict, new_node::Node)
 end
 
 
-function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue{Node,Float32, Base.Order.ForwardOrdering}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, c_init::Vector{Float32}, h_init::Vector{Float32})::Nothing
+function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue{Node,Float32, Base.Order.ForwardOrdering}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64})::Nothing 
     ex = parent.ex
+    #println("Expanding nodes from expression $ex")
     succesors = filter(r -> r[2] != ex, collect(enumerate(execute(ex, theory))))
 
     for (rule_index, new_exp) in succesors
@@ -117,7 +142,7 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
         push!(parent.children, new_node.node_id)
         if push_to_tree!(soltree, new_node)
             #println(new_exp)
-            enqueue!(open_list, new_node, heuristic(new_node.expression_encoding))
+            enqueue!(open_list, new_node, only(heuristic(new_node.expression_encoding)))
         end
     end
 end
@@ -130,7 +155,7 @@ function prity_print(arguments)
 end
 
 
-function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue{Node,Float32, Base.Order.ForwardOrdering}, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, c_init::Vector{Float32}, h_init::Vector{Float32}) 
+function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue{Node,Float32, Base.Order.ForwardOrdering}, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64})
     #expanded_nodes = MyNodes[]
     max_steps = 1000
     #not_expanded_nodes = Vector[]
@@ -143,7 +168,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         if node.depth >= 15
             continue
         end
-        expand_node!(node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, c_init, h_init)
+        expand_node!(node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index) 
         #println(length(open_list))
         push!(close_list, node.node_id)
     end
@@ -162,20 +187,36 @@ end
 function extract_rules_applied1(node::Node, soltree::Dict{UInt64, Node}) 
     proof_vector = Vector()
     depth_dict = Dict{Int, Vector{Any}}()
+    big_vector = Vector()
+    hp = Vector()
+    tmp = Vector()
     #while !isnothing(node.parent)
     #nodes_to_use = filter(n->n.depth<node.depth, values(soltree)
     while node.parent != node.node_id
         push!(proof_vector, node.rule_index)
         depth_dict[node.depth] = [node.expression_encoding]
+        push!(big_vector, node.expression_encoding)
+        push!(hp, 1)
+        push!(tmp, [])
+        push!(tmp[end], 0)
         for children_id in soltree[node.parent].children
             if children_id == node.node_id
                 continue
             end
             push!(depth_dict[node.depth], soltree[children_id].expression_encoding)
+            push!(big_vector, soltree[children_id].expression_encoding)
+            push!(hp, 0)
+            push!(tmp[end], 1)
         end
         node = soltree[node.parent]
     end
-    return reverse(proof_vector), depth_dict
+    ds = nothing
+    if !isempty(big_vector)
+        ds = reduce(catobs, big_vector) 
+    end
+    hm = ifelse.(hp .== 1, 0, 1)
+
+    return reverse(proof_vector), depth_dict, ds
 end
 
 function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
@@ -185,7 +226,6 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
     return all_nodes[smallest_expression_node]
 end
 
-#heuristic = LikelihoodModel(in_dim, out_dim, out_dim * 2)
 function heuristic_forward_pass(heuristic, ex::Expr)
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
@@ -198,50 +238,66 @@ function heuristic_forward_pass(heuristic, ex::Expr)
     root = Node(ex, 0, hash(ex), 0, encoded_ex)
     soltree[root.node_id] = root
     #push!(open_list, root.node_id)
-    enqueue!(open_list, root, heuristic(root.expression_encoding))
+    enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
-    build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, c_init, h_init)
+    build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index)
     println("Have successfuly finished bulding simplification tree!")
 
     smallest_node = extract_smallest_terminal_node(soltree, close_list)
     simplified_expression = smallest_node.ex
     println("Simplified expression: $simplified_expression")
 
-    proof_vector, depth_dict = extract_rules_applied1(smallest_node, soltree)
-    #proof_vector = extract_rules_applied(smallest_node, soltree)
+    proof_vector, depth_dict, big_vector = extract_rules_applied1(smallest_node, soltree)
     #=
     if isempty(proof_vector)
         continue
     end
     =#
     println("Proof vector: $proof_vector")
-    return simplified_expression, depth_dict
+    return simplified_expression, depth_dict, big_vector, length(open_list) == 0
 end
 
-function train_heuristic!(heuristic, data)  
-    optimizer = ADAM()
-    depth = 50
+struct TrainingSample{D, S, L, P}
+    training_data::D
+    saturated::S
+    expression_length::L
+    proof_length::P
+end
 
-    pc = Flux.params(heuristic)
+function isbetter(a::TrainingSample, b::TrainingSample)
+    if a.expression_length > b.expression_length
+        return true
+    elseif a.expression_length == b.expression_length && a.proof_length > b.proof_length
+        return true
+    else
+        return false
+    end
+end
+
+#TrainingSample(training_data::ProductNode, saturated::Bool, ex)
+function train_heuristic!(heuristic, data, training_samples)  
+    #depth = 50
     for (index, i) in enumerate(data)
         println("Index: $index")
-        #=
-        if index in [88, 3, 89, 2]
+        if length(training_samples) > index && training_samples[index].saturated
             continue
         end
-        =#
-        _, depth_dict = heuristic_forward_pass(heuristic, i)
+        simplified_expression, depth_dict, big_vector, saturated = heuristic_forward_pass(heuristic, i)
+        println("Saturated: $saturated")
+        new_sample = TrainingSample(big_vector, saturated, exp_size(simplified_expression), length(depth_dict))
+        if length(training_samples) > index 
+            training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
+        end
+        if length(training_samples) < index
+            push!(training_samples, new_sample)
+        end
         if isempty(depth_dict)
             println("Error")
             continue
         end
-        #=
-        grad = gradient(pc) do 
-            loss(heuristic, depth_dict)
-        end
-        Flux.update!(optimizer, pc, grad)
-        =#
     end
+    @save "training_samples10k.jld2" training_samples
+    #return training_samples
 end
 
 function test_heuristic(heuristic, data)
@@ -255,8 +311,29 @@ function test_heuristic(heuristic, data)
     return mean(result)
 end
 
-heuristic = m
+hidden_size = 128
+mheuristic = ExprModel(
+    Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
+    Mill.SegmentedSumMax(hidden_size),
+    Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
+    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
+    )
 
-train_heuristic!(heuristic, data)
-#avarage_length_reduction = test_heuristic(heuristic, data)
-#println("ALR: $avarage_length_reduction")
+epochs = 16
+optimizer = ADAM()
+training_samples = Vector{TrainingSample}()
+pc = Flux.params(heuristic)
+for _ in 1:epochs 
+    train_heuristic!(heuristic, train_data[1:10000], training_samples)
+    for sample in training_samples
+        if isnothing(sample.training_data)
+            continue
+        end
+        grad = gradient(pc) do
+            new_loss(heuristic, sample.training_data)
+        end
+        Flux.update!(optimizer, pc, grad)
+    end
+end
+avarage_length_reduction = test_heuristic(heuristic, test_data[1:500])
+println("ALR: $avarage_length_reduction")
