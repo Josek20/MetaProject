@@ -59,6 +59,10 @@ theory = @theory a b c begin
     a / b <= c / b --> a <= c
     a - b <= c - b --> a <= c
     a::Number <= b::Number => a<=b ? 1 : 0
+    a <= b - c --> a + c <= b
+    #a <= b - c --> a - b <= -c
+    a <= b + c --> a - c <= b
+    a <= b + c --> a - b <= c
 
     min(a, min(a, b)) --> min(a, b)
     min(min(a, b), b) --> min(a, b)
@@ -188,8 +192,8 @@ function extract_rules_applied1(node::Node, soltree::Dict{UInt64, Node})
     proof_vector = Vector()
     depth_dict = Dict{Int, Vector{Any}}()
     big_vector = Vector()
-    hp = Vector()
-    tmp = Vector()
+    hp = Vector{Int16}()
+    tmp = Vector{Vector{Int16}}()
     #while !isnothing(node.parent)
     #nodes_to_use = filter(n->n.depth<node.depth, values(soltree)
     while node.parent != node.node_id
@@ -197,7 +201,9 @@ function extract_rules_applied1(node::Node, soltree::Dict{UInt64, Node})
         depth_dict[node.depth] = [node.expression_encoding]
         push!(big_vector, node.expression_encoding)
         push!(hp, 1)
-        push!(tmp, [])
+        push!(tmp, Int16[])
+        padding = length(tmp) > 1 ? zeros(Int16, length(tmp[end - 1])) : Int16[]
+        append!(tmp[end], padding)
         push!(tmp[end], 0)
         for children_id in soltree[node.parent].children
             if children_id == node.node_id
@@ -210,13 +216,22 @@ function extract_rules_applied1(node::Node, soltree::Dict{UInt64, Node})
         end
         node = soltree[node.parent]
     end
+    padding_value = 0
+    hn = nothing
+    if !isempty(tmp)
+        max_length = maximum(length, tmp)
+
+        padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in tmp]
+        hn = hcat(padded_vectors...)
+    end
+
     ds = nothing
     if !isempty(big_vector)
         ds = reduce(catobs, big_vector) 
     end
-    hm = ifelse.(hp .== 1, 0, 1)
+    hp = findall(x-> x == 1, hp)
 
-    return reverse(proof_vector), depth_dict, ds
+    return reverse(proof_vector), depth_dict, ds, hp, hn
 end
 
 function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
@@ -247,21 +262,19 @@ function heuristic_forward_pass(heuristic, ex::Expr)
     simplified_expression = smallest_node.ex
     println("Simplified expression: $simplified_expression")
 
-    proof_vector, depth_dict, big_vector = extract_rules_applied1(smallest_node, soltree)
-    #=
-    if isempty(proof_vector)
-        continue
-    end
-    =#
+    proof_vector, depth_dict, big_vector, hp, hn = extract_rules_applied1(smallest_node, soltree)
+
     println("Proof vector: $proof_vector")
-    return simplified_expression, depth_dict, big_vector, length(open_list) == 0
+    return simplified_expression, depth_dict, big_vector, length(open_list) == 0, hp, hn
 end
 
-struct TrainingSample{D, S, L, P}
+struct TrainingSample{D, S, L, P, HP, HN}
     training_data::D
     saturated::S
     expression_length::L
     proof_length::P
+    hp::HP
+    hn::HN
 end
 
 function isbetter(a::TrainingSample, b::TrainingSample)
@@ -274,17 +287,15 @@ function isbetter(a::TrainingSample, b::TrainingSample)
     end
 end
 
-#TrainingSample(training_data::ProductNode, saturated::Bool, ex)
 function train_heuristic!(heuristic, data, training_samples)  
-    #depth = 50
     for (index, i) in enumerate(data)
         println("Index: $index")
         if length(training_samples) > index && training_samples[index].saturated
             continue
         end
-        simplified_expression, depth_dict, big_vector, saturated = heuristic_forward_pass(heuristic, i)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn = heuristic_forward_pass(heuristic, i)
         println("Saturated: $saturated")
-        new_sample = TrainingSample(big_vector, saturated, exp_size(simplified_expression), length(depth_dict))
+        new_sample = TrainingSample(big_vector, saturated, exp_size(simplified_expression), length(depth_dict), hp, hn)
         if length(training_samples) > index 
             training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
         end
@@ -296,7 +307,7 @@ function train_heuristic!(heuristic, data, training_samples)
             continue
         end
     end
-    @save "training_samples10k.jld2" training_samples
+    @save "training_samples1k.jld2" training_samples
     #return training_samples
 end
 
@@ -312,7 +323,7 @@ function test_heuristic(heuristic, data)
 end
 
 hidden_size = 128
-mheuristic = ExprModel(
+heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
     Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
@@ -324,13 +335,13 @@ optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
 pc = Flux.params(heuristic)
 for _ in 1:epochs 
-    train_heuristic!(heuristic, train_data[1:10000], training_samples)
+    train_heuristic!(heuristic, train_data[1:1000], training_samples)
     for sample in training_samples
         if isnothing(sample.training_data)
             continue
         end
         grad = gradient(pc) do
-            new_loss(heuristic, sample.training_data)
+            new_loss(heuristic, sample.training_data, sample.hp, sample.hn)
         end
         Flux.update!(optimizer, pc, grad)
     end

@@ -6,13 +6,14 @@ mutable struct GraphNN{GCN, R}
     R::R
 end
 
+
 Flux.params(l::GraphNN) = Flux.params([l.GCN, l.R])
+
 
 function my_softmax1(matrix::Matrix{T}) where T
     matrix[matrix .!= 0] = softmax(matrix[matrix .!= 0])
     return Flux.Tangent(matrix)
 end
-
 
 
 function my_softmax(matrix::Matrix{T}) where T
@@ -27,7 +28,6 @@ function my_softmax(matrix::Matrix{T}) where T
     
     return matrix
 end
-
 
 
 function GraphNN(in_encoding_size::Integer, out_encoding_size::Integer, number_of_rules::Integer, init=Flux.glorot_uniform)
@@ -112,25 +112,3 @@ function extract_and_apply_max_rule(enode_to_rule_probability::Matrix, g::EGraph
     return rule_probability_dictionary, max_rule
 end
 
-
-function loss1(rule_prob_dict::Dict)
-    if length(rule_prob_dict) == 1
-        return log(1 + exp(1))
-    end
-    rule_prob_vector = collect(values(sort(rule_prob_dict, rev=true)))
-    return sum(log.(1 .+ exp.(rule_prob_vector[begin + 1: end] - rule_prob_vector[begin])))
-end
-
-
-function loss(rule_prob_dict::Dict)
-    if length(rule_prob_dict) == 1
-        return log(1 + exp(1))
-    end
-   
-    # Extract key-value pairs and sort by value
-    sorted_pairs = sort(collect(rule_prob_dict), by=x->x[2], rev=true)
-    
-    # Extract sorted values
-    sorted_values = [pair[2] for pair in sorted_pairs]
-    return sum(log.(1 .+ exp.(sorted_values[2:end] .- sorted_values[begin])))
-end

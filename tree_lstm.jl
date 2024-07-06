@@ -339,9 +339,9 @@ function loss(model::ExprModel, depth_dict::Dict{Int, Vector{Any}})
 end
 
 
-function new_loss(heuristic, big_vector, hp=nothing, hm=nothing)
+function new_loss(heuristic, big_vector, hp=nothing, hn=nothing)
     o = heuristic(big_vector) 
-    #diff = hp * o - hm * o
+    diff = transpose(o[hp]) - o * hn
     return mean(log.(1 .+ exp.(o)))
 end
 #function loss(model::ExprModel, depth_dict::Dict{Int, Vector{Any}})

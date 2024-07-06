@@ -89,7 +89,7 @@ for ex in data[1:2]
 
         push!(applied_rules_buffer, max_rule)
         #println(rule_prob_dict) 
-        symplified_expression = extract!(g, astsize)
+        #symplified_expression = extract!(g, astsize)
         #println("==>$symplified_expression")
         
         prob_vector = sort(collect(values(rule_prob_dict)), rev=true)
