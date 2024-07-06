@@ -151,13 +151,6 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
     end
 end
 
-function prity_print(arguments)
-  for (ind,i) in enumerate(arguments)
-    println("================$ind==============")
-    println("$i")
-  end
-end
-
 
 function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue{Node,Float32, Base.Order.ForwardOrdering}, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64})
     #expanded_nodes = MyNodes[]
@@ -178,17 +171,8 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
     end
 end
 
-function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node}) 
-    proof_vector = Vector()
-    #while !isnothing(node.parent)
-    while node.parent != node.node_id
-        push!(proof_vector, node.rule_index)
-        node = soltree[node.parent]
-    end
-    return reverse(proof_vector)
-end
 
-function extract_rules_applied1(node::Node, soltree::Dict{UInt64, Node}) 
+function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node}) 
     proof_vector = Vector()
     depth_dict = Dict{Int, Vector{Any}}()
     big_vector = Vector()
@@ -234,12 +218,14 @@ function extract_rules_applied1(node::Node, soltree::Dict{UInt64, Node})
     return reverse(proof_vector), depth_dict, ds, hp, hn
 end
 
+
 function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
     all_nodes = [i for i in values(soltree)] 
     exs = [i.ex for i in values(soltree)] 
     smallest_expression_node = argmin(exp_size.(exs))
     return all_nodes[smallest_expression_node]
 end
+
 
 function heuristic_forward_pass(heuristic, ex::Expr)
     soltree = Dict{UInt64, Node}()
@@ -262,7 +248,7 @@ function heuristic_forward_pass(heuristic, ex::Expr)
     simplified_expression = smallest_node.ex
     println("Simplified expression: $simplified_expression")
 
-    proof_vector, depth_dict, big_vector, hp, hn = extract_rules_applied1(smallest_node, soltree)
+    proof_vector, depth_dict, big_vector, hp, hn = extract_rules_applied(smallest_node, soltree)
 
     println("Proof vector: $proof_vector")
     return simplified_expression, depth_dict, big_vector, length(open_list) == 0, hp, hn
@@ -341,7 +327,7 @@ for _ in 1:epochs
             continue
         end
         grad = gradient(pc) do
-            new_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            loss(heuristic, sample.training_data, sample.hp, sample.hn)
         end
         Flux.update!(optimizer, pc, grad)
     end
