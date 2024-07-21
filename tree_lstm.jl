@@ -1,6 +1,4 @@
-#include("src/MyModule.jl")
 using BenchmarkTools
-#using .MyModule: load_data, preprosses_data_to_expressions
 using Metatheory
 using Statistics
 using Flux
@@ -18,14 +16,8 @@ all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&]
 in_dim = length(all_symbols) + 2
 symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
 out_dim = in_dim * 2
-#ex = :(a - b + c * 100 / 200 - d - (a + b - c))
-#ex = :((a - b) + (c / d))
+
 ex = :(a - b + c) 
-
-#symbol_encoding(sym::Symbol) = sym in all_symbols ? ones(length(all_symbols) + 2) * symbols_to_index[sym] : ones(length(all_symbols) + 2) * -2
-#symbol_encoding(sym) = ones(length(all_symbols) + 2) * -1
-
-
 
 function ex2mill(ex::Expr, symbols_to_index)
     if ex.head == :call
@@ -91,26 +83,6 @@ function embed(m::ExprModel, ds::BagNode)
 end
 
 embed(m::ExprModel, ds::Missing) = missing
-
-
-#data = load_data("data/test.json")[1:100]
-#data = preprosses_data_to_expressions(data)
-
-hidden_size = 8
-m = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
-    Mill.SegmentedSumMax(hidden_size),
-    Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
-    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
-    )
-
-#dss = [ex2mill(ex, symbols_to_index) for ex in data[1:10]]
-#@benchmark [ex2mill(ex, symbols_to_index) for ex in data[1:10]]
-#ds = reduce(catobs, dss)
-#reduce(hcat, map(m, dss)) ≈ m(ds)
-#m(ex2mill(:(a-a), symbols_to_index))
-
-
 
 function loss(heuristic, big_vector, hp=nothing, hn=nothing)
     o = heuristic(big_vector) 

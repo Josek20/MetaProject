@@ -6,11 +6,6 @@ using Metatheory
 using Metatheory.Rewriters
 using DataStructures
 
-theory = @theory a b c begin
-    a - a --> 0
-    (a - b) - c --> a - (b - c)
-    (a - b) - c --> (a - c) - b
-end
 
 train_data = load_data("data/train.json")[1:10000]
 test_data = load_data("data/test.json")[1:1000]
@@ -23,6 +18,8 @@ theory = @theory a b c begin
     a::Number - b::Number => a - b
     a::Number * b::Number => a * b
     a::Number / b::Number => a / b
+    #(a / b::Number) * c::Number => :($a * div(c, b))
+    #(a * b::Number) / c::Number => :($a * div(b, c))
 
 
     a * (b * c) --> (a * b) * c
@@ -80,6 +77,8 @@ theory = @theory a b c begin
     max(a - b::Number, a - c::Number) => b < c ? :($a - $b) : :($a - $c)
     min(a * b::Number, a * c::Number) => b < c ? :($a * $b) : :($a * $c)
     max(a + b::Number, a + c::Number) => b < c ? :($a + $c) : :($a + $b)
+    max(a, b::Number) <= c::Number => b > c ? 0 : :($max($a, $b) <= $c)
+    #min(a, b::Number) <= c::Number => b < c ? 0 : 1
     #min(a + b, a + c) --> min(b, c)
 end
 
@@ -143,8 +142,8 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
             encodings_buffer[hash(new_exp)] = ex2mill(new_exp, symbols_to_index)
         end
         new_node = Node(new_exp, rule_index, parent.node_id, parent.depth + 1, encodings_buffer[hash(new_exp)])
-        push!(parent.children, new_node.node_id)
         if push_to_tree!(soltree, new_node)
+            push!(parent.children, new_node.node_id)
             #println(new_exp)
             enqueue!(open_list, new_node, only(heuristic(new_node.expression_encoding)))
         end
@@ -152,7 +151,7 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
 end
 
 
-function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue{Node,Float32, Base.Order.ForwardOrdering}, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64})
+function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue{Node,Float32, Base.Order.ForwardOrdering}, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth)
     #expanded_nodes = MyNodes[]
     max_steps = 1000
     #not_expanded_nodes = Vector[]
@@ -162,9 +161,14 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         end
         max_steps -= 1
         node = dequeue!(open_list)
-        if node.depth >= 15
+        if node.depth >= max_depth
             continue
         end
+        # if node.node_id in close_list
+        #     println("Already been expanded $(node.ex)")
+        #     continue
+        # end
+
         expand_node!(node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index) 
         #println(length(open_list))
         push!(close_list, node.node_id)
@@ -227,7 +231,7 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
 end
 
 
-function heuristic_forward_pass(heuristic, ex::Expr)
+function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth)
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
@@ -241,7 +245,7 @@ function heuristic_forward_pass(heuristic, ex::Expr)
     #push!(open_list, root.node_id)
     enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
-    build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index)
+    build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth)
     println("Have successfuly finished bulding simplification tree!")
 
     smallest_node = extract_smallest_terminal_node(soltree, close_list)
@@ -249,16 +253,16 @@ function heuristic_forward_pass(heuristic, ex::Expr)
     println("Simplified expression: $simplified_expression")
 
     proof_vector, depth_dict, big_vector, hp, hn = extract_rules_applied(smallest_node, soltree)
-
     println("Proof vector: $proof_vector")
-    return simplified_expression, depth_dict, big_vector, length(open_list) == 0, hp, hn
+
+    return simplified_expression, depth_dict, big_vector, length(open_list) == 0, hp, hn, root, proof_vector
 end
 
-struct TrainingSample{D, S, L, P, HP, HN}
+mutable struct TrainingSample{D, S, L, P, HP, HN}
     training_data::D
     saturated::S
     expression_length::L
-    proof_length::P
+    proof::P
     hp::HP
     hn::HN
 end
@@ -266,22 +270,23 @@ end
 function isbetter(a::TrainingSample, b::TrainingSample)
     if a.expression_length > b.expression_length
         return true
-    elseif a.expression_length == b.expression_length && a.proof_length > b.proof_length
+    elseif a.expression_length == b.expression_length && length(a.proof) > length(b.proof)
         return true
     else
         return false
     end
 end
 
-function train_heuristic!(heuristic, data, training_samples)  
+function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth)  
     for (index, i) in enumerate(data)
         println("Index: $index")
         if length(training_samples) > index && training_samples[index].saturated
             continue
         end
-        simplified_expression, depth_dict, big_vector, saturated, hp, hn = heuristic_forward_pass(heuristic, i)
+        #try
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
         println("Saturated: $saturated")
-        new_sample = TrainingSample(big_vector, saturated, exp_size(simplified_expression), length(depth_dict), hp, hn)
+        new_sample = TrainingSample(big_vector, saturated, exp_size(simplified_expression), proof_vector, hp, hn)
         if length(training_samples) > index 
             training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
         end
@@ -292,15 +297,19 @@ function train_heuristic!(heuristic, data, training_samples)
             println("Error")
             continue
         end
+        # catch e
+        #     println("Error with $(i)")
+        #     continue
+        # end
     end
-    @save "training_samples1k.jld2" training_samples
+    @save "training_samples10k_v1.jld2" training_samples
     #return training_samples
 end
 
-function test_heuristic(heuristic, data)
+function test_heuristic(heuristic, data, max_steps, max_depth)
     result = []
     for (index, i) in enumerate(data)
-        simplified_expression, _ = heuristic_forward_pass(heuristic, i)
+        simplified_expression, _ = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
         original_length = exp_size(i)
         simplified_length = exp_size(simplified_expression)
         push!(result, original_length - simplified_length)
@@ -316,12 +325,18 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-epochs = 16
+epochs = 4
 optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
 pc = Flux.params(heuristic)
+max_steps = 1000
+max_depth = 10
+# Check : 2368
+# Iitial expression: (((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2
+# Simplified expression: ((v2 + (min(v0, 509) + v1 * 516)) + 7) - 2 <= (522 + v2) + v1 * 516
+
 for _ in 1:epochs 
-    train_heuristic!(heuristic, train_data[1:1000], training_samples)
+    train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
     for sample in training_samples
         if isnothing(sample.training_data)
             continue
@@ -332,5 +347,5 @@ for _ in 1:epochs
         Flux.update!(optimizer, pc, grad)
     end
 end
-avarage_length_reduction = test_heuristic(heuristic, test_data[1:500])
-println("ALR: $avarage_length_reduction")
+# avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)
+# println("ALR: $avarage_length_reduction")

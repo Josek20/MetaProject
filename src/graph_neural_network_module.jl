@@ -43,7 +43,7 @@ function (m::GraphNN)(g::GNNGraph, x::Matrix, rule_applicability_matrix::Matrix)
     updated_graph_encoding = m.GCN(g, transpose(x))
 
     prod1 = transpose(m.R * updated_graph_encoding)
-    enode_to_rule_probability = my_softmax(prod1 .* rule_applicability_matrix)
+    enode_to_rule_probability = softmax(prod1, dims=2) .* rule_applicability_matrix
 
 
     #symplified_expression = extract!(g, astsize)
