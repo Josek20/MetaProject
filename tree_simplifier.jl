@@ -161,7 +161,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         end
         max_steps -= 1
         node = dequeue!(open_list)
-        #println(node.rule_index)
+        println(node.rule_index)
         if node.depth >= max_depth
             continue
         end
@@ -280,19 +280,19 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth)
     return simplified_expression, depth_dict, big_vector, length(open_list) == 0, hp, hn, root, proof_vector
 end
 
-mutable struct TrainingSample{D, S, L, P, HP, HN}
+mutable struct TrainingSample{D, S, E, P, HP, HN}
     training_data::D
     saturated::S
-    expression_length::L
+    expression::E
     proof::P
     hp::HP
     hn::HN
 end
 
 function isbetter(a::TrainingSample, b::TrainingSample)
-    if a.expression_length > b.expression_length
+    if length(a.expression) > length(b.expression)
         return true
-    elseif a.expression_length == b.expression_length && length(a.proof) > length(b.proof)
+      elseif length(a.expression) == length(b.expression) && length(a.proof) > length(b.proof)
         return true
     else
         return false
@@ -324,7 +324,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         #     continue
         # end
     end
-    @save "training_samples1k_v1.jld2" training_samples
+    @save "training_samples1k_v2.jld2" training_samples
     #return training_samples
 end
 
@@ -378,7 +378,7 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-epochs = 5
+epochs = 2
 optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
 pc = Flux.params(heuristic)
@@ -387,7 +387,7 @@ max_depth = 10
 # Check : 2368
 # Iitial expression: (((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2
 # Simplified expression: ((v2 + (min(v0, 509) + v1 * 516)) + 7) - 2 <= (522 + v2) + v1 * 516
-@load "training_samples1k_v1.jld2" training_samples
+@load "training_samples1k_v2.jld2" training_samples
 for _ in 1:epochs 
     #train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
     for sample in training_samples
