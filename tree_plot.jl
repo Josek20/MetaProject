@@ -1,8 +1,9 @@
 include("tree_simplifier.jl")
 
 
-#ex = test_data[900]
-ex = :((((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2)
+ex = train_data[1]
+#ex = :((((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2)
+
 soltree = Dict{UInt64, Node}()
 open_list = PriorityQueue{Node, Float32}()
 close_list = Set{UInt64}()

@@ -7,7 +7,7 @@ using Metatheory.Rewriters
 using DataStructures
 
 
-train_data = load_data("data/train.json")[1:10000]
+train_data = load_data("data/train.json")[1:1000]
 test_data = load_data("data/test.json")[1:1000]
 train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
@@ -153,7 +153,7 @@ end
 
 function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue{Node,Float32, Base.Order.ForwardOrdering}, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth)
     #expanded_nodes = MyNodes[]
-    max_steps = 1000
+    #max_steps = 1000
     #not_expanded_nodes = Vector[]
     while length(open_list) > 0
         if max_steps == 0
@@ -161,6 +161,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         end
         max_steps -= 1
         node = dequeue!(open_list)
+        #println(node.rule_index)
         if node.depth >= max_depth
             continue
         end
@@ -176,48 +177,69 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
 end
 
 
+function extract_loss_matrices(node::Node, soltree::Dict{UInt64, Node})
+    proof_nodes_ids = []
+    push!(proof_nodes_ids, node.node_id)
+    while node.parent != node.node_id
+        parent_id = node.parent
+        node = soltree[parent_id]
+        push!(proof_nodes_ids, node.node_id)
+    end
+    return proof_nodes_ids
+end
+
 function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node}) 
     proof_vector = Vector()
     depth_dict = Dict{Int, Vector{Any}}()
     big_vector = Vector()
-    hp = Vector{Int16}()
-    tmp = Vector{Vector{Int16}}()
+    tmp_hp = Vector{Vector{Int16}}()
+    tmp_hn = Vector{Vector{Int16}}()
     #while !isnothing(node.parent)
     #nodes_to_use = filter(n->n.depth<node.depth, values(soltree)
     while node.parent != node.node_id
         push!(proof_vector, node.rule_index)
         depth_dict[node.depth] = [node.expression_encoding]
         push!(big_vector, node.expression_encoding)
-        push!(hp, 1)
-        push!(tmp, Int16[])
-        padding = length(tmp) > 1 ? zeros(Int16, length(tmp[end - 1])) : Int16[]
-        append!(tmp[end], padding)
-        push!(tmp[end], 0)
+        push!(tmp_hp, Int16[])
+        push!(tmp_hn, Int16[])
+        padding = length(tmp_hn) > 1 ? zeros(Int16, length(tmp_hn[end - 1])) : Int16[]
+        append!(tmp_hp[end], padding)
+        append!(tmp_hn[end], padding)
+        push!(tmp_hn[end], 0)
+        push!(tmp_hp[end], 1)
         for children_id in soltree[node.parent].children
             if children_id == node.node_id
                 continue
             end
             push!(depth_dict[node.depth], soltree[children_id].expression_encoding)
             push!(big_vector, soltree[children_id].expression_encoding)
-            push!(hp, 0)
-            push!(tmp[end], 1)
+            push!(tmp_hp[end], 0)
+            push!(tmp_hn[end], 1)
         end
         node = soltree[node.parent]
     end
     padding_value = 0
     hn = nothing
-    if !isempty(tmp)
-        max_length = maximum(length, tmp)
+    if !isempty(tmp_hn)
+        max_length = maximum(length, tmp_hn)
 
-        padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in tmp]
+        padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in tmp_hn]
         hn = hcat(padded_vectors...)
+    end
+
+    hp = nothing
+    if !isempty(tmp_hp)
+        max_length = maximum(length, tmp_hp)
+
+        padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in tmp_hp]
+        hp = hcat(padded_vectors...)
     end
 
     ds = nothing
     if !isempty(big_vector)
         ds = reduce(catobs, big_vector) 
     end
-    hp = findall(x-> x == 1, hp)
+    #hp = findall(x-> x == 1, hp)
 
     return reverse(proof_vector), depth_dict, ds, hp, hn
 end
@@ -302,7 +324,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         #     continue
         # end
     end
-    @save "training_samples10k_v1.jld2" training_samples
+    @save "training_samples1k_v1.jld2" training_samples
     #return training_samples
 end
 
@@ -317,7 +339,38 @@ function test_heuristic(heuristic, data, max_steps, max_depth)
     return mean(result)
 end
 
-hidden_size = 128
+function apply_proof_to_expr(ex, proof_vector, theory)
+    println("Root: $ex")
+    for rule_index in proof_vector
+        rule_applied = theory[rule_index]
+        ex = collect(execute(ex, [rule_applied]))[1]
+        println("$ex")
+    end
+end
+
+function heuristic_sanity_check(heuristic, training_samples, training_data)
+    count_matched = 0
+    count_all = 0
+    for (ex, sample) in zip(training_data, training_samples)
+        proof = sample.proof
+        if isempty(proof) || length(proof) <= 3
+            continue
+        end
+        res = heuristic_forward_pass(heuristic, ex, length(proof) + 1, length(proof) + 1)
+        learned_proof = res[end]
+        println("Training proof $proof: learned proof $learned_proof")
+        count_all += 1
+        if proof == learned_proof
+            count_matched += 1
+        end
+    end
+    println("====>Test results all checked samples: $count_all")
+    println("====>Test results all matched samples: $count_matched")
+    not_matched = count_all - count_matched
+    println("====>Test results all not matched samples: $not_matched")
+end
+
+hidden_size = 256 
 heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
@@ -325,7 +378,7 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-epochs = 4
+epochs = 5
 optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
 pc = Flux.params(heuristic)
@@ -334,9 +387,9 @@ max_depth = 10
 # Check : 2368
 # Iitial expression: (((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2
 # Simplified expression: ((v2 + (min(v0, 509) + v1 * 516)) + 7) - 2 <= (522 + v2) + v1 * 516
-
+@load "training_samples1k_v1.jld2" training_samples
 for _ in 1:epochs 
-    train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+    #train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
     for sample in training_samples
         if isnothing(sample.training_data)
             continue
@@ -349,3 +402,6 @@ for _ in 1:epochs
 end
 # avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)
 # println("ALR: $avarage_length_reduction")
+# heuristic_forward_pass(heuristic, training_data[1], 1000, 10)
+# apply_proof_to_expr(train_data[1], [17, 13, 30, 8, 11, 1, 29], theory)
+heuristic_sanity_check(heuristic, training_samples, train_data)

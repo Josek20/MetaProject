@@ -13,11 +13,7 @@ end
 
 # Initialize model and example tree
 all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&]
-in_dim = length(all_symbols) + 2
 symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
-out_dim = in_dim * 2
-
-ex = :(a - b + c) 
 
 function ex2mill(ex::Expr, symbols_to_index)
     if ex.head == :call
@@ -86,6 +82,6 @@ embed(m::ExprModel, ds::Missing) = missing
 
 function loss(heuristic, big_vector, hp=nothing, hn=nothing)
     o = heuristic(big_vector) 
-    diff = transpose(o[hp]) - o * hn
+    diff = o * hp - o * hn
     return mean(log.(1 .+ exp.(o)))
 end
