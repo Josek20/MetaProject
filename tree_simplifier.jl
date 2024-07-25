@@ -104,6 +104,7 @@ exp_size(ex::Expr) = sum(exp_size.(ex.args))
 exp_size(ex::Symbol) = 1f0
 exp_size(ex::Int) = 1f0
 exp_size(ex::Float64) = 1f0
+exp_size(ex::Float32) = 1f0
 
 # get all availabel rules to apply
 execute(ex, theory) = map(th->Postwalk(Metatheory.Chain([th]))(ex), theory)
@@ -290,9 +291,9 @@ mutable struct TrainingSample{D, S, E, P, HP, HN}
 end
 
 function isbetter(a::TrainingSample, b::TrainingSample)
-    if length(a.expression) > length(b.expression)
+    if exp_size(a.expression) > exp_size(b.expression)
         return true
-      elseif length(a.expression) == length(b.expression) && length(a.proof) > length(b.proof)
+      elseif exp_size(a.expression) == exp_size(b.expression) && length(a.proof) > length(b.proof)
         return true
     else
         return false
@@ -308,7 +309,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         #try
         simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
         println("Saturated: $saturated")
-        new_sample = TrainingSample(big_vector, saturated, exp_size(simplified_expression), proof_vector, hp, hn)
+        new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn)
         if length(training_samples) > index 
             training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
         end
@@ -353,6 +354,7 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
     count_all = 0
     for (ex, sample) in zip(training_data, training_samples)
         proof = sample.proof
+        println(sample.expression)
         if isempty(proof) || length(proof) <= 3
             continue
         end
@@ -370,6 +372,19 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
     println("====>Test results all not matched samples: $not_matched")
 end
 
+
+function single_sample_check(heuristic, training_sample, training_data, pc, optimizer)
+    n = 10 
+    for _ in 1:n
+        grad = gradient(pc) do
+            a = loss(heuristic, training_sample.training_data, training_sample.hp, training_sample.hn)
+            println(a)
+            return a
+        end
+        Flux.update!(optimizer, pc, grad)
+    end
+    heuristic_sanity_check(heuristic, [training_sample], [training_data])
+end
 hidden_size = 256 
 heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
@@ -378,24 +393,29 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-epochs = 2
+epochs = 1
 optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
-pc = Flux.params(heuristic)
+pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 max_steps = 1000
 max_depth = 10
 # Check : 2368
 # Iitial expression: (((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2
 # Simplified expression: ((v2 + (min(v0, 509) + v1 * 516)) + 7) - 2 <= (522 + v2) + v1 * 516
-@load "training_samples1k_v2.jld2" training_samples
+#@load "training_samples1k_v2.jld2" training_samples
 for _ in 1:epochs 
-    #train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+    train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
     for sample in training_samples
-        if isnothing(sample.training_data)
+        if isnothing(sample.training_data) || length(sample.proof) <= 3
             continue
         end
         grad = gradient(pc) do
-            loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            println(a)
+            if isnan(a)
+                println(sample.expression)
+            end
+            return a
         end
         Flux.update!(optimizer, pc, grad)
     end
@@ -404,4 +424,5 @@ end
 # println("ALR: $avarage_length_reduction")
 # heuristic_forward_pass(heuristic, training_data[1], 1000, 10)
 # apply_proof_to_expr(train_data[1], [17, 13, 30, 8, 11, 1, 29], theory)
-heuristic_sanity_check(heuristic, training_samples, train_data)
+#heuristic_sanity_check(heuristic, training_samples[1:10], train_data[1:10])
+single_sample_check(heuristic, training_samples[1], train_data[1], pc, optimizer)

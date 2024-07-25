@@ -82,6 +82,7 @@ embed(m::ExprModel, ds::Missing) = missing
 
 function loss(heuristic, big_vector, hp=nothing, hn=nothing)
     o = heuristic(big_vector) 
-    diff = o * hn - o * hp
+    #diff = o * hn - o * hp
+    diff = o * hp - o * hn
     return mean(log.(1 .+ exp.(diff)))
 end
