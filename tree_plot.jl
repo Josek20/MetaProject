@@ -1,12 +1,12 @@
 include("tree_simplifier.jl")
 
 
-ex = train_data[1]
 #ex = :((((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2)
-
+ex = train_data[1]
 soltree = Dict{UInt64, Node}()
-open_list = PriorityQueue{Node, Float32}()
+open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
 close_list = Set{UInt64}()
+expansion_history = Dict{UInt64, Vector}()
 #encodings_buffer = Dict{UInt64, ExprEncoding}()
 encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
@@ -17,15 +17,14 @@ soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
-build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 10)
+build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history)
 println("Have successfuly finished bulding simplification tree!")
 
 smallest_node = extract_smallest_terminal_node(soltree, close_list)
 simplified_expression = smallest_node.ex
 println("Simplified expression: $simplified_expression")
 
-proof_vector, depth_dict, big_vector, hp, hn = extract_rules_applied(smallest_node, soltree)
-
+proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
 println("Proof vector: $proof_vector")
 
 preamble1 = """
@@ -67,40 +66,60 @@ preamble2 = """
 \\begin{tikzpicture}
     [
         edge from parent/.style = {draw, -latex},
-        level 1/.style = {sibling distance=10cm},
-        level 2/.style = {sibling distance=12cm},
-        every node/.style = {rectangle, draw, fill=blue!20, minimum size=3mm}
+        level 1/.style = {sibling distance=20cm},
+        level 2/.style = {sibling distance=10cm},
+        every node/.style = {rectangle, draw, minimum size=3mm}
     ]
+    \\tikzstyle{coloredNode} = [fill=blue!20]
+    \\tikzstyle{rootNode} = [fill=green!20]
 """
 
 closing = """
 \\end{tikzpicture}
 \\end{document}
 """
-function tree_traversal!(io, node, soltree)
+function tree_traversal!(io, node, soltree, expansion_history, proof)
     if isempty(node.children)
-        println(io, "node{$(node.ex)}")
+        step_number, prob = expansion_history[node.node_id]
+        prob = round(Float64(prob), digits=2)
+        step_number = Integer(step_number)
+        if node.node_id in proof
+            println(io, "node[coloredNode]{$(node.ex)}")
+        else
+            println(io, "node{$(node.ex)}")
+        end
+        println(io, "edge from parent node[midway, left] {$((step_number, prob))}")
         return 
     end
+    step_number, prob = expansion_history[node.node_id]
+    prob = round(Float64(prob), digits=2)
+    step_number = Integer(step_number)
     if node.depth == 0
-        println(io, "\\node {$(node.ex)}")
+        println(io, "\\node[rootNode] {$(node.ex)}")
+    elseif node.node_id in proof
+        println(io, "node[coloredNode] {$(node.ex)}")
+      #println(io, "edge from parent node[midway, left] {$(id, prob)}")
     else
         println(io, "node {$(node.ex)}")
+        #println(io, "edge from parent node[midway, left] {$((step_number, prob))}")
     end
     for id in node.children
         println(io, "child{")
-        tree_traversal!(io, soltree[id], soltree)
+        tree_traversal!(io, soltree[id], soltree, expansion_history, proof)
         println(io, "}")
+    end
+    if node.depth != 0
+        println(io, "edge from parent node[midway, left] {$((step_number, prob))}")
     end
 end
 
-function create_latex_tree3(io, root, soltree, smallest_node, preamble, closing, hspace=1, vspace=1)
+function create_latex_tree3(io, root, soltree, smallest_node, preamble, closing, expansion_history, proof, hspace=1, vspace=1)
     println(io, preamble)
     tmp = Dict()
     max_depth = max(map(x->x.depth, values(soltree))...)
     reversed_depth = reverse(collect(1:max_depth + 1))
     #println(io, "\\node {$(root.ex)}")
-    tree_traversal!(io, root, soltree)
+    tree_traversal!(io, root, soltree, expansion_history, proof)
     println(io, ";")
     println(io, closing)
 end
@@ -126,4 +145,4 @@ function create_latex_tree2(io, root, soltree, smallest_node, preamble, closing,
     println(io, closing)
 end
 
-open(io -> create_latex_tree3(io, root, soltree,smallest_node, preamble2, closing), "my_tree.tex", "w")
+open(io -> create_latex_tree3(io, root, soltree, smallest_node, preamble2, closing, expansion_history, node_proof_vector), "my_tree.tex", "w")

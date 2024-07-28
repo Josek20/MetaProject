@@ -86,3 +86,10 @@ function loss(heuristic, big_vector, hp=nothing, hn=nothing)
     diff = o * hp - o * hn
     return mean(log.(1 .+ exp.(diff)))
 end
+
+
+function loss1(o, hp=nothing, hn=nothing)
+    diff = o * hn - o * hp
+    #diff = o * hp - o * hn
+    return mean(log.(1 .+ exp.(diff)))
+end
