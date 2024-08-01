@@ -82,14 +82,30 @@ embed(m::ExprModel, ds::Missing) = missing
 
 function loss(heuristic, big_vector, hp=nothing, hn=nothing)
     o = heuristic(big_vector) 
-    #diff = o * hn - o * hp
-    diff = o * hp - o * hn
+    p = (o * hp) .* hn
+
+    diff = p - o[1, :] .* hn
+    filtered_diff = filter(x-> x != 0, diff)
     return mean(log.(1 .+ exp.(diff)))
 end
 
+function heuristic_loss(heuristics, in_solution, not_in_solution)
+    loss_t = 0.0
+    in_solution = findall(x->x!=0,sum(in_solution, dims=2)[:, 1]) 
+    for (ind,i) in enumerate(in_solution)
+        a = findall(x->x!=0,not_in_solution[:, ind])
+        for j in a
+            if heuristics[i] >= heuristics[j]
+                loss_t += heuristics[i] - heuristics[j] + 1
+            end
+        end
+    end
 
-function loss1(o, hp=nothing, hn=nothing)
-    diff = o * hn - o * hp
-    #diff = o * hp - o * hn
-    return mean(log.(1 .+ exp.(diff)))
+    return loss_t
 end
+
+# function loss1(o, hp=nothing, hn=nothing)
+#     diff = o * hn - o * hp
+#     #diff = o * hp - o * hn
+#     return mean(log.(1 .+ exp.(diff)))
+# end

@@ -2,9 +2,22 @@ include("tree_simplifier.jl")
 
 
 #ex = :((((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2)
-ex = train_data[1]
+# for i in 1:10
+#     heuristic = ExprModel(
+#         Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
+#         Mill.SegmentedSumMax(hidden_size),
+#         Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
+#         Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
+#         )
+#     optimizer = ADAM()
+#     pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
+#     println("Exampl number=======$i=======")
+#     single_sample_check!(heuristic, training_samples[i], train_data[i], pc, optimizer)
+# end
+
+ex = train_data[n]
 soltree = Dict{UInt64, Node}()
-open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+open_list = PriorityQueue{Node, Float32}()
 close_list = Set{UInt64}()
 expansion_history = Dict{UInt64, Vector}()
 #encodings_buffer = Dict{UInt64, ExprEncoding}()
@@ -17,7 +30,7 @@ soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
-build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history)
+build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 100, 6, expansion_history)
 println("Have successfuly finished bulding simplification tree!")
 
 smallest_node = extract_smallest_terminal_node(soltree, close_list)
@@ -26,6 +39,16 @@ println("Simplified expression: $simplified_expression")
 
 proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
 println("Proof vector: $proof_vector")
+
+for (ind, (i, cof)) in enumerate(open_list)
+    expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
+end
+
+test_open_list = PriorityQueue{Node, Float32}()
+test_expansion_history = Dict{UInt64, Vector}()
+for (k, n) in soltree
+    enqueue!(test_open_list, n, only(heuristic(n.expression_encoding)))
+end
 
 preamble1 = """
 \\documentclass{standalone}
@@ -80,15 +103,19 @@ closing = """
 """
 function tree_traversal!(io, node, soltree, expansion_history, proof)
     if isempty(node.children)
-        step_number, prob = expansion_history[node.node_id]
-        prob = round(Float64(prob), digits=2)
-        step_number = Integer(step_number)
+        if haskey(expansion_history, node.node_id)
+            step_number, prob = expansion_history[node.node_id]
+            prob = round(Float64(prob), digits=2)
+            step_number = Integer(step_number)
+        end
         if node.node_id in proof
             println(io, "node[coloredNode]{$(node.ex)}")
         else
             println(io, "node{$(node.ex)}")
         end
-        println(io, "edge from parent node[midway, left] {$((step_number, prob))}")
+        if haskey(expansion_history, node.node_id)
+            println(io, "edge from parent node[midway, left] {$((step_number, prob))}")
+        end
         return 
     end
     step_number, prob = expansion_history[node.node_id]

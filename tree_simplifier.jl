@@ -132,7 +132,7 @@ function push_to_tree!(soltree::Dict, new_node::Node)
 end
 
 
-function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64})::Nothing 
+function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}) 
     ex = parent.ex
     #println("Expanding nodes from expression $ex")
     succesors = filter(r -> r[2] != ex, collect(enumerate(execute(ex, theory))))
@@ -148,15 +148,17 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
             #println(new_exp)
             enqueue!(open_list, new_node, only(heuristic(new_node.expression_encoding)))
         end
+        if new_exp == 1
+            return true
+        end
     end
+    return false
 end
 
 
 function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history)
-    #expanded_nodes = MyNodes[]
-    #max_steps = 1000
-    #not_expanded_nodes = Vector[]
     step = 0
+    reached_goal = false
     while length(open_list) > 0
         if max_steps == step
             break
@@ -173,8 +175,11 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         #     continue
         # end
 
-        expand_node!(node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index) 
-        #println(length(open_list))
+        reached_goal = expand_node!(node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index)
+
+        if reached_goal
+            break
+        end
         push!(close_list, node.node_id)
     end
 end
@@ -202,6 +207,7 @@ function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node})
     #nodes_to_use = filter(n->n.depth<node.depth, values(soltree)
     while node.parent != node.node_id
         push!(proof_vector, node.rule_index)
+        # push!(node_proof_vector, node.ex)
         push!(node_proof_vector, node.node_id)
         depth_dict[node.depth] = [node.expression_encoding]
         push!(big_vector, node.expression_encoding)
@@ -218,6 +224,8 @@ function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node})
             end
             push!(depth_dict[node.depth], soltree[children_id].expression_encoding)
             push!(big_vector, soltree[children_id].expression_encoding)
+            # push!(node_proof_vector, soltree[children_id].ex)
+            push!(node_proof_vector, node.node_id)
             push!(tmp_hp[end], 0)
             push!(tmp_hn[end], 1)
         end
@@ -230,6 +238,13 @@ function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node})
 
         padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in tmp_hn]
         hn = hcat(padded_vectors...)
+        # for i in 2:size(hn, 2)
+        #     hn[:, i] .= hn[:, i] + hn[:, i - 1]
+        # end
+
+        for i in size(hn, 2) - 1:-1:1
+            hn[:, i] .= hn[:, i] + hn[:, i + 1]
+        end
     end
 
     hp = nothing
@@ -260,7 +275,7 @@ end
 
 function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth)
     soltree = Dict{UInt64, Node}()
-    open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
     expansion_history = Dict{UInt64, Vector}()
     #encodings_buffer = Dict{UInt64, ExprEncoding}()
@@ -360,9 +375,9 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
     for (ex, sample) in zip(training_data, training_samples)
         proof = sample.proof
         println(sample.expression)
-        if isempty(proof) || length(proof) <= 3
-            continue
-        end
+        # if isempty(proof) || length(proof) <= 3
+        #     continue
+        # end
         res = heuristic_forward_pass(heuristic, ex, length(proof) + 1, length(proof) + 1)
         learned_proof = res[end]
         println("Training proof $proof: learned proof $learned_proof")
@@ -378,12 +393,14 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
 end
 
 
-function single_sample_check(heuristic, training_sample, training_data, pc, optimizer)
-    n = 20
+function single_sample_check!(heuristic, training_sample, training_data, pc, optimizer)
+    n = 10
     for _ in 1:n
         grad = gradient(pc) do
-            o = heuristic(training_sample.training_data)
-            a = loss1(o, training_sample.hp, training_sample.hn)
+            # o = heuristic(training_sample.training_data)
+            # a = heuristic_loss(o, training_sample.hp, training_sample.hn)
+            # a = loss1(o, training_sample.hp, training_sample.hn)
+            a = loss(heuristic, training_sample.training_data, training_sample.hp, training_sample.hn)
             println(a)
             return a
         end
@@ -391,12 +408,14 @@ function single_sample_check(heuristic, training_sample, training_data, pc, opti
     end
     heuristic_sanity_check(heuristic, [training_sample], [training_data])
 end
+
+
 hidden_size = 128 
 heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
     Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
-    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1, sigmoid))
+    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
 epochs = 1
@@ -405,30 +424,34 @@ training_samples = Vector{TrainingSample}()
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 max_steps = 1000
 max_depth = 10
+n = 4
 # Check : 2368
 # Iitial expression: (((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2
 # Simplified expression: ((v2 + (min(v0, 509) + v1 * 516)) + 7) - 2 <= (522 + v2) + v1 * 516
 @load "training_samples1k_v2.jld2" training_samples
 # for _ in 1:epochs 
-#     #train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+#     # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
 #     for sample in training_samples
-#         if isnothing(sample.training_data) || length(sample.proof) <= 3
+#         if isnothing(sample.training_data) 
 #             continue
 #         end
 #         grad = gradient(pc) do
-#             a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
+#             o = heuristic(sample.training_data)
+#             a = heuristic_loss(o, sample.hp, sample.hn)
+#             # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
 #             println(a)
-#             if isnan(a)
-#                 println(sample.expression)
-#             end
+#             # if isnan(a)
+#             #     println(sample.expression)
+#             # end
 #             return a
 #         end
 #         Flux.update!(optimizer, pc, grad)
 #     end
 # end
-# avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)
 # println("ALR: $avarage_length_reduction")
 # heuristic_forward_pass(heuristic, training_data[1], 1000, 10)
 # apply_proof_to_expr(train_data[1], [17, 13, 30, 8, 11, 1, 29], theory)
-#heuristic_sanity_check(heuristic, training_samples[1:10], train_data[1:10])
-single_sample_check(heuristic, training_samples[1], train_data[1], pc, optimizer)
+# heuristic_sanity_check(heuristic, training_samples[1:10], train_data[1:10])
+# avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)
+
+single_sample_check!(heuristic, training_samples[n], train_data[n], pc, optimizer)
