@@ -86,7 +86,7 @@ function loss(heuristic, big_vector, hp=nothing, hn=nothing)
 
     diff = p - o[1, :] .* hn
     filtered_diff = filter(x-> x != 0, diff)
-    return mean(log.(1 .+ exp.(diff)))
+    return sum(log.(1 .+ exp.(diff)))
 end
 
 function heuristic_loss(heuristics, in_solution, not_in_solution)

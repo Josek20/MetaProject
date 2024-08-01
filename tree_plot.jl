@@ -15,40 +15,6 @@ include("tree_simplifier.jl")
 #     single_sample_check!(heuristic, training_samples[i], train_data[i], pc, optimizer)
 # end
 
-ex = train_data[n]
-soltree = Dict{UInt64, Node}()
-open_list = PriorityQueue{Node, Float32}()
-close_list = Set{UInt64}()
-expansion_history = Dict{UInt64, Vector}()
-#encodings_buffer = Dict{UInt64, ExprEncoding}()
-encodings_buffer = Dict{UInt64, ProductNode}()
-println("Initial expression: $ex")
-#encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
-encoded_ex = ex2mill(ex, symbols_to_index)
-root = Node(ex, 0, hash(ex), 0, encoded_ex)
-soltree[root.node_id] = root
-#push!(open_list, root.node_id)
-enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
-
-build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 100, 6, expansion_history)
-println("Have successfuly finished bulding simplification tree!")
-
-smallest_node = extract_smallest_terminal_node(soltree, close_list)
-simplified_expression = smallest_node.ex
-println("Simplified expression: $simplified_expression")
-
-proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
-println("Proof vector: $proof_vector")
-
-for (ind, (i, cof)) in enumerate(open_list)
-    expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
-end
-
-test_open_list = PriorityQueue{Node, Float32}()
-test_expansion_history = Dict{UInt64, Vector}()
-for (k, n) in soltree
-    enqueue!(test_open_list, n, only(heuristic(n.expression_encoding)))
-end
 
 preamble1 = """
 \\documentclass{standalone}
@@ -172,4 +138,47 @@ function create_latex_tree2(io, root, soltree, smallest_node, preamble, closing,
     println(io, closing)
 end
 
-open(io -> create_latex_tree3(io, root, soltree, smallest_node, preamble2, closing, expansion_history, node_proof_vector), "my_tree.tex", "w")
+function plot_tree()
+    ex = train_data[n]
+    soltree = Dict{UInt64, Node}()
+    open_list = PriorityQueue{Node, Float32}()
+    close_list = Set{UInt64}()
+    expansion_history = Dict{UInt64, Vector}()
+    #encodings_buffer = Dict{UInt64, ExprEncoding}()
+    encodings_buffer = Dict{UInt64, ProductNode}()
+    println("Initial expression: $ex")
+    #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
+    encoded_ex = ex2mill(ex, symbols_to_index)
+    root = Node(ex, 0, hash(ex), 0, encoded_ex)
+    soltree[root.node_id] = root
+    #push!(open_list, root.node_id)
+    enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
+
+    build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 100, 6, expansion_history)
+    println("Have successfuly finished bulding simplification tree!")
+
+    smallest_node = extract_smallest_terminal_node(soltree, close_list)
+    simplified_expression = smallest_node.ex
+    println("Simplified expression: $simplified_expression")
+
+    proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
+    println("Proof vector: $proof_vector")
+
+    for (ind, (i, cof)) in enumerate(open_list)
+        expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
+    end
+
+    test_open_list = PriorityQueue{Node, Float32}()
+    test_expansion_history = Dict{UInt64, Vector}()
+    for (k, n) in soltree
+        enqueue!(test_open_list, n, only(heuristic(n.expression_encoding)))
+    end
+    
+    for (k,v) in depth_dict
+        tmp = heuristic.(v)
+        println("Depth $k: $tmp")
+    end
+    open(io -> create_latex_tree3(io, root, soltree, smallest_node, preamble2, closing, expansion_history, node_proof_vector), "my_tree.tex", "w")
+end
+
+plot_tree()

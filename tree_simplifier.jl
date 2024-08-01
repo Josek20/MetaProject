@@ -6,9 +6,11 @@ using Metatheory
 using Metatheory.Rewriters
 using DataStructures
 
+train_data_path = "data/train.json"
+test_data_path = "data/test.json"
 
-train_data = load_data("data/train.json")[1:1000]
-test_data = load_data("data/test.json")[1:1000]
+train_data = isfile(train_data_path) ? load_data(train_data_path)[1:1000] : load_data(test_data_path)[1:1000]
+test_data = load_data(test_data_path)[1:1000]
 train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
 #data = [:(a - b + c / 109 * 109)]
@@ -424,34 +426,38 @@ training_samples = Vector{TrainingSample}()
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 max_steps = 1000
 max_depth = 10
-n = 4
+n = 1
 # Check : 2368
 # Iitial expression: (((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2
 # Simplified expression: ((v2 + (min(v0, 509) + v1 * 516)) + 7) - 2 <= (522 + v2) + v1 * 516
-@load "training_samples1k_v2.jld2" training_samples
-# for _ in 1:epochs 
-#     # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-#     for sample in training_samples
-#         if isnothing(sample.training_data) 
-#             continue
-#         end
-#         grad = gradient(pc) do
-#             o = heuristic(sample.training_data)
-#             a = heuristic_loss(o, sample.hp, sample.hn)
-#             # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
-#             println(a)
-#             # if isnan(a)
-#             #     println(sample.expression)
-#             # end
-#             return a
-#         end
-#         Flux.update!(optimizer, pc, grad)
-#     end
-# end
+if isfile("training_samples1k_v2.jld2")
+    @load "training_samples1k_v2.jld2" training_samples
+else
+    train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+end
+for _ in 1:epochs 
+    # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+    for sample in training_samples[1:10]
+        if isnothing(sample.training_data) 
+            continue
+        end
+        grad = gradient(pc) do
+            o = heuristic(sample.training_data)
+            a = heuristic_loss(o, sample.hp, sample.hn)
+            # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            println(a)
+            # if isnan(a)
+            #     println(sample.expression)
+            # end
+            return a
+        end
+        Flux.update!(optimizer, pc, grad)
+    end
+end
 # println("ALR: $avarage_length_reduction")
 # heuristic_forward_pass(heuristic, training_data[1], 1000, 10)
 # apply_proof_to_expr(train_data[1], [17, 13, 30, 8, 11, 1, 29], theory)
-# heuristic_sanity_check(heuristic, training_samples[1:10], train_data[1:10])
+heuristic_sanity_check(heuristic, training_samples[1:10], train_data[1:10])
 # avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)
 
-single_sample_check!(heuristic, training_samples[n], train_data[n], pc, optimizer)
+# single_sample_check!(heuristic, training_samples[n], train_data[n], pc, optimizer)
