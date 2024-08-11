@@ -63,6 +63,9 @@ theory = @theory a b c begin
     a <= b + c --> a - c <= b
     a <= b + c --> a - b <= c
 
+    a + c <= b --> a <= b - c
+    a - c <= b --> a <= b + c
+
     min(a, min(a, b)) --> min(a, b)
     min(min(a, b), b) --> min(a, b)
     max(a, max(a, b)) --> max(a, b)
@@ -109,10 +112,73 @@ exp_size(ex::Float64) = 1f0
 exp_size(ex::Float32) = 1f0
 
 # get all availabel rules to apply
-execute(ex, theory) = map(th->Postwalk(Metatheory.Chain([th]))(ex), theory)
+# execute(ex, theory) = map(th->Postwalk(Metatheory.Chain([th]))(ex), theory)
 
 
-# build a tree
+function my_rewriter!(position, ex, rule)
+    if isempty(position)
+        # @show ex
+        return rule(ex) 
+    end
+    ind = position[1]
+    # @show ex
+    ret = my_rewriter!(position[2:end], ex.args[ind], rule)
+    if !isnothing(ret)
+        # @show ret
+        # println("Suc")
+        ex.args[ind] = ret
+    end
+    return nothing
+end
+
+
+function traverse_expr!(ex, matcher, tree_ind, trav_indexs, tmp)
+    if typeof(ex) != Expr
+        # trav_indexs = []
+        return
+    end
+    a = matcher(ex)
+    # @show trav_indexs
+    if !isnothing(a)
+        b = copy(trav_indexs)
+        push!(tmp, b)
+    end
+
+    # Traverse sub-expressions
+    for (ind, i) in enumerate(ex.args)
+        # Update the traversal index path with the current index
+        push!(trav_indexs, ind)
+
+        # Recursively traverse the sub-expression
+        traverse_expr!(i, matcher, tree_ind, trav_indexs, tmp)
+
+        # After recursion, pop the last index to backtrack to the correct level
+        pop!(trav_indexs)
+    end
+end
+
+function execute(ex, theory)
+    res = []
+    old_ex = copy(ex)
+    for (ind, r) in enumerate(theory)
+        tmp = []
+        traverse_expr!(ex, r, 1, [], tmp) 
+        if isempty(tmp)
+            push!(res, (ind, ex))
+        else
+            for i in tmp
+                old_ex = copy(ex)
+                if isempty(i)
+                    push!(res, (ind, r(old_ex)))
+                else 
+                    my_rewriter!(i, old_ex, r)
+                    push!(res, (ind, old_ex))
+                end
+            end
+        end
+    end
+    return res
+end
 
 
 function push_to_tree!(soltree::Dict, new_node::Node)
@@ -137,7 +203,7 @@ end
 function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}) 
     ex = parent.ex
     #println("Expanding nodes from expression $ex")
-    succesors = filter(r -> r[2] != ex, collect(enumerate(execute(ex, theory))))
+    succesors = filter(r -> r[2] != ex, execute(ex, theory))
 
     for (rule_index, new_exp) in succesors
         if !haskey(encodings_buffer, hash(new_exp))
@@ -168,7 +234,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         node, prob = dequeue_pair!(open_list)
         expansion_history[node.node_id] = [step, prob]
         step += 1
-        println(node.rule_index)
+        # println(node.rule_index)
         if node.depth >= max_depth
             continue
         end
@@ -180,10 +246,11 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         reached_goal = expand_node!(node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index)
 
         if reached_goal
-            break
+            return true 
         end
         push!(close_list, node.node_id)
     end
+    return false
 end
 
 
@@ -290,7 +357,7 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth)
     #push!(open_list, root.node_id)
     enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
-    build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history)
+    reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history)
     println("Have successfuly finished bulding simplification tree!")
 
     smallest_node = extract_smallest_terminal_node(soltree, close_list)
@@ -300,7 +367,7 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth)
     proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
     println("Proof vector: $proof_vector")
 
-    return simplified_expression, depth_dict, big_vector, length(open_list) == 0, hp, hn, root, proof_vector
+    return simplified_expression, depth_dict, big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector
 end
 
 mutable struct TrainingSample{D, S, E, P, HP, HN}
@@ -347,7 +414,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         #     continue
         # end
     end
-    @save "training_samples1k_v2.jld2" training_samples
+    @save "training_samples10k_v3.jld2" training_samples
     #return training_samples
 end
 
@@ -420,44 +487,42 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-epochs = 1
+epochs = 10
 optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 max_steps = 1000
 max_depth = 10
 n = 1
-# Check : 2368
-# Iitial expression: (((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2
-# Simplified expression: ((v2 + (min(v0, 509) + v1 * 516)) + 7) - 2 <= (522 + v2) + v1 * 516
-if isfile("training_samples1k_v2.jld2")
-    @load "training_samples1k_v2.jld2" training_samples
-else
-    train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-end
-for _ in 1:epochs 
-    # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-    for sample in training_samples[1:10]
-        if isnothing(sample.training_data) 
-            continue
-        end
-        grad = gradient(pc) do
-            o = heuristic(sample.training_data)
-            a = heuristic_loss(o, sample.hp, sample.hn)
-            # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
-            println(a)
-            # if isnan(a)
-            #     println(sample.expression)
-            # end
-            return a
-        end
-        Flux.update!(optimizer, pc, grad)
-    end
-end
+@load "training_samples10k_v3.jld2" training_samples
+# if isfile("asdfasdf.jld2")
+#     @load "training_samples10k_v2.jld2" training_samples
+# else
+#     train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth)
+# end
+# for _ in 1:epochs 
+#     train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+#     for sample in training_samples[n:n]
+#         if isnothing(sample.training_data) 
+#             continue
+#         end
+#         grad = gradient(pc) do
+#             o = heuristic(sample.training_data)
+#             a = heuristic_loss(o, sample.hp, sample.hn)
+#             # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
+#             println(a)
+#             # if isnan(a)
+#             #     println(sample.expression)
+#             # end
+#             return a
+#         end
+#         Flux.update!(optimizer, pc, grad)
+#     end
+# end
 # println("ALR: $avarage_length_reduction")
 # heuristic_forward_pass(heuristic, training_data[1], 1000, 10)
 # apply_proof_to_expr(train_data[1], [17, 13, 30, 8, 11, 1, 29], theory)
-heuristic_sanity_check(heuristic, training_samples[1:10], train_data[1:10])
+# heuristic_sanity_check(heuristic, training_samples[1:10], train_data[1:10])
 # avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)
 
-# single_sample_check!(heuristic, training_samples[n], train_data[n], pc, optimizer)
+single_sample_check!(heuristic, training_samples[n], train_data[n], pc, optimizer)

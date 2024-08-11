@@ -104,8 +104,3 @@ function heuristic_loss(heuristics, in_solution, not_in_solution)
     return loss_t
 end
 
-# function loss1(o, hp=nothing, hn=nothing)
-#     diff = o * hn - o * hp
-#     #diff = o * hp - o * hn
-#     return mean(log.(1 .+ exp.(diff)))
-# end
