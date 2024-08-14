@@ -89,7 +89,7 @@ end
 
 mutable struct Node{E, P}
     ex::E
-    rule_index::Int64
+    rule_index::Tuple
     children::Vector{UInt64}
     parent::P
     depth::Int64
@@ -100,7 +100,7 @@ end
 
 Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 
-function Node(ex::Expr, rule_index::Int64, parent::UInt64, depth::Int64, ee::Union{ExprEncoding, ProductNode})
+function Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::Union{ExprEncoding, ProductNode})
     Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 end
 
@@ -164,15 +164,15 @@ function execute(ex, theory)
         tmp = []
         traverse_expr!(ex, r, 1, [], tmp) 
         if isempty(tmp)
-            push!(res, (ind, ex))
+            push!(res, ((ind, 0), ex))
         else
-            for i in tmp
+            for (ri, i) in enumerate(tmp)
                 old_ex = copy(ex)
                 if isempty(i)
-                    push!(res, (ind, r(old_ex)))
+                    push!(res, ((ind, ri), r(old_ex)))
                 else 
                     my_rewriter!(i, old_ex, r)
-                    push!(res, (ind, old_ex))
+                    push!(res, ((ind, ri), old_ex))
                 end
             end
         end
@@ -352,7 +352,7 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth)
     println("Initial expression: $ex")
     #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
     encoded_ex = ex2mill(ex, symbols_to_index)
-    root = Node(ex, 0, hash(ex), 0, encoded_ex)
+    root = Node(ex, (0,0), hash(ex), 0, encoded_ex)
     soltree[root.node_id] = root
     #push!(open_list, root.node_id)
     enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
@@ -361,6 +361,10 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth)
     println("Have successfuly finished bulding simplification tree!")
 
     smallest_node = extract_smallest_terminal_node(soltree, close_list)
+    for (ind, (i, cof)) in enumerate(open_list)
+        expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
+    end
+    @show expansion_history[smallest_node.node_id]
     simplified_expression = smallest_node.ex
     println("Simplified expression: $simplified_expression")
 
@@ -370,13 +374,14 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth)
     return simplified_expression, depth_dict, big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector
 end
 
-mutable struct TrainingSample{D, S, E, P, HP, HN}
+mutable struct TrainingSample{D, S, E, P, HP, HN, IE}
     training_data::D
     saturated::S
     expression::E
     proof::P
     hp::HP
     hn::HN
+    initial_expr::IE
 end
 
 function isbetter(a::TrainingSample, b::TrainingSample)
@@ -398,7 +403,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         #try
         simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
         println("Saturated: $saturated")
-        new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn)
+        new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, i)
         if length(training_samples) > index 
             training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
         end
@@ -414,7 +419,8 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         #     continue
         # end
     end
-    @save "training_samples10k_v3.jld2" training_samples
+    data_len = length(data)
+    @save "training_samplesk$(data_len)_v3.jld2" training_samples
     #return training_samples
 end
 
@@ -447,7 +453,8 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
         # if isempty(proof) || length(proof) <= 3
         #     continue
         # end
-        res = heuristic_forward_pass(heuristic, ex, length(proof) + 1, length(proof) + 1)
+        # res = heuristic_forward_pass(heuristic, ex, length(proof) + 1, length(proof) + 1)
+        res = heuristic_forward_pass(heuristic, ex, 1000, 10)
         learned_proof = res[end]
         println("Training proof $proof: learned proof $learned_proof")
         count_all += 1
@@ -466,11 +473,11 @@ function single_sample_check!(heuristic, training_sample, training_data, pc, opt
     n = 10
     for _ in 1:n
         grad = gradient(pc) do
-            # o = heuristic(training_sample.training_data)
-            # a = heuristic_loss(o, training_sample.hp, training_sample.hn)
+            o = heuristic(training_sample.training_data)
+            a = heuristic_loss(o, training_sample.hp, training_sample.hn)
             # a = loss1(o, training_sample.hp, training_sample.hn)
-            a = loss(heuristic, training_sample.training_data, training_sample.hp, training_sample.hn)
-            println(a)
+            # a = loss(heuristic, training_sample.training_data, training_sample.hp, training_sample.hn)
+            @show a
             return a
         end
         Flux.update!(optimizer, pc, grad)
@@ -478,6 +485,30 @@ function single_sample_check!(heuristic, training_sample, training_data, pc, opt
     heuristic_sanity_check(heuristic, [training_sample], [training_data])
 end
 
+
+function test_training_samples(training_samples, train_data, theory)
+    counter_failed = 0
+    for (sample, ex) in zip(training_samples, train_data)
+        counter_failed_rule = 0
+        for (p,k) in sample.proof
+            tmp = []
+            try
+                traverse_expr!(ex, theory[p], 1, [], tmp)
+                if isempty(tmp[k])
+                    ex = theory[p](ex) 
+                else
+                    my_rewriter!(tmp[k], ex, theory[p])
+                end
+            catch
+                counter_failed_rule += 1
+            end
+        end
+        if counter_failed_rule != 0
+            counter_failed += 1
+        end
+    end
+    @show counter_failed
+end
 
 hidden_size = 128 
 heuristic = ExprModel(
@@ -494,15 +525,17 @@ pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_m
 max_steps = 1000
 max_depth = 10
 n = 1
-@load "training_samples10k_v3.jld2" training_samples
-# if isfile("asdfasdf.jld2")
-#     @load "training_samples10k_v2.jld2" training_samples
-# else
-#     train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth)
-# end
+# @load "training_samplesk1000_v3.jld2" training_samples
+if isfile("asdfasdf.jld2")
+    @load "training_samples10k_v2.jld2" training_samples
+else
+    train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+end
+
+test_training_samples(training_samples, train_data, theory)
 # for _ in 1:epochs 
-#     train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-#     for sample in training_samples[n:n]
+#     # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+#     for sample in training_samples
 #         if isnothing(sample.training_data) 
 #             continue
 #         end
@@ -510,7 +543,7 @@ n = 1
 #             o = heuristic(sample.training_data)
 #             a = heuristic_loss(o, sample.hp, sample.hn)
 #             # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
-#             println(a)
+#             @show a
 #             # if isnan(a)
 #             #     println(sample.expression)
 #             # end
@@ -520,9 +553,9 @@ n = 1
 #     end
 # end
 # println("ALR: $avarage_length_reduction")
-# heuristic_forward_pass(heuristic, training_data[1], 1000, 10)
+# heuristic_forward_pass(heuristic, training_data[n], 1000, 10)
 # apply_proof_to_expr(train_data[1], [17, 13, 30, 8, 11, 1, 29], theory)
-# heuristic_sanity_check(heuristic, training_samples[1:10], train_data[1:10])
+# heuristic_sanity_check(heuristic, training_samples[n:n], train_data[n:n])
 # avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)
 
-single_sample_check!(heuristic, training_samples[n], train_data[n], pc, optimizer)
+# single_sample_check!(heuristic, training_samples[n], train_data[n], pc, optimizer)
