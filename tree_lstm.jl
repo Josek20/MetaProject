@@ -89,8 +89,9 @@ function loss(heuristic, big_vector, hp=nothing, hn=nothing)
     return sum(log.(1 .+ exp.(diff)))
 end
 
-function heuristic_loss(heuristics, in_solution, not_in_solution)
+function heuristic_loss(heuristic, data, in_solution, not_in_solution)
     loss_t = 0.0
+    heuristics = heuristic(data)
     in_solution = findall(x->x!=0,sum(in_solution, dims=2)[:, 1]) 
     for (ind,i) in enumerate(in_solution)
         a = findall(x->x!=0,not_in_solution[:, ind])

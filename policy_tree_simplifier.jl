@@ -179,23 +179,18 @@ function count_numbers_of_circles(depth_dict, ex)
 end
 
 
-function expand_state!(ex::Expr, theory::Vector, depth_dict::Dict, embeded_rules::Vector, embeded_ex, policy, depth)
+function expand_state!(ex::Expr, theory::Vector, depth_dict::Dict,  policy, symbols_to_index)
     # applicable_rules = filter(r -> r[2] != ex, collect(enumerate(execute(ex, theory))))
     applicable_rules = filter(r -> r[2] != ex, execute(ex, theory))
     # println(typeof(applicable_rules))
     # rule_ids, new_expr = collect(applicable_rules)
-    rule_ids = [x[1] for x in applicable_rules]
-    new_expr = [x[2] for x in applicable_rules]
-    # println(rule_ids)
-    # println(new_expr)
-    # rule_prob = policy.(embeded_ex, embeded_rules[rule_ids])
-    rule_prob = policy(embeded_ex)
-    # println(size(rule_prob))
-    depth_dict[depth] = []
-    for (ind, rule_id) in enumerate(rule_ids)
-        push!(depth_dict[depth], [rule_id, rule_prob[ind]])
+    probs = []
+    for (rule_id, new_expr) in applicable_rules
+        ee = ex2mill(new_expr, symbols_to_index)   
+        push!(probs, only(policy(ee)))
     end
-    return rule_prob[:, 1]
+    min_prob = argmin(probs)
+    return applicable_rules[min_prob][2]
 end
 
 
@@ -213,21 +208,43 @@ end
 
 function build_tree(ex, policy, theory, max_itr, symbols_to_index)
     counter = 0
-    while max_itr == counter
-        embeded_ex = ex2mill(ex, symbols_to_index)
-        embeded_rules = []
-        prob = policy(embeded_ex)
-        chosen_rule_index = argmax(prob)
-        tmp = []
-        traverse_expr!(ex, theory[chosen_rule_index], 1, [], tmp) 
-        if !isempty(tmp)
-            if isempty(tmp[1])
-                ex = theory[chosen_rule_index](ex)
-            else
-                my_rewriter!(tmp[1], ex, theory[chosen_rule_index])
-            end
+    while max_itr != counter
+        applicable_rules = filter(r -> r[2] != ex, execute(ex, theory))
+        # applicable_rules = execute(ex, theory)
+        # println(typeof(applicable_rules))
+        # rule_ids, new_expr = collect(applicable_rules)
+        probs = []
+        for (rule_id, new_expr) in applicable_rules
+            ee = ex2mill(new_expr, symbols_to_index)   
+            push!(probs, only(policy(ee)))
         end
-        
+      
+        chosen_expr_index = argmin(probs)
+        ex = applicable_rules[chosen_expr_index][2]
+        @show ex
+        # rid, rpl = applicable_rules[chosen_rule_index][1]
+        # @show probs
+        # tmp = [rid, rpl]
+        # embeded_rules = []
+        # prob = policy(embeded_ex)
+        # chosen_rule_index = argmin(prob)[1]
+        # traverse_expr!(ex, theory[chosen_rule_index], 1, [], tmp) 
+        # @show tmp
+        # if isempty(tmp)
+        #     ex = theory[chosen_rule_index](ex)
+        # else
+        #     my_rewriter!(tmp, ex, theory[chosen_rule_index])
+        # end
+
+
+        # if !isempty(tmp)
+        #     if isempty(tmp[1])
+        #         ex = theory[chosen_rule_index](ex)
+        #     else
+        #         my_rewriter!(tmp[1], ex, theory[chosen_rule_index])
+        #     end
+        # end
+         
         # succesors = filter(r -> r[2] != ex, execute(ex, theory))
         counter += 1 
     end 
@@ -322,7 +339,7 @@ heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
     Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
-    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, length(theory)))
+    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
@@ -343,43 +360,88 @@ training_samples = Vector{TrainingSample}()
 
 # test_training_samples(training_samples, train_data, theory)
 
+function policy_loss_func1(policy, ee, yj)
+    p = policy(ee)
+    diff = p[1, yj] .- p
+    filtered_diff = filter(x-> x != 0, diff)
+    loss = sum(log.(1 .+ exp.(filtered_diff)))
+end
+
+function policy_loss_func(policy, ee, yj, hp, hn)
+    p = policy(ee)
+    pp = p * hp
+    pn = p[1, :] .* hn
+    diff = 0
+    for i in 1:size(pp)[2]
+          
+        diff += sum(log.(1 .+ exp.(filtered_diff)))
+    end
+    # filtered_diff = filter(x-> x != 0, diff)
+    # loss = sum(log.(1 .+ exp.(filtered_diff)))
+end
 optimizer = Flux.ADAM()
 # yk = ones(length(theory))
-for _ in 1:1
+plot_loss = []
+for _ in 1:3
     for i in training_samples
         td = copy(i.initial_expr)
+        # hn = copy(i.hn)
+        # for k in size(hn)[2]:-1:1
+        #     hn[:, begin:k-1] .= hn[:, begin:k-1] .- hn[:, k]
+        # end
+        # gd = gradient(pc) do
+        #     loss = policy_loss_func(heuristic, i.training_data, j, i.hp, hn)
+        #     @show loss
+        #     return loss
+        # end
+        # Flux.update!(optimizer, pc, gd)
         @show td
         @show i.proof
         for (j,jr) in i.proof
-            ee = ex2mill(td, symbols_to_index)
-            # yi = zeros(length(theory))
-            # yi[j] = 1
+            applicable_rules = filter(r -> r[2] != td, execute(td, theory))
+            # applicable_rules = execute(td, theory)
+            ee = []
+            final_index = 0
+            @show length(applicable_rules)
+            for (ind, (r, new_expr)) in enumerate(applicable_rules)
+                if r[1] == j && r[2] == jr
+                    final_index = ind
+                end
+                push!(ee, ex2mill(new_expr, symbols_to_index))
+            end
+            ds = reduce(catobs, ee) 
+            @show final_index
+
             gd = gradient(pc) do
-                p = heuristic(ee)
-                diff = p[j] .- p
-                filtered_diff = filter(x-> x != 0, diff)
-                loss = sum(log.(1 .+ exp.(filtered_diff)))
+                loss = policy_loss_func1(heuristic, ds, final_index)
                 @show loss
                 return loss
             end
-            tmp = []
-            traverse_expr!(td, theory[j], 1, [], tmp)
-            @show tmp
-            if isempty(tmp[jr])
-                td = theory[j](td) 
-            # if !isempty(tmp)
-            else
-                # if isempty(tmp[jr])
-                #     td = theory[j](td)
-                # else
-                my_rewriter!(tmp[jr], td, theory[j])
-                # end
-            end
+
+            loss = policy_loss_func1(heuristic, ds, final_index)
+            push!(plot_loss, loss)
+            td = applicable_rules[final_index][2]
+            # tmp = []
+            # traverse_expr!(td, theory[j], 1, [], tmp)
+            # @show tmp
+            # if isempty(tmp[jr])
+            #     td = theory[j](td) 
+            # # if !isempty(tmp)
+            # else
+            #     # if isempty(tmp[jr])
+            #     #     td = theory[j](td)
+            #     # else
+            #     my_rewriter!(tmp[jr], td, theory[j])
+            #     # end
+            # end
             @show td
             Flux.update!(optimizer, pc, gd)
         end
-        # @show td
+        @show td
     end
 end
+# loss = policy_loss_func1(heuristic, ds, final_index)
+plot(1:length(plot_loss), plot_loss, xlabel="Epoch", ylabel="Loss", title="Training Loss", legend=false)
+savefig("policy_training_loss.png")
 avarage_length_reduction = test_policy(heuristic, train_data[1:10], theory, 1000, symbols_to_index)
 # avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)

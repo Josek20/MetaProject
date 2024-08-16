@@ -473,8 +473,8 @@ function single_sample_check!(heuristic, training_sample, training_data, pc, opt
     n = 10
     for _ in 1:n
         grad = gradient(pc) do
-            o = heuristic(training_sample.training_data)
-            a = heuristic_loss(o, training_sample.hp, training_sample.hn)
+            # o = heuristic(training_sample.training_data)
+            a = heuristic_loss(heuristic, training_sample.training_data, training_sample.hp, training_sample.hn)
             # a = loss1(o, training_sample.hp, training_sample.hn)
             # a = loss(heuristic, training_sample.training_data, training_sample.hp, training_sample.hn)
             @show a
@@ -541,7 +541,7 @@ test_training_samples(training_samples, train_data, theory)
 #         end
 #         grad = gradient(pc) do
 #             o = heuristic(sample.training_data)
-#             a = heuristic_loss(o, sample.hp, sample.hn)
+#             a = heuristic_loss(heuristicm, sample.training_data, sample.hp, sample.hn)
 #             # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
 #             @show a
 #             # if isnan(a)
