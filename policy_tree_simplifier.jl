@@ -2,9 +2,13 @@ include("src/small_data_loader.jl")
 include("tree_lstm.jl")
 using JSON
 using JLD2
+using Plots
+using BSON
+using CSV
 using Metatheory
 using Metatheory.Rewriters
 using DataStructures
+using DataFrames
 
 
 
@@ -56,6 +60,7 @@ theory = @theory a b c begin
 
     a <= a --> 1
     a + b <= c + b --> a <= c
+    a + b <= b + c --> a <= c
     a * b <= c * b --> a <= c
     a / b <= c / b --> a <= c
     a - b <= c - b --> a <= c
@@ -88,6 +93,7 @@ theory = @theory a b c begin
     #min(a, b::Number) <= c::Number => b < c ? 0 : 1
     #min(a + b, a + c) --> min(b, c)
 end
+
 
 
 # exp_size(node::Node) = exp_size(node.ex)
@@ -208,47 +214,27 @@ end
 
 function build_tree(ex, policy, theory, max_itr, symbols_to_index)
     counter = 0
+    proof = []
     while max_itr != counter
         applicable_rules = filter(r -> r[2] != ex, execute(ex, theory))
-        # applicable_rules = execute(ex, theory)
-        # println(typeof(applicable_rules))
-        # rule_ids, new_expr = collect(applicable_rules)
+        if length(applicable_rules) == 0
+            break
+        end
         probs = []
         for (rule_id, new_expr) in applicable_rules
             ee = ex2mill(new_expr, symbols_to_index)   
             push!(probs, only(policy(ee)))
         end
-      
         chosen_expr_index = argmin(probs)
         ex = applicable_rules[chosen_expr_index][2]
+        push!(proof, applicable_rules[chosen_expr_index][1])
         @show ex
-        # rid, rpl = applicable_rules[chosen_rule_index][1]
-        # @show probs
-        # tmp = [rid, rpl]
-        # embeded_rules = []
-        # prob = policy(embeded_ex)
-        # chosen_rule_index = argmin(prob)[1]
-        # traverse_expr!(ex, theory[chosen_rule_index], 1, [], tmp) 
-        # @show tmp
-        # if isempty(tmp)
-        #     ex = theory[chosen_rule_index](ex)
-        # else
-        #     my_rewriter!(tmp, ex, theory[chosen_rule_index])
-        # end
-
-
-        # if !isempty(tmp)
-        #     if isempty(tmp[1])
-        #         ex = theory[chosen_rule_index](ex)
-        #     else
-        #         my_rewriter!(tmp[1], ex, theory[chosen_rule_index])
-        #     end
-        # end
-         
-        # succesors = filter(r -> r[2] != ex, execute(ex, theory))
+        if ex == 1
+            break
+        end
         counter += 1 
     end 
-    return ex
+    return ex, proof
 end
 
 
@@ -297,13 +283,16 @@ end
 
 function test_training_samples(training_samples, train_data, theory)
     counter_failed = 0
-    for sample in training_samples
-        ex = copy(sample.initial_expr)
+    for (sample, ex) in zip(training_samples, train_data)
         counter_failed_rule = 0
+        # @show sample.initial_expr
+        # @show sample.proof
         for (p,k) in sample.proof
             tmp = []
             try
+
                 traverse_expr!(ex, theory[p], 1, [], tmp)
+                # @show tmp
                 if isempty(tmp[k])
                     ex = theory[p](ex) 
                 else
@@ -318,20 +307,41 @@ function test_training_samples(training_samples, train_data, theory)
         end
     end
     @show counter_failed
+    return counter_failed
 end
 
 
+# function test_heuristic(heuristic, data, max_steps, max_depth)
+#     result = []
+#     result_proof = []
+#     simp_expressions = []
+#     for (index, i) in enumerate(data)
+#         # simplified_expression, _, _, _, _, _, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
+#         simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
+#         original_length = exp_size(i)
+#         simplified_length = exp_size(simplified_expression)
+#         push!(result, original_length - simplified_length)
+#         push!(result_proof, proof_vector)
+#         push!(simp_expressions, simplified_expression)
+#     end
+#     return result, result_proof, simp_expressions
+# end
+
 function test_policy(policy, data, theory, max_itr, symbols_to_index)
     result = []
+    result_proof = []
+    simp_expressions = []
     for (index, i) in enumerate(data)
         @show i
-        simplified_expression = build_tree(i, policy, theory, max_itr, symbols_to_index) 
+        simplified_expression, proof = build_tree(i, policy, theory, max_itr, symbols_to_index) 
         @show simplified_expression
         original_length = exp_size(i)
         simplified_length = exp_size(simplified_expression)
         push!(result, original_length - simplified_length)
+        push!(result_proof, proof)
+        push!(simp_expressions, simplified_expression)
     end
-    return mean(result)
+    return result, result_proof, simp_expressions
 end
 
 hidden_size = 128 
@@ -358,7 +368,7 @@ end
 training_samples = Vector{TrainingSample}()
 @load "training_samplesk1000_v3.jld2" training_samples
 
-# test_training_samples(training_samples, train_data, theory)
+@assert test_training_samples(training_samples, train_data, theory) == 0
 
 function policy_loss_func1(policy, ee, yj)
     p = policy(ee)
@@ -367,7 +377,7 @@ function policy_loss_func1(policy, ee, yj)
     loss = sum(log.(1 .+ exp.(filtered_diff)))
 end
 
-function policy_loss_func(policy, ee, yj, hp, hn)
+function policy_loss_func2(policy, ee, yj, hp, hn)
     p = policy(ee)
     pp = p * hp
     pn = p[1, :] .* hn
@@ -379,11 +389,25 @@ function policy_loss_func(policy, ee, yj, hp, hn)
     # filtered_diff = filter(x-> x != 0, diff)
     # loss = sum(log.(1 .+ exp.(filtered_diff)))
 end
+
+function policy_loss_func(heuristic, big_vector, hp=nothing, hn=nothing)
+    o = heuristic(big_vector) 
+    p = (o * hp) .* hn
+
+    diff = p - o[1, :] .* hn
+    filtered_diff = filter(x-> x != 0, diff)
+    return sum(log.(1 .+ exp.(diff)))
+end
+
+df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 optimizer = Flux.ADAM()
+epoch = 100
 # yk = ones(length(theory))
 plot_loss = []
-for _ in 1:3
-    for i in training_samples
+plot_reduction = []
+for ep in 1:epoch
+    @show ep
+    for i in training_samples[1:10]
         td = copy(i.initial_expr)
         # hn = copy(i.hn)
         # for k in size(hn)[2]:-1:1
@@ -395,14 +419,14 @@ for _ in 1:3
         #     return loss
         # end
         # Flux.update!(optimizer, pc, gd)
-        @show td
-        @show i.proof
+        # @show td
+        # @show i.proof
         for (j,jr) in i.proof
             applicable_rules = filter(r -> r[2] != td, execute(td, theory))
             # applicable_rules = execute(td, theory)
             ee = []
             final_index = 0
-            @show length(applicable_rules)
+            # @show length(applicable_rules)
             for (ind, (r, new_expr)) in enumerate(applicable_rules)
                 if r[1] == j && r[2] == jr
                     final_index = ind
@@ -410,11 +434,11 @@ for _ in 1:3
                 push!(ee, ex2mill(new_expr, symbols_to_index))
             end
             ds = reduce(catobs, ee) 
-            @show final_index
+            # @show final_index
 
             gd = gradient(pc) do
                 loss = policy_loss_func1(heuristic, ds, final_index)
-                @show loss
+                # @show loss
                 return loss
             end
 
@@ -434,14 +458,31 @@ for _ in 1:3
             #     my_rewriter!(tmp[jr], td, theory[j])
             #     # end
             # end
-            @show td
+            # @show td
             Flux.update!(optimizer, pc, gd)
         end
-        @show td
+        # @show td
     end
+    # length_reduction, proof, simp_expressions = test_policy(heuristic, test_data[1:10], theory, 1000, symbols_to_index)
+    # # push!(plot_reduction, avarage_length_reduction)
+    # new_df_rows = [(ep, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proof, length_reduction))]
+    # for row in new_df_rows
+    #     push!(df, row)
+    # end
 end
+
+length_reduction, proof, simp_expressions = test_policy(heuristic, train_data[1:10], theory, 60, symbols_to_index)
+# push!(plot_reduction, avarage_length_reduction)
+new_df_rows = [(1, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proof, length_reduction))]
+for row in new_df_rows
+    push!(df, row)
+end
+BSON.@save "policy_search_heuristic.bson" heuristic
+# CSV.write("policy_data1000.csv", df)
 # loss = policy_loss_func1(heuristic, ds, final_index)
-plot(1:length(plot_loss), plot_loss, xlabel="Epoch", ylabel="Loss", title="Training Loss", legend=false)
-savefig("policy_training_loss.png")
-avarage_length_reduction = test_policy(heuristic, train_data[1:10], theory, 1000, symbols_to_index)
+# plot(1:length(plot_loss), plot_loss, xlabel="Epoch", ylabel="Loss", title="Training Loss", legend=false)
+# savefig("policy_training_loss.png")
+# plot(1:length(plot_reduction), plot_reduction, xlabel="Epoch", ylabel="Loss", title="Avarage reduction length", legend=false)
+# savefig("policy_reduction_training.png")
+# avarage_length_reduction = test_policy(heuristic, train_data[1:10], theory, 100, symbols_to_index)
 # avarage_length_reduction = test_heuristic(heuristic, test_data[1:100], max_steps, max_depth)

@@ -1,10 +1,13 @@
 include("src/small_data_loader.jl")
 include("tree_lstm.jl")
 using JSON
+using BSON
 using JLD2
+using CSV
 using Metatheory
 using Metatheory.Rewriters
 using DataStructures
+using DataFrames
 
 train_data_path = "data/train.json"
 test_data_path = "data/test.json"
@@ -54,6 +57,7 @@ theory = @theory a b c begin
 
     a <= a --> 1
     a + b <= c + b --> a <= c
+    a + b <= b + c --> a <= c
     a * b <= c * b --> a <= c
     a / b <= c / b --> a <= c
     a - b <= c - b --> a <= c
@@ -426,13 +430,18 @@ end
 
 function test_heuristic(heuristic, data, max_steps, max_depth)
     result = []
+    result_proof = []
+    simp_expressions = []
     for (index, i) in enumerate(data)
-        simplified_expression, _ = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
+        # simplified_expression, _, _, _, _, _, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
         original_length = exp_size(i)
         simplified_length = exp_size(simplified_expression)
         push!(result, original_length - simplified_length)
+        push!(result_proof, proof_vector)
+        push!(simp_expressions, simplified_expression)
     end
-    return mean(result)
+    return result, result_proof, simp_expressions
 end
 
 function apply_proof_to_expr(ex, proof_vector, theory)
@@ -518,40 +527,75 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-epochs = 10
+epochs = 100
 optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 max_steps = 1000
 max_depth = 10
 n = 1
+
+df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 # @load "training_samplesk1000_v3.jld2" training_samples
-if isfile("asdfasdf.jld2")
-    @load "training_samples10k_v2.jld2" training_samples
+if isfile("tree_search_heuristic.bson")
+    BSON.@load "tree_search_heuristic.bson" heuristic
+elseif isfile("tr2aining_samplesk1000_v3.jld2")
+    @load "training_samplesk1000_v3.jld2" training_samples
 else
-    train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+    # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+    @load "training_samplesk1000_v3.jld2" training_samples
+
+    test_training_samples(training_samples, train_data, theory)
+
+    for ep in 1:epochs 
+        # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+        for sample in training_samples
+            if isnothing(sample.training_data) 
+                continue
+            end
+            grad = gradient(pc) do
+                # o = heuristic(sample.training_data)
+                a = heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                @show a
+                # if isnan(a)
+                #     println(sample.expression)
+                # end
+                return a
+            end
+            Flux.update!(optimizer, pc, grad)
+        end
+        # @show avarage_length_reduction
+        length_reduction, proofs, simp_expressions = test_heuristic(heuristic, test_data[1:10], max_steps, max_depth)
+        # @show length_reduction
+        # @show proofs
+        # @show length_reduction
+        new_df_rows = [(ep, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proofs, length_reduction))]
+        for row in new_df_rows
+            push!(df, row)
+        end
+    end
+    BSON.@save "tree_search_heuristic.bson" heuristic
+    CSV.write("data100.csv", df)
 end
 
-test_training_samples(training_samples, train_data, theory)
-# for _ in 1:epochs 
-#     # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-#     for sample in training_samples
-#         if isnothing(sample.training_data) 
-#             continue
-#         end
-#         grad = gradient(pc) do
-#             o = heuristic(sample.training_data)
-#             a = heuristic_loss(heuristicm, sample.training_data, sample.hp, sample.hn)
-#             # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
-#             @show a
-#             # if isnan(a)
-#             #     println(sample.expression)
-#             # end
-#             return a
-#         end
-#         Flux.update!(optimizer, pc, grad)
-#     end
-# end
+length_reduction, proofs, simp_expressions = test_heuristic(heuristic, test_data, max_steps, max_depth)
+# BSON.@save "tree_search_heuristic.bson" heuristic
+function plot_reduction_stats(df, epochs, n_eq)
+    # a = combine(groupby(df, "Epoch"), "Length Reduced"  => mean => "Average Reduction")
+
+    plot() 
+    for eq_id in 1:n_eq
+        eq_data = df[df[!,"Id"] .== eq_id, :]
+        plot!(eq_data[!, "Epoch"], eq_data[!, "Length Reduced"],label="Equation $eq_id" )
+    end
+    xlabel!("Epoch")
+    ylabel!("Length Reduction")
+    title!("Neural Network Simplification Performance")
+    # legend(:topright)
+    display(plot())
+end
+# v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119
 # println("ALR: $avarage_length_reduction")
 # heuristic_forward_pass(heuristic, training_data[n], 1000, 10)
 # apply_proof_to_expr(train_data[1], [17, 13, 30, 8, 11, 1, 29], theory)

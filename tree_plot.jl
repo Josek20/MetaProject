@@ -141,6 +141,8 @@ end
 
 # function plot_tree()
 ex = train_data[n]
+ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
+
 soltree = Dict{UInt64, Node}()
 open_list = PriorityQueue{Node, Float32}()
 close_list = Set{UInt64}()
@@ -150,12 +152,12 @@ encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
 #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
 encoded_ex = ex2mill(ex, symbols_to_index)
-root = Node(ex, 0, hash(ex), 0, encoded_ex)
+root = Node(ex, (0,0), hash(ex), 0, encoded_ex)
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
-build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 100, 6, expansion_history)
+build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 30, 6, expansion_history)
 println("Have successfuly finished bulding simplification tree!")
 
 smallest_node = extract_smallest_terminal_node(soltree, close_list)
