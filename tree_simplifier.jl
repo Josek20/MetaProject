@@ -90,7 +90,99 @@ theory = @theory a b c begin
     #min(a, b::Number) <= c::Number => b < c ? 0 : 1
     #min(a + b, a + c) --> min(b, c)
 end
+theory = @theory a b c d x y begin
+    # add.rc
+    a + b --> b + a
+    # + (~a, ~b) --> + (~b,~a)
+    a + (b + c) --> (a + b) + c
+    a + 0 --> a
+    a * (b + c) --> a*b + a*c
+    a*b + a*c --> a * (b + c)
+    (a / b) + c --> (a + (c * b)) / b
+    (a + (c * b)) / b --> (a / b) + c
+    x / 2 + x % 2 --> (x + 1) / 2
+    x * a + y * b --> ((a / b) * x + y) * b
+    
+    # and.rc
+    a && b --> b && a
+    a && (b && c) --> (a && b) && c
+    1 && a --> a
+    a && a --> a
+    a && !a --> 0
+    (a == c::Number) && (b == x::Number) => c != x ? 0 : :($a)
+    !a::Number && b::Number => a != b ? 0 : :($a)
+    (a < y) && (a < b) --> a < min(y, b)
+    a < min(y, b) --> (a < y) && (a < b)
+    (a <= y) && (a <= b) --> a <= min(y, b)
+    a <= min(y, b) --> (a <= y) && (a <= b)
+    (a > y) && (a > b) --> x > max(y, b)
+    a > max(y, b) --> (a > y) && (a > b)
+    
+    (a >= y) && (a >= b) --> a >= max(y, b)
+    a >= max(y, b) --> (a >= y) && (a >= b)
+    
+    (a::Number > b) && (c::Number < b) => a < c ? 0 : :($a > $b) && :($c < $b)
+    (a::Number >= b) && (c::Number <= b) => a < c ? 0 : :($a >= $b) && :($c <= $b)
+    (a::Number >= b) && (c::Number < b) => a <= c ? 0 : :($a >= $b) && :($c < $b)
+    
+    a && (b || c) --> (a && b) || (a && c)
+    a || (b && c) --> (a || b) && (a || c)
+    b || (b && c) --> b
 
+    # div.rs
+    0 / a --> 0
+    a / a --> 1
+    (-1 * a) / b --> a / (-1 * b)
+    a / (-1 * b) --> (-1 * a) / b
+    -1 * (a / b) --> (-1 * a) / b
+    (-1 * a) / b --> -1 * (a / b)
+
+    (a * b) / c --> a / (c / b)
+    (a * b) / c --> a * (b / c)
+    (a + b) / c --> (a / c) + (b / c)
+    ((a * b) + c) / d --> ((a * b) / d) + (c / d)
+
+    # eq.rs
+    x == y --> y == x
+    x == y --> (x - y) == 0
+    x + y == a --> x == a - y
+    x == x --> 1
+    x*y == 0 --> (x == 0) || (y == 0)
+    max(x,y) == y --> x <= y
+    min(x,y) == y --> y <= x
+    y <= x --> min(x,y) == y
+
+    # ineq.rs
+    x != y --> ! (x == y)
+
+    # lt.rs
+    x > y --> y < x
+    x < y --> (-1 * y) < (-1 * x)
+    a < a --> 0
+    a + b < c --> a < c - b
+
+    a - b < a --> 0 < b
+    0 < a::Number => 0 < a ? 1 : 0
+    a::Number < 0 => a < 0 ? 1 : 0
+    min(a , b) < a --> b < a
+    min(a, b) < min(a , c) --> b < min(a, c)
+    max(a, b) < max(a , c) --> max(a ,b) < c
+
+    # max.rs
+    max(a, b) --> (-1 * min(-1 * a, -1 * b))
+    
+    # min.rs
+    min(a, b) --> min(b, a)
+    min(min(a, b), c) --> min(a, min(b, c))
+    min(a,a) --> a
+    min(max(a, b), a) --> a
+    min(max(a, b), max(a, c)) --> max(min(b, c), a)
+    min(max(min(a,b), c), b) --> min(max(a,c), b)
+    min(a + b, c) --> min(b, c - a) + a
+    min(a, b) + c --> min(a + c, b + c)
+    min(a, a + b::Number) => b > 0 ? :($a) : :($a + $b)
+
+end
 mutable struct Node{E, P}
     ex::E
     rule_index::Tuple
