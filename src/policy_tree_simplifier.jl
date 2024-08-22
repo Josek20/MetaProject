@@ -117,7 +117,7 @@ function policy_loss_func(heuristic, big_vector, hp=nothing, hn=nothing)
 end
 
 
-function tree_sample_to_policy_sample(sample, ex, symbols_to_index, all_symbols)
+function tree_sample_to_policy_sample(sample, ex, symbols_to_index, all_symbols, theory)
     ee = []
     hn = []
     hp = []
@@ -126,15 +126,18 @@ function tree_sample_to_policy_sample(sample, ex, symbols_to_index, all_symbols)
         # applicable_rules = execute(td, theory)
         final_index = 0
         # @show length(applicable_rules)
+        tmp_hp = []
         for (ind, (r, new_expr)) in enumerate(applicable_rules)
             if r[1] == j && r[2] == jr
                 final_index = ind
-                push!(hp, 1)
+                push!(tmp_hp, 1)
             else
-                push!(hp, 0)
+                push!(tmp_hp, 0)
             end
             push!(ee, ex2mill(new_expr, symbols_to_index, all_symbols))
         end
+        ex = applicable_rules[final_index][2]
+        push!(hp, tmp_hp)
     end
     ds = reduce(catobs, ee) 
     return ds, hn, hp
