@@ -4,7 +4,18 @@ using BSON
 using CSV
 using DataFrames
 using JLD2
+using Flux
+using Mill
+using Plots
 
+
+train_data_path = "data/neural_rewrter/train.json"
+test_data_path = "data/neural_rewrter/test.json"
+
+train_data = isfile(train_data_path) ? load_data(train_data_path)[1:1000] : load_data(test_data_path)[1:1000]
+test_data = load_data(test_data_path)[1:1000]
+train_data = preprosses_data_to_expressions(train_data)
+test_data = preprosses_data_to_expressions(test_data)
 
 theory = @theory a b c begin
     a::Number + b::Number => a + b
@@ -95,11 +106,11 @@ df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof",
 optimizer = Flux.ADAM()
 epoch = 100
 # yk = ones(length(theory))
-plot_loss = []
+plot_loss = [[] for _ in 1:epoch]
 plot_reduction = []
 for ep in 1:epoch
     @show ep
-    for i in training_samples[1:1]
+    for (ind,i) in enumerate(training_samples[9:9])
         td = copy(i.initial_expr)
         # hn = copy(i.hn)
         # for k in size(hn)[2]:-1:1
@@ -113,6 +124,7 @@ for ep in 1:epoch
         # Flux.update!(optimizer, pc, gd)
         # @show td
         # @show i.proof
+        tmp_loss = []
         for (j,jr) in i.proof
             applicable_rules = filter(r -> r[2] != td, execute(td, theory))
             # applicable_rules = execute(td, theory)
@@ -134,9 +146,9 @@ for ep in 1:epoch
                 return loss
             end
 
-            loss = policy_loss_func1(policy, ds, final_index)
-            push!(plot_loss, loss)
             td = applicable_rules[final_index][2]
+            loss = policy_loss_func1(policy, ds, final_index)
+            push!(tmp_loss, loss)
             # tmp = []
             # traverse_expr!(td, theory[j], 1, [], tmp)
             # @show tmp
@@ -153,14 +165,19 @@ for ep in 1:epoch
             # @show td
             Flux.update!(optimizer, pc, gd)
         end
+        push!(plot_loss[ep], sum(tmp_loss))
         # @show td
     end
 end
 
-
-length_reduction, proof, simp_expressions = test_policy(policy, train_data[1:1], theory, 60, symbols_to_index, all_symbols)
-# push!(plot_reduction, avarage_length_reduction)
-new_df_rows = [(1, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proof, length_reduction))]
-for row in new_df_rows
-    push!(df, row)
-end
+length_reduction, proof, simp_expressions = test_policy(policy, train_data[9:9], theory, 60, symbols_to_index, all_symbols)
+@show simp_expressions
+@show training_samples[9].expression
+st = hcat(plot_loss...)
+plot(1:epoch, transpose(st))
+savefig("stats/policy_training_loss$(epoch)ep.png")
+# # push!(plot_reduction, avarage_length_reduction)
+# new_df_rows = [(1, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proof, length_reduction))]
+# for row in new_df_rows
+#     push!(df, row)
+# end
