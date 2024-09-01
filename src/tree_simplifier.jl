@@ -10,11 +10,14 @@ mutable struct Node{E, P}
     expression_encoding::ProductNode
 end
 
+
 Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+
 
 function Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode)
     Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 end
+
 
 exp_size(node::Node) = exp_size(node.ex)
 exp_size(ex::Expr) = sum(exp_size.(ex.args))
@@ -68,7 +71,17 @@ function traverse_expr!(ex, matcher, tree_ind, trav_indexs, tmp)
         pop!(trav_indexs)
     end
 end
-
+# BenchmarkTools.Trial: 9230 samples with 1 evaluation.
+#  Range (min … max):  416.068 μs … 43.444 ms  ┊ GC (min … max):  0.00% … 98.57%
+#  Time  (median):     431.897 μs              ┊ GC (median):     0.00%
+#  Time  (mean ± σ):   532.241 μs ±  1.875 ms  ┊ GC (mean ± σ):  18.24% ±  5.12%
+#
+#        ▅███▆▅▂                                                  
+#   ▁▁▂▅█████████▇▅▄▄▃▃▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ ▂
+#   416 μs          Histogram: frequency by time          523 μs <
+#
+#  Memory estimate: 538.06 KiB, allocs estimate: 11514.
+#
 
 function execute(ex, theory)
     res = []
@@ -124,7 +137,7 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
             # @show new_exp
             #
             # @show rule_index 
-            encodings_buffer[hash(new_exp)] = ex2mill(new_exp, symbols_to_index, all_symbols)
+            encodings_buffer[hash(new_exp)] = ex2mill(new_exp, symbols_to_index, all_symbols, collect(1:100))
         end
         new_node = Node(new_exp, rule_index, parent.node_id, parent.depth + 1, encodings_buffer[hash(new_exp)])
         if push_to_tree!(soltree, new_node)
@@ -268,7 +281,7 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_s
     encodings_buffer = Dict{UInt64, ProductNode}()
     println("Initial expression: $ex")
     #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
-    encoded_ex = ex2mill(ex, symbols_to_index, all_symbols)
+    encoded_ex = ex2mill(ex, symbols_to_index, all_symbols, collect(1:100))
     root = Node(ex, (0,0), hash(ex), 0, encoded_ex)
     soltree[root.node_id] = root
     #push!(open_list, root.node_id)

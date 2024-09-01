@@ -90,92 +90,77 @@ theory = @theory a b c begin
     #min(a + b, a + c) --> min(b, c)
 end
 
-hidden_size = 128 
+old_all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&, ]#:||]# :(==), :!, :rem, :%]
+old_symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(old_all_symbols))
+
+hidden_size = 256
 policy = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(old_symbols_to_index) + 2 + 16, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
     Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
 optimizer = ADAM()
-training_samples = Vector{TrainingSample}()
-@load "data/training_data/training_samplesk1000_v3.jld2" training_samples
+policy_training_samples = Vector{PolicyTrainingSample}()
+@load "data/training_data/policy_training_samplesk999_v4.jld2" policy_training_samples
 pc = Flux.params([policy.head_model, policy.aggregation, policy.joint_model, policy.heuristic])
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 optimizer = Flux.ADAM()
-epoch = 100
+epoch = 60
+function policy_sanity_check(training_samples, policy)
+    count = 0
+    tmp = []
+    for (ind,i) in enumerate(training_samples[1:1])
+        if isnothing(i.training_data)
+            @show ind
+            continue
+        end 
+        o = policy(i.training_data)
+
+        # @show o[1, :]
+        tmp = []
+        for (iind, j) in enumerate(o[1, :])
+            if j in tmp
+                @show ind
+                @show iind
+                count += 1
+            else
+                push!(tmp, j)
+            end
+        end
+    end
+    # @show tmp
+    @show count
+    @assert count == 0
+end
+# policy_sanity_check(policy_training_samples, policy)
 # yk = ones(length(theory))
 plot_loss = [[] for _ in 1:epoch]
 plot_reduction = []
+sr = 1
+er = 7
 for ep in 1:epoch
     @show ep
-    for (ind,i) in enumerate(training_samples[9:9])
-        td = copy(i.initial_expr)
-        # hn = copy(i.hn)
-        # for k in size(hn)[2]:-1:1
-        #     hn[:, begin:k-1] .= hn[:, begin:k-1] .- hn[:, k]
-        # end
-        # gd = gradient(pc) do
-        #     loss = policy_loss_func(heuristic, i.training_data, j, i.hp, hn)
-        #     @show loss
-        #     return loss
-        # end
-        # Flux.update!(optimizer, pc, gd)
-        # @show td
-        # @show i.proof
-        tmp_loss = []
-        for (j,jr) in i.proof
-            applicable_rules = filter(r -> r[2] != td, execute(td, theory))
-            # applicable_rules = execute(td, theory)
-            ee = []
-            final_index = 0
-            # @show length(applicable_rules)
-            for (ind, (r, new_expr)) in enumerate(applicable_rules)
-                if r[1] == j && r[2] == jr
-                    final_index = ind
-                end
-                push!(ee, ex2mill(new_expr, symbols_to_index, all_symbols))
-            end
-            ds = reduce(catobs, ee) 
-            # @show final_index
-
-            gd = gradient(pc) do
-                loss = policy_loss_func1(policy, ds, final_index)
-                # @show loss
-                return loss
-            end
-
-            td = applicable_rules[final_index][2]
-            loss = policy_loss_func1(policy, ds, final_index)
-            push!(tmp_loss, loss)
-            # tmp = []
-            # traverse_expr!(td, theory[j], 1, [], tmp)
-            # @show tmp
-            # if isempty(tmp[jr])
-            #     td = theory[j](td) 
-            # # if !isempty(tmp)
-            # else
-            #     # if isempty(tmp[jr])
-            #     #     td = theory[j](td)
-            #     # else
-            #     my_rewriter!(tmp[jr], td, theory[j])
-            #     # end
-            # end
-            # @show td
-            Flux.update!(optimizer, pc, gd)
+    for (ind,i) in enumerate(policy_training_samples[sr:er])
+        gd = gradient(pc) do
+            loss = policy_loss_func(policy, i.training_data, i.hp, i.hn)
+            return loss
         end
-        push!(plot_loss[ep], sum(tmp_loss))
-        # @show td
+        loss = policy_loss_func(policy, i.training_data, i.hp, i.hn)
+        push!(plot_loss[ep], loss)
+        Flux.update!(optimizer, pc, gd)
     end
 end
 
-length_reduction, proof, simp_expressions = test_policy(policy, train_data[9:9], theory, 60, symbols_to_index, all_symbols)
+length_reduction, proof, simp_expressions = test_policy(policy, train_data[sr:er], theory, 60, old_symbols_to_index, old_all_symbols)
 @show simp_expressions
-@show training_samples[9].expression
+# @show training_samples[9].expression
+@show sum(length_reduction) / length(length_reduction)
 st = hcat(plot_loss...)
 plot(1:epoch, transpose(st))
 savefig("stats/policy_training_loss$(epoch)ep.png")
+policy_sanity_check(policy_training_samples, policy)
 # # push!(plot_reduction, avarage_length_reduction)
 # new_df_rows = [(1, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proof, length_reduction))]
 # for row in new_df_rows

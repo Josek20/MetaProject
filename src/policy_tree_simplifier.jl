@@ -36,7 +36,7 @@ function build_tree(ex, policy, theory, max_itr, symbols_to_index, all_symbols)
         end
         probs = []
         for (rule_id, new_expr) in applicable_rules
-            ee = ex2mill(new_expr, symbols_to_index, all_symbols)   
+            ee = ex2mill(new_expr, symbols_to_index, all_symbols, collect(1:100)) 
             push!(probs, only(policy(ee)))
         end
         chosen_expr_index = argmin(probs)
@@ -51,21 +51,6 @@ function build_tree(ex, policy, theory, max_itr, symbols_to_index, all_symbols)
     return ex, proof
 end
 
-# function test_heuristic(heuristic, data, max_steps, max_depth)
-#     result = []
-#     result_proof = []
-#     simp_expressions = []
-#     for (index, i) in enumerate(data)
-#         # simplified_expression, _, _, _, _, _, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
-#         simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
-#         original_length = exp_size(i)
-#         simplified_length = exp_size(simplified_expression)
-#         push!(result, original_length - simplified_length)
-#         push!(result_proof, proof_vector)
-#         push!(simp_expressions, simplified_expression)
-#     end
-#     return result, result_proof, simp_expressions
-# end
 
 function test_policy(policy, data, theory, max_itr, symbols_to_index, all_symbols)
     result = []
@@ -85,11 +70,21 @@ function test_policy(policy, data, theory, max_itr, symbols_to_index, all_symbol
 end
 
 
-function policy_loss_func1(policy, ee, yj)
+# function policy_loss_func1(policy, ee, yj)
+#     p = policy(ee)
+#     diff = p[1, yj] .- p
+#     filtered_diff = filter(x-> x != 0, diff)
+#     loss = sum()
+# end
+logistic(x) = log(1 + exp(x))
+hinge(x) = max(0, 1 - x)
+loss01(x) = x > 0
+
+function policy_loss_func1(policy, ee, yj, surrogate::Function = logistic)
     p = policy(ee)
     diff = p[1, yj] .- p
-    filtered_diff = filter(x-> x != 0, diff)
-    loss = sum(log.(1 .+ exp.(filtered_diff)))
+    filtered_diff = filter(!=(0), diff)
+    loss = sum(surrogate.(filtered_diff))
 end
 
 
@@ -107,13 +102,34 @@ function policy_loss_func2(policy, ee, yj, hp, hn)
 end
 
 
-function policy_loss_func(heuristic, big_vector, hp=nothing, hn=nothing)
-    o = heuristic(big_vector) 
-    p = (o * hp) .* hn
+function policy_loss_func(policy, big_vector, hp=nothing, hn=nothing, surrogate::Function = logistic)
+    o = policy(big_vector) 
 
-    diff = p - o[1, :] .* hn
-    filtered_diff = filter(x-> x != 0, diff)
-    return sum(log.(1 .+ exp.(diff)))
+    # diff = o * hp - o * hn
+    diff = hn .* (o * hp) .- hn .* o[1,:]
+    filtered_diff = filter(!=(0), diff)
+    loss = sum(surrogate.(filtered_diff))
+    return loss
+end
+
+
+mutable struct PolicyTrainingSample{D, HP, HN}
+    training_data::D
+    hp::HP
+    hn::HN
+end
+
+
+function update_policy_training_samples(training_samples, symbols_to_index, all_symbols, theory)
+    policy_training_samples = []
+    for i in training_samples
+        if isnothing(i.training_data)
+            continue
+        end
+        a, hn, hp = tree_sample_to_policy_sample(i.proof, i.initial_expr, symbols_to_index, all_symbols, theory)
+        push!(policy_training_samples, PolicyTrainingSample(a, hp, hn))
+    end
+    @save "data/training_data/policy_training_samplesk$(length(policy_training_samples))_v4.jld2" policy_training_samples
 end
 
 
@@ -126,19 +142,145 @@ function tree_sample_to_policy_sample(sample, ex, symbols_to_index, all_symbols,
         # applicable_rules = execute(td, theory)
         final_index = 0
         # @show length(applicable_rules)
-        tmp_hp = []
+        if isempty(hp)
+            tmp_hp = []
+            tmp_hn = []
+        else
+            tmp_hp = zeros(length(hp[end]))
+            tmp_hn = zeros(length(hn[end]))
+        end
         for (ind, (r, new_expr)) in enumerate(applicable_rules)
             if r[1] == j && r[2] == jr
                 final_index = ind
                 push!(tmp_hp, 1)
+                push!(tmp_hn, 0)
             else
                 push!(tmp_hp, 0)
+                push!(tmp_hn, 1)
             end
-            push!(ee, ex2mill(new_expr, symbols_to_index, all_symbols))
+            push!(ee, ex2mill(new_expr, symbols_to_index, all_symbols, collect(1:100)))
         end
+        @assert final_index != 0
         ex = applicable_rules[final_index][2]
         push!(hp, tmp_hp)
+        push!(hn, tmp_hn)
     end
+    max_length = maximum(length, hn)
+
+    padding_value = 0
+    padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in hn]
+    hn = hcat(padded_vectors...)
+    padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in hp]
+    hp = hcat(padded_vectors...)
+    # for i in 2:size(hn, 2)
+    #     hn[:, i] .= hn[:, i] + hn[:, i - 1]
+    # end
+
+    # for i in size(hn, 2) - 1:-1:1
+    #     hn[:, i] .= hn[:, i] + hn[:, i + 1]
+    # end
     ds = reduce(catobs, ee) 
-    return ds, hn, hp
+    return ds, Matrix{Int}(hn), Matrix{Int}(hp)
+end
+
+
+function name(arguments)
+  
+end
+
+
+function str_to_expr1(string_tokens, all_symbols, tokens_visited)
+    if isempty(string_tokens)
+        return string_tokens
+    end
+    tk = string_tokens[1]
+    if tk == "(" 
+        args = []
+        tk_visited = popfirst!(tokens_visited)
+        for i in string_tokens[tk_visited + 1:end]
+            push!(args, str_to_expr(string_tokens, all_symbols, tokens_visited + 1))
+        end
+        return Expr(:call, string_tokens[2], args...)
+    end
+    if tk == ")"
+        return
+    end
+    # if !(tk in all_symbols) && string_tokens[2] != "("
+    #     return string_tokens[1:2]
+    # elseif !(tk in all_symbols)
+    #     res = str_to_expr(string_tokens[2:end], all_symbols, tokens_visited)
+    #     return [string_tokens[1], res]
+    # end
+    # if tk in all_symbols
+    #     Expr(:call,)
+    # end
+end
+
+function str_to_expr(string_tokens, all_symbols, tokens_visited)
+    tk = string_tokens[1] 
+    if tk == "("
+        function_symbol = Symbol(string_tokens[2])
+        arg2_start = 0
+        arg1 = str_to_expr(string_tokens, all_symbols, tokens_visited)
+        arg2 = str_to_expr(string_tokens, all_symbols, tokens_visited)
+        return Expr(:call, function_symbol, arg1, arg2)
+    end
+      # if tk == ""
+end
+
+function caviar_data_parser(data)
+    x = []
+    y = []
+    r = []
+    for i in data
+        tmp_x = i["expression"]["start"]
+        expression_tokens = split(tmp_x, " ") 
+        tmp_x = str_to_expr(expression_tokens)
+        tmp_y = i["expression"]["end"]
+        tmp_r = i["rules"]
+        push!(x , tmp_x)
+        push!(y , tmp_y)
+        push!(r , tmp_r)
+    end 
+    return x, y, r
+end
+
+# :((((((234 - v0 * 33) / 2) * 2 + 230) + 32) + v1) - 992 <= v0 * 33 + v1)
+# :((((((234 - v0 * 33) / 2) * 2 + 32) + 230) + v1) - 992 <= v0 * 33 + v1)
+# i = ((23, 1), :(0 <= 1007))
+# ind = 2
+# applicable_rueles[index] = ((2, 1), :(0 <= 1007))
+
+function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symbols)
+    full_proof_tmp = []
+    counter = 0
+    for (ne,sample) in enumerate(samples)
+        ex = sample.initial_expr
+        @show ne
+        for pr in sample.proof
+            applicable_rueles = filter(r-> r[2] != ex, execute(ex, theory))
+            tmp = []
+            finall_ind = 0
+            for (ind,i) in enumerate(applicable_rueles)
+                em = ex2mill(i[2], symbols_to_index, all_symbols, collect(1:100))
+                o = policy(em)
+                if o in tmp 
+                    @show i
+                    @show ind
+                    index = findfirst(x->x==o, tmp)
+                    # @show ind
+                    @show applicable_rueles[index]
+                    counter += 1 
+                else
+                    push!(tmp, o)
+                end
+                if i[1] == pr
+                    finall_ind = 1
+                    ex = i[2]
+                end
+            end 
+            @assert finall_ind == 1
+            # @assert counter == 0
+        end
+    end 
 end

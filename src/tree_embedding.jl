@@ -2,7 +2,7 @@
 all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&, :||, :(==), :!, :rem, :%]
 symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
 
-function ex2mill(ex::Expr, symbols_to_index, all_symbols)
+function ex2mill(ex::Expr, symbols_to_index, all_symbols, position)
     if ex.head == :call
         fun_name, args =  ex.args[1], ex.args[2:end]
     elseif ex.head in all_symbols # Symbol("&&") || ex.head == Symbol("min")
@@ -12,33 +12,52 @@ function ex2mill(ex::Expr, symbols_to_index, all_symbols)
         error("unknown head $(ex.head)")
     end
     n = length(symbols_to_index) + 2
+    # encoding = Flux.onehotbatch([symbols_to_index[fun_name]], 1:n) * position
+    # encoding = Flux.onehotbatch([1, symbols_to_index[fun_name]], 1:n)
+    encoding = Flux.onehotbatch([symbols_to_index[fun_name]], 1:n)
+    emb_ind = popfirst!(position)
+    pos_encoding = [parse(Int, i) for i in bitstring(Int16(emb_ind))]
+    encoding = vcat(encoding, pos_encoding)
     ds = ProductNode((
-        head = ArrayNode(Flux.onehotbatch([symbols_to_index[fun_name]], 1:n)),
-        args = args2mill(args, symbols_to_index, all_symbols)
+        head = ArrayNode(encoding),
+        args = args2mill(args, symbols_to_index, all_symbols, position)
     ))
     return(ds)
 end
 
-function ex2mill(ex::Symbol, symbols_to_index, all_symbols)
+function ex2mill(ex::Symbol, symbols_to_index, all_symbols, position)
     n = length(symbols_to_index) + 2
+    # encoding = Flux.onehotbatch([n-1], 1:n) * position
+    encoding = Flux.onehotbatch([n-1], 1:n)
+    emb_ind = popfirst!(position)
+    pos_encoding = [parse(Int, i) for i in bitstring(Int16(emb_ind))]
+    encoding = vcat(encoding, pos_encoding)
+    # encoding = Flux.onehotbatch([n-1], 1:n)
     ds = ProductNode((
-        head = ArrayNode(Flux.onehotbatch([n], 1:n)),
+        head = ArrayNode(encoding),
         args = BagNode(missing, [0:-1])
         ))
 end
 
-function ex2mill(ex::Number, symbols_to_index, all_symbols)
+function ex2mill(ex::Number, symbols_to_index, all_symbols, position)
     n = length(symbols_to_index) + 2
+    # encoding = Flux.onehotbatch([n-2], 1:n) * position
+    # @show ex
+    encoding = Flux.onehotbatch([n-2], 1:n) # * Float32(ex)
+    emb_ind = popfirst!(position)
+    pos_encoding = [parse(Int, i) for i in bitstring(Int16(emb_ind))]
+    encoding = vcat(encoding, pos_encoding)
+    # encoding = Flux.onehotbatch([n-2], 1:n)
     ds = ProductNode((
-        head = ArrayNode(Flux.onehotbatch([n-1], 1:n)),
+        head = ArrayNode(encoding),
         args = BagNode(missing, [0:-1])
         ))
 end
 
-function args2mill(args::Vector, symbols_to_index, all_symbols)
+function args2mill(args::Vector, symbols_to_index, all_symbols, position)
     isempty(args) && return(BagNode(missing, [0:-1]))
     BagNode(
-        reduce(catobs, map(a -> ex2mill(a, symbols_to_index, all_symbols), args)),
+        reduce(catobs, map(a -> ex2mill(a, symbols_to_index, all_symbols, position), args)),
         [1:length(args)]
         )
 end
@@ -52,6 +71,26 @@ struct ExprModel{HM,A,JM,H}
 end
 
 
+function get_product_node_matrix!(x::ProductNode, pmatrix) 
+    m = x.data.head 
+    push!(pmatrix, m)
+    get_product_node_matrix!(x.data.args, pmatrix)
+end
+
+
+function get_product_node_matrix!(x::BagNode, pmatrix) 
+    get_product_node_matrix!(x.data, pmatrix)
+end
+
+
+function get_product_node_matrix!(x::Missing, pmatrix) 
+    return
+end
+
+
+# function Base.==(x::ProductNode, y::ProductNode)
+#      
+# end
 function (m::ExprModel)(ds::ProductNode)
     m.heuristic(embed(m, ds))
 end
@@ -91,4 +130,5 @@ function heuristic_loss(heuristic, data, in_solution, not_in_solution)
 
     return loss_t
 end
+
 

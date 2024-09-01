@@ -1,5 +1,6 @@
-include("tree_simplifier.jl")
+# include("tree_simplifier.jl")
 using Latexify
+using MyModule
 
 
 #ex = :((((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2)

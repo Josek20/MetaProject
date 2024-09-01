@@ -10,7 +10,7 @@ using JLD2
 train_data_path = "data/neural_rewrter/train.json"
 test_data_path = "data/neural_rewrter/test.json"
 
-train_data = isfile(train_data_path) ? load_data(train_data_path)[10000:10500] : load_data(test_data_path)[1:1000]
+train_data = isfile(train_data_path) ? load_data(train_data_path)[1:1000] : load_data(test_data_path)[1:1000]
 test_data = load_data(test_data_path)[1:1000]
 train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
@@ -214,7 +214,7 @@ theory = @theory a b c d x y begin
     (b::Number * a) % c::Number => b % c == 0 ? 0 : :(($b * $a) % $c)
     
     # mul.rs
-    # a * b --> b * a
+    a * b --> b * a
     # a * b::Number --> b * a
     a * (b * c) --> (a * b) * c
     a * 0 --> 0
@@ -242,9 +242,9 @@ theory = @theory a b c d x y begin
     a - b --> a + (-1 * b)
 end
 
-hidden_size = 128 
+hidden_size = 256
 heuristic = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(symbols_to_index) + 2 + 16, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
     Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
@@ -265,14 +265,14 @@ if isfile("models/tre1e_search_heuristic.bson")
 elseif isfile("data/training_data/tr2aining_samplesk1000_v3.jld2")
     @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
 else
-    train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth, all_symbols, theory)
+    train_heuristic!(heuristic, train_data[1:1], training_samples, max_steps, max_depth, all_symbols, theory)
     # @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
 
     test_training_samples(training_samples, train_data, theory)
 
     for ep in 1:epochs 
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-        for sample in training_samples
+        for sample in training_samples[1:1]
             if isnothing(sample.training_data) 
                 continue
             end
