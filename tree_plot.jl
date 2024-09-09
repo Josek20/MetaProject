@@ -1,6 +1,7 @@
 # include("tree_simplifier.jl")
 using Latexify
 using MyModule
+using DataStructures
 
 
 #ex = :((((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2)
@@ -141,38 +142,43 @@ function create_latex_tree2(io, root, soltree, smallest_node, preamble, closing,
 end
 
 # function plot_tree()
-ex = train_data[n]
-ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
+ex = train_data[1]
+# ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
 
-soltree = Dict{UInt64, Node}()
-open_list = PriorityQueue{Node, Float32}()
+soltree = Dict{UInt64, MyModule.Node}()
+open_list = PriorityQueue{MyModule.Node, Float32}()
 close_list = Set{UInt64}()
 expansion_history = Dict{UInt64, Vector}()
 #encodings_buffer = Dict{UInt64, ExprEncoding}()
 encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
 #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
-encoded_ex = ex2mill(ex, symbols_to_index)
-root = Node(ex, (0,0), hash(ex), 0, encoded_ex)
+encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, collect(1:100))
+root = MyModule.Node(ex, (0,0), hash(ex), 0, encoded_ex)
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
-build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 30, 6, expansion_history)
+reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory)
 println("Have successfuly finished bulding simplification tree!")
 
-smallest_node = extract_smallest_terminal_node(soltree, close_list)
+smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
+# for (ind, (i, cof)) in enumerate(open_list)
+#     expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
+# end
+# @show expansion_history[smallest_node.node_id]
 simplified_expression = smallest_node.ex
 println("Simplified expression: $simplified_expression")
 
-proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
+proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = MyModule.extract_rules_applied(smallest_node, soltree)
+
 println("Proof vector: $proof_vector")
 
 for (ind, (i, cof)) in enumerate(open_list)
     expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
 end
 
-test_open_list = PriorityQueue{Node, Float32}()
+test_open_list = PriorityQueue{MyModule.Node, Float32}()
 test_expansion_history = Dict{UInt64, Vector}()
 for (k, n) in soltree
     enqueue!(test_open_list, n, only(heuristic(n.expression_encoding)))

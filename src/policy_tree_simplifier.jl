@@ -129,7 +129,7 @@ function update_policy_training_samples(training_samples, symbols_to_index, all_
         a, hn, hp = tree_sample_to_policy_sample(i.proof, i.initial_expr, symbols_to_index, all_symbols, theory)
         push!(policy_training_samples, PolicyTrainingSample(a, hp, hn))
     end
-    @save "data/training_data/policy_training_samplesk$(length(policy_training_samples))_v4.jld2" policy_training_samples
+    @save "data/training_data/policy_training_samplesk$(length(policy_training_samples))_v5.jld2" policy_training_samples
 end
 
 
@@ -189,53 +189,46 @@ function name(arguments)
 end
 
 
-function str_to_expr1(string_tokens, all_symbols, tokens_visited)
+function str_to_expr1(string_tokens)
     if isempty(string_tokens)
-        return string_tokens
+        return 
     end
-    tk = string_tokens[1]
+    tk = popfirst!(string_tokens)
     if tk == "(" 
         args = []
-        tk_visited = popfirst!(tokens_visited)
-        for i in string_tokens[tk_visited + 1:end]
-            push!(args, str_to_expr(string_tokens, all_symbols, tokens_visited + 1))
+        tk_symbol = popfirst!(string_tokens)
+        # for i in string_tokens[tk_visited + 1:end]
+        size_args = tk_symbol == "!" ? 1 : 2
+        while length(args) != size_args
+            tmp = str_to_expr1(string_tokens)
+            if !isnothing(tmp)
+                push!(args, tmp)
+            end
         end
-        return Expr(:call, string_tokens[2], args...)
+        return Expr(:call, Symbol(tk_symbol), args...)
     end
     if tk == ")"
         return
     end
-    # if !(tk in all_symbols) && string_tokens[2] != "("
-    #     return string_tokens[1:2]
-    # elseif !(tk in all_symbols)
-    #     res = str_to_expr(string_tokens[2:end], all_symbols, tokens_visited)
-    #     return [string_tokens[1], res]
-    # end
-    # if tk in all_symbols
-    #     Expr(:call,)
-    # end
-end
-
-function str_to_expr(string_tokens, all_symbols, tokens_visited)
-    tk = string_tokens[1] 
-    if tk == "("
-        function_symbol = Symbol(string_tokens[2])
-        arg2_start = 0
-        arg1 = str_to_expr(string_tokens, all_symbols, tokens_visited)
-        arg2 = str_to_expr(string_tokens, all_symbols, tokens_visited)
-        return Expr(:call, function_symbol, arg1, arg2)
+    if isnothing(tryparse(Int, tk))
+        return Symbol(tk)
+    else
+        return parse(Int, tk)
     end
-      # if tk == ""
 end
 
-function caviar_data_parser(data)
+function caviar_data_parser(file)
+    data = open(file, "r") do f
+        return JSON.parse(f)
+    end
     x = []
     y = []
     r = []
     for i in data
+        # @show i
         tmp_x = i["expression"]["start"]
         expression_tokens = split(tmp_x, " ") 
-        tmp_x = str_to_expr(expression_tokens)
+        tmp_x = str_to_expr1(expression_tokens)
         tmp_y = i["expression"]["end"]
         tmp_r = i["rules"]
         push!(x , tmp_x)
@@ -262,7 +255,13 @@ function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symb
             tmp = []
             finall_ind = 0
             for (ind,i) in enumerate(applicable_rueles)
+                # em = nothing
+                # try
                 em = ex2mill(i[2], symbols_to_index, all_symbols, collect(1:100))
+                # catch e
+                #     @show i[1]
+                #     @show i[2]
+                # end
                 o = policy(em)
                 if o in tmp 
                     @show i
@@ -283,4 +282,5 @@ function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symb
             # @assert counter == 0
         end
     end 
+    @show counter
 end

@@ -32,28 +32,49 @@ exp_size(ex::Float32) = 1f0
 
 function my_rewriter!(position, ex, rule)
     if isempty(position)
-        # @show ex
         return rule(ex) 
     end
     ind = position[1]
-    # @show ex
     ret = my_rewriter!(position[2:end], ex.args[ind], rule)
     if !isnothing(ret)
-        # @show ret
-        # println("Suc")
         ex.args[ind] = ret
     end
     return nothing
 end
 
 
-function traverse_expr!(ex, matcher, tree_ind, trav_indexs, tmp)
+function traverse_expr!(ex, matchers, tree_ind, trav_indexs, tmp)
     if typeof(ex) != Expr
         # trav_indexs = []
         return
     end
-    a = matcher(ex)
-    # @show trav_indexs
+    a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
+    if !isempty(a)
+        b = copy(trav_indexs)
+        append!(tmp, [(b, i[1]) for i in a])
+    end
+
+    # Traverse sub-expressions
+    for (ind, i) in enumerate(ex.args)
+        # Update the traversal index path with the current index
+        push!(trav_indexs, ind)
+
+        # Recursively traverse the sub-expression
+        traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp)
+
+        # After recursion, pop the last index to backtrack to the correct level
+        pop!(trav_indexs)
+    end
+end
+
+
+function old_traverse_expr!(ex, matchers, tree_ind, trav_indexs, tmp)
+    if typeof(ex) != Expr
+        # trav_indexs = []
+        return
+    end
+
+    a = matchers(ex)
     if !isnothing(a)
         b = copy(trav_indexs)
         push!(tmp, b)
@@ -65,30 +86,20 @@ function traverse_expr!(ex, matcher, tree_ind, trav_indexs, tmp)
         push!(trav_indexs, ind)
 
         # Recursively traverse the sub-expression
-        traverse_expr!(i, matcher, tree_ind, trav_indexs, tmp)
+        old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp)
 
         # After recursion, pop the last index to backtrack to the correct level
         pop!(trav_indexs)
     end
 end
-# BenchmarkTools.Trial: 9230 samples with 1 evaluation.
-#  Range (min … max):  416.068 μs … 43.444 ms  ┊ GC (min … max):  0.00% … 98.57%
-#  Time  (median):     431.897 μs              ┊ GC (median):     0.00%
-#  Time  (mean ± σ):   532.241 μs ±  1.875 ms  ┊ GC (mean ± σ):  18.24% ±  5.12%
-#
-#        ▅███▆▅▂                                                  
-#   ▁▁▂▅█████████▇▅▄▄▃▃▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ ▂
-#   416 μs          Histogram: frequency by time          523 μs <
-#
-#  Memory estimate: 538.06 KiB, allocs estimate: 11514.
-#
 
-function execute(ex, theory)
+
+function old_execute(ex, theory)
     res = []
     old_ex = copy(ex)
     for (ind, r) in enumerate(theory)
         tmp = []
-        traverse_expr!(ex, r, 1, [], tmp) 
+        old_traverse_expr!(ex, r, 1, Int32[], tmp) 
         if isempty(tmp)
             push!(res, ((ind, 0), ex))
         else
@@ -101,6 +112,23 @@ function execute(ex, theory)
                     push!(res, ((ind, ri), old_ex))
                 end
             end
+        end
+    end
+    return res
+end
+
+
+function execute(ex, theory)
+    res = []
+    tmp = []
+    traverse_expr!(ex, theory, 1, Int32[], tmp) 
+    for (pl, r) in tmp
+        old_ex = copy(ex)
+        if isempty(pl)
+            push!(res, ((pl, r), theory[r](old_ex)))
+        else
+            my_rewriter!(pl, old_ex, theory[r])
+            push!(res, ((pl, r), old_ex))
         end
     end
     return res
@@ -129,7 +157,13 @@ end
 function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, theory::Vector) 
     ex = parent.ex
     #println("Expanding nodes from expression $ex")
-    succesors = filter(r -> r[2] != ex, execute(ex, theory))
+    # succesors = filter(r -> r[2] != ex, old_execute(ex, theory))
+    # 14.989794 seconds (22.69 M allocations: 3.844 GiB, 3.48% gc time)
+    # 7.636094 seconds (19.08 M allocations: 2.482 GiB, 4.21% gc time)
+
+    succesors = execute(ex, theory)
+    # 14.612299 seconds (22.69 M allocations: 3.844 GiB, 3.27% gc time)
+    # 7.739473 seconds (18.29 M allocations: 2.389 GiB, 4.01% gc time)
 
     for (rule_index, new_exp) in succesors
         if !haskey(encodings_buffer, hash(new_exp))
@@ -137,7 +171,7 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
             # @show new_exp
             #
             # @show rule_index 
-            encodings_buffer[hash(new_exp)] = ex2mill(new_exp, symbols_to_index, all_symbols, collect(1:100))
+            encodings_buffer[hash(new_exp)] = ex2mill(new_exp, symbols_to_index, all_symbols) 
         end
         new_node = Node(new_exp, rule_index, parent.node_id, parent.depth + 1, encodings_buffer[hash(new_exp)])
         if push_to_tree!(soltree, new_node)
@@ -179,6 +213,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         end
         push!(close_list, node.node_id)
     end
+    
     return false
 end
 
@@ -281,7 +316,7 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_s
     encodings_buffer = Dict{UInt64, ProductNode}()
     println("Initial expression: $ex")
     #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
-    encoded_ex = ex2mill(ex, symbols_to_index, all_symbols, collect(1:100))
+    encoded_ex = ex2mill(ex, symbols_to_index, all_symbols)
     root = Node(ex, (0,0), hash(ex), 0, encoded_ex)
     soltree[root.node_id] = root
     #push!(open_list, root.node_id)
@@ -291,10 +326,10 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_s
     println("Have successfuly finished bulding simplification tree!")
 
     smallest_node = extract_smallest_terminal_node(soltree, close_list)
-    for (ind, (i, cof)) in enumerate(open_list)
-        expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
-    end
-    @show expansion_history[smallest_node.node_id]
+    # for (ind, (i, cof)) in enumerate(open_list)
+    #     expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
+    # end
+    # @show expansion_history[smallest_node.node_id]
     simplified_expression = smallest_node.ex
     println("Simplified expression: $simplified_expression")
 
@@ -353,7 +388,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         # end
     end
     data_len = length(data)
-    @save "data/training_data/training_samplesk$(data_len)_v3.jld2" training_samples
+    @save "data/training_data/training_samplesk$(data_len)_v4.jld2" training_samples
     #return training_samples
 end
 

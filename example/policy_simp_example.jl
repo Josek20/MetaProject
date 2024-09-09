@@ -95,7 +95,7 @@ old_symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(old_all_symbols))
 
 hidden_size = 256
 policy = ExprModel(
-    Flux.Chain(Dense(length(old_symbols_to_index) + 2 + 16, hidden_size,relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(old_symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
     Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
@@ -103,7 +103,7 @@ policy = ExprModel(
 
 optimizer = ADAM()
 policy_training_samples = Vector{PolicyTrainingSample}()
-@load "data/training_data/policy_training_samplesk999_v4.jld2" policy_training_samples
+@load "data/training_data/policy_training_samplesk999_v5.jld2" policy_training_samples
 pc = Flux.params([policy.head_model, policy.aggregation, policy.joint_model, policy.heuristic])
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 optimizer = Flux.ADAM()

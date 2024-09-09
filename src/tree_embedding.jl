@@ -1,8 +1,8 @@
 # Initialize model and example tree
-all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&, :||, :(==), :!, :rem, :%]
+all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&, :||, :(==), :!, :rem, :%, :(!=)]
 symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
 
-function ex2mill(ex::Expr, symbols_to_index, all_symbols, position)
+function ex2mill(ex::Expr, symbols_to_index, all_symbols)
     if ex.head == :call
         fun_name, args =  ex.args[1], ex.args[2:end]
     elseif ex.head in all_symbols # Symbol("&&") || ex.head == Symbol("min")
@@ -14,18 +14,19 @@ function ex2mill(ex::Expr, symbols_to_index, all_symbols, position)
     n = length(symbols_to_index) + 2
     # encoding = Flux.onehotbatch([symbols_to_index[fun_name]], 1:n) * position
     # encoding = Flux.onehotbatch([1, symbols_to_index[fun_name]], 1:n)
+    # @show ex
     encoding = Flux.onehotbatch([symbols_to_index[fun_name]], 1:n)
     # emb_ind = popfirst!(position)
     # pos_encoding = [parse(Int, i) for i in bitstring(Int16(0))]
     # encoding = vcat(encoding, pos_encoding)
     ds = ProductNode((
         head = ArrayNode(encoding),
-        args = args2mill(args, symbols_to_index, all_symbols, position)
+        args = args2mill(args, symbols_to_index, all_symbols)
     ))
     return(ds)
 end
 
-function ex2mill(ex::Symbol, symbols_to_index, all_symbols, position)
+function ex2mill(ex::Symbol, symbols_to_index, all_symbols)
     n = length(symbols_to_index) + 2
     # encoding = Flux.onehotbatch([n-1], 1:n) * position
     encoding = Flux.onehotbatch([n-1], 1:n)
@@ -39,7 +40,7 @@ function ex2mill(ex::Symbol, symbols_to_index, all_symbols, position)
         ))
 end
 
-function ex2mill(ex::Number, symbols_to_index, all_symbols, position)
+function ex2mill(ex::Number, symbols_to_index, all_symbols)
     n = length(symbols_to_index) + 2
     # encoding = Flux.onehotbatch([n-2], 1:n) * position
     # @show ex
@@ -54,14 +55,16 @@ function ex2mill(ex::Number, symbols_to_index, all_symbols, position)
         ))
 end
 
-function args2mill(args::Vector, symbols_to_index, all_symbols, position)
+function args2mill(args::Vector, symbols_to_index, all_symbols)
     isempty(args) && return(BagNode(missing, [0:-1]))
-    BagNode(
-        reduce(catobs, map(a -> ex2mill(a, symbols_to_index, all_symbols, position), args)),
-        [1:length(args)]
+    l = length(args)
+    BagNode(ProductNode((;
+        args = reduce(catobs, map(a -> ex2mill(a, symbols_to_index, all_symbols), args)),
+        position = ArrayNode(Flux.onehotbatch(1:l, 1:2)),
+        )),
+        [1:l]
         )
 end
-
 
 struct ExprModel{HM,A,JM,H}
     head_model::HM
@@ -92,39 +95,30 @@ end
 #      
 # end
 function (m::ExprModel)(ds::ProductNode)
-    m.heuristic(embed(m, ds, zeros(1, size(ds.data.head.data)[2])))
+    m.heuristic(embed(m, ds))
 end
 
-function embed(m::ExprModel, ds::ProductNode, pos_em::Matrix)
-    # sds = size(ds.data.head.data)[2]
-    # pos_emb = repeat([1,2], sds ÷ 2)#[collect(1:2) for _ in 1:sds ÷ 2]
-    # # pos_emb = hcat([bitstring(Int16(i)) for i in collect(1:sds)]...)
-    # # if isempty(pos_emb)
-    # #     pos_emb = 
-    # # end
-    # @show pos_emb
-    # @show sds
-    # reshaped = isempty(pos_emb) ? zeros(1, sds) : reshape(pos_emb, (1, sds))
-    # @show size(reshaped)
-    # @show size(ds.data.head.data)
-    # stmp = vcat(ds.data.head.data, pos_em)
-    # @show size(stmp)
-    # tmp1, tmp2 = m.head_model(stmp), embed(m, ds.data.args, pos_em)
-    # @show tmp1
-    # tmp = vcat(tmp1, tmp2)
-    tmp = vcat(m.head_model(ds.data.head.data), embed(m, ds.data.args, pos_em))
-    # @show size(tmp)
-    # @show ds.data.head.data
-    # @show tmp2
+function embed(m::ExprModel, ds::ProductNode) 
+    # @show ds.data
+    if haskey(ds.data, :position)
+        # @show size(m.head_model(ds.data.args.data.head.data))
+        tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data)
+        tmp = vcat(tmp, embed(m, ds.data.args.data.args))
+    else
+        o = m.head_model(ds.data.head.data)
+        tmp = vcat(o, zeros(Float32, 2, size(o)[2]))
+        tmp = vcat(tmp, embed(m, ds.data.args))
+    end
+    # tmp = vcat(m.head_model(ds.data.args.head.data), embed(m, ds.data.args))
     m.joint_model(tmp)
 end
 
-function embed(m::ExprModel, ds::BagNode, pos_em::Matrix)
-    tmp = embed(m, ds.data, pos_em)
+function embed(m::ExprModel, ds::BagNode)
+    tmp = embed(m, ds.data)
     m.aggregation(tmp, ds.bags)
 end
 
-embed(m::ExprModel, ds::Missing, pos_em::Matrix) = missing
+embed(m::ExprModel, ds::Missing) = missing
 
 function loss(heuristic, big_vector, hp=nothing, hn=nothing)
     o = heuristic(big_vector) 

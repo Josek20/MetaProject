@@ -88,6 +88,10 @@ test_data = preprosses_data_to_expressions(test_data)
 #     #min(a + b, a + c) --> min(b, c)
 # end
 theory = @theory a b c d x y begin
+    a::Number + b::Number => a + b
+    a::Number - b::Number => a - b
+    a::Number * b::Number => a * b
+    a::Number / b::Number => a / b
     # add.rc
     a + b --> b + a
     # + (~a, ~b) --> + (~b,~a)
@@ -244,9 +248,9 @@ end
 
 hidden_size = 256
 heuristic = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 2 + 16, hidden_size,relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
-    Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
+    Flux.Chain(Dense(3*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
@@ -260,12 +264,14 @@ n = 1
 
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 # @load "training_samplesk1000_v3.jld2" training_samples
+# x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
+x,y,r = MyModule.caviar_data_parser("data/caviar/5k_dataset.json")
 if isfile("models/tre1e_search_heuristic.bson")
     BSON.@load "models/tree_search_heuristic.bson" heuristic
 elseif isfile("data/training_data/tr2aining_samplesk1000_v3.jld2")
     @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
 else
-    train_heuristic!(heuristic, train_data[1:1], training_samples, max_steps, max_depth, all_symbols, theory)
+    train_heuristic!(heuristic, x, training_samples, max_steps, max_depth, all_symbols, theory)
     # @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
 
     test_training_samples(training_samples, train_data, theory)
