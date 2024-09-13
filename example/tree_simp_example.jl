@@ -91,10 +91,9 @@ theory = @theory a b c d x y begin
     a::Number + b::Number => a + b
     a::Number - b::Number => a - b
     a::Number * b::Number => a * b
-    a::Number / b::Number => a / b
+    a::Number / b::Number => b != 0 ? a / b : :($a / $b)
     # add.rc
     a + b --> b + a
-    # + (~a, ~b) --> + (~b,~a)
     a + (b + c) --> (a + b) + c
     a + 0 --> a
     a * (b + c) --> a*b + a*c
@@ -139,7 +138,9 @@ theory = @theory a b c d x y begin
     (-1 * a) / b --> -1 * (a / b)
 
     (a * b) / c --> a / (c / b)
-    (a * b) / c --> a * (b / c)
+    a / (c / b) --> (a * b) / c
+    (a / b) * c --> a / (c / b)
+    # (a * b) / c --> a * (b / c) ?
     (a + b) / c --> (a / c) + (b / c)
     ((a * b) + c) / d --> ((a * b) / d) + (c / d)
 
@@ -248,13 +249,13 @@ end
 
 hidden_size = 256
 heuristic = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(symbols_to_index) + 2 + 14, hidden_size,relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
     Flux.Chain(Dense(3*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-epochs = 100
+epochs = 10
 optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
@@ -263,22 +264,25 @@ max_depth = 10
 n = 1
 
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
+df1 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
 # @load "training_samplesk1000_v3.jld2" training_samples
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
-x,y,r = MyModule.caviar_data_parser("data/caviar/5k_dataset.json")
+x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
+# train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
+@assert 0 == 1
 if isfile("models/tre1e_search_heuristic.bson")
     BSON.@load "models/tree_search_heuristic.bson" heuristic
-elseif isfile("data/training_data/tr2aining_samplesk1000_v3.jld2")
+elseif isfile("data/training_data/tr2aining_samplesk1000_v4.jld2")
     @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
 else
-    train_heuristic!(heuristic, x, training_samples, max_steps, max_depth, all_symbols, theory)
     # @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
 
-    test_training_samples(training_samples, train_data, theory)
-
+    # test_training_samples(training_samples, train_data, theory)
+    stats = []
     for ep in 1:epochs 
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-        for sample in training_samples[1:1]
+        train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
+        for sample in training_samples
             if isnothing(sample.training_data) 
                 continue
             end
@@ -295,16 +299,24 @@ else
             Flux.update!(optimizer, pc, grad)
         end
         # @show avarage_length_reduction
-        length_reduction, proofs, simp_expressions = test_heuristic(heuristic, test_data[1:10], max_steps, max_depth)
+        length_reduction, proofs, simp_expressions = test_heuristic(heuristic, train_data[1:10], max_steps, max_depth, variable_names, theory)
+        push!(stats, simp_expressions)
         # @show length_reduction
         # @show proofs
         # @show length_reduction
-        new_df_rows = [(ep, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proofs, length_reduction))]
-        for row in new_df_rows
-            push!(df, row)
-        end
+        # new_df_rows = [(ep, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proofs, length_reduction))]
+        # for row in new_df_rows
+        #     push!(df, row)
+        # end
     end
-    BSON.@save "models/tree_search_heuristic.bson" heuristic
-    CSV.write("stats/data100.csv", df)
+    # BSON.@save "models/tree_search_heuristic.bson" heuristic
+    # CSV.write("stats/data100.csv", df)
 end
-
+for i in 1:length(stats[1])
+  tmp = []
+  for j in 1:epochs
+      push!(tmp, stats[j][i])
+  end
+  push!(df1, tmp)
+end
+CSV.write("stats/new_theory_epoch_progress1.csv", df1)

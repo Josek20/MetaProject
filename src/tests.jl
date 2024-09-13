@@ -1,10 +1,10 @@
-function test_heuristic(heuristic, data, max_steps, max_depth)
+function test_heuristic(heuristic, data, max_steps, max_depth, variable_names, theory)
     result = []
     result_proof = []
     simp_expressions = []
     for (index, i) in enumerate(data)
         # simplified_expression, _, _, _, _, _, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
-        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names)
         original_length = exp_size(i)
         simplified_length = exp_size(simplified_expression)
         push!(result, original_length - simplified_length)

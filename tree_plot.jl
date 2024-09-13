@@ -153,13 +153,14 @@ expansion_history = Dict{UInt64, Vector}()
 encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
 #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
-encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, collect(1:100))
+encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
 root = MyModule.Node(ex, (0,0), hash(ex), 0, encoded_ex)
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
-reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory)
+# reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
+reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 10, 3, expansion_history, theory, variable_names)
 println("Have successfuly finished bulding simplification tree!")
 
 smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)

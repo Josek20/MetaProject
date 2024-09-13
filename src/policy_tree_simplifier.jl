@@ -244,9 +244,11 @@ end
 # ind = 2
 # applicable_rueles[index] = ((2, 1), :(0 <= 1007))
 
-function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symbols)
+function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symbols, variable_names)
     full_proof_tmp = []
     counter = 0
+    # @show size(variable_names)
+    # @show size(var_one_enc)
     for (ne,sample) in enumerate(samples)
         ex = sample.initial_expr
         @show ne
@@ -257,7 +259,8 @@ function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symb
             for (ind,i) in enumerate(applicable_rueles)
                 # em = nothing
                 # try
-                em = ex2mill(i[2], symbols_to_index, all_symbols, collect(1:100))
+
+                em = ex2mill(i[2], symbols_to_index, all_symbols, variable_names)
                 # catch e
                 #     @show i[1]
                 #     @show i[2]
@@ -273,6 +276,8 @@ function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symb
                 else
                     push!(tmp, o)
                 end
+                # @show pr
+                # @show i[1]
                 if i[1] == pr
                     finall_ind = 1
                     ex = i[2]

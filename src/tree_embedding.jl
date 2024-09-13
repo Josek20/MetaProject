@@ -2,7 +2,11 @@
 all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&, :||, :(==), :!, :rem, :%, :(!=)]
 symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
 
-function ex2mill(ex::Expr, symbols_to_index, all_symbols)
+number_of_variables = 13
+var_one_enc = Flux.onehotbatch(collect(1:number_of_variables), 1:number_of_variables)
+variable_names = Dict(Symbol("v$(i-1)")=>var_one_enc[j,:] for (i,j) in enumerate(1:number_of_variables))
+
+function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict)
     if ex.head == :call
         fun_name, args =  ex.args[1], ex.args[2:end]
     elseif ex.head in all_symbols # Symbol("&&") || ex.head == Symbol("min")
@@ -12,24 +16,28 @@ function ex2mill(ex::Expr, symbols_to_index, all_symbols)
         error("unknown head $(ex.head)")
     end
     n = length(symbols_to_index) + 2
+    # n = length(symbols_to_index) + 2 + 1 + 12
     # encoding = Flux.onehotbatch([symbols_to_index[fun_name]], 1:n) * position
     # encoding = Flux.onehotbatch([1, symbols_to_index[fun_name]], 1:n)
     # @show ex
     encoding = Flux.onehotbatch([symbols_to_index[fun_name]], 1:n)
+    encoding = vcat(encoding, zeros(14))
     # emb_ind = popfirst!(position)
     # pos_encoding = [parse(Int, i) for i in bitstring(Int16(0))]
     # encoding = vcat(encoding, pos_encoding)
     ds = ProductNode((
         head = ArrayNode(encoding),
-        args = args2mill(args, symbols_to_index, all_symbols)
+        args = args2mill(args, symbols_to_index, all_symbols, variable_names)
     ))
     return(ds)
 end
 
-function ex2mill(ex::Symbol, symbols_to_index, all_symbols)
+function ex2mill(ex::Symbol, symbols_to_index, all_symbols, variable_names)
     n = length(symbols_to_index) + 2
     # encoding = Flux.onehotbatch([n-1], 1:n) * position
-    encoding = Flux.onehotbatch([n-1], 1:n)
+    encoding = Flux.onehotbatch([n], 1:n)
+    encoding = vcat(encoding, zeros(14))
+    encoding[n+2:end] = variable_names[ex]
     # emb_ind = popfirst!(position)
     # pos_encoding = [parse(Int, i) for i in bitstring(Int16(0))]
     # encoding = vcat(encoding, pos_encoding)
@@ -40,11 +48,13 @@ function ex2mill(ex::Symbol, symbols_to_index, all_symbols)
         ))
 end
 
-function ex2mill(ex::Number, symbols_to_index, all_symbols)
+function ex2mill(ex::Number, symbols_to_index, all_symbols, variable_names)
     n = length(symbols_to_index) + 2
     # encoding = Flux.onehotbatch([n-2], 1:n) * position
     # @show ex
-    encoding = Flux.onehotbatch([n-2], 1:n) # * Float32(ex)
+    encoding = Flux.onehotbatch([n-1], 1:n) # * Float32(ex)
+    encoding = vcat(encoding, zeros(14))
+    encoding[n + 1] = tanh(ex) 
     # emb_ind = popfirst!(position)
     # pos_encoding = [parse(Int, i) for i in bitstring(Int16(ex))]
     # encoding = vcat(encoding, pos_encoding)
@@ -55,11 +65,11 @@ function ex2mill(ex::Number, symbols_to_index, all_symbols)
         ))
 end
 
-function args2mill(args::Vector, symbols_to_index, all_symbols)
+function args2mill(args::Vector, symbols_to_index, all_symbols, variable_names)
     isempty(args) && return(BagNode(missing, [0:-1]))
     l = length(args)
     BagNode(ProductNode((;
-        args = reduce(catobs, map(a -> ex2mill(a, symbols_to_index, all_symbols), args)),
+        args = reduce(catobs, map(a -> ex2mill(a, symbols_to_index, all_symbols, variable_names), args)),
         position = ArrayNode(Flux.onehotbatch(1:l, 1:2)),
         )),
         [1:l]
@@ -149,3 +159,8 @@ function heuristic_loss(heuristic, data, in_solution, not_in_solution)
 end
 
 
+function check_loss(heuristics, data, hp, hn)
+    fl1 = heuristic_loss(heuristics, data, hp, hn)
+    fl2 = loss(heuristics, data, hp, hn)
+    @assert fl1 == fl2
+end
