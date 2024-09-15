@@ -93,6 +93,7 @@ end
 old_all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&, ]#:||]# :(==), :!, :rem, :%]
 old_symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(old_all_symbols))
 
+@assert 0 == 1
 hidden_size = 256
 policy = ExprModel(
     Flux.Chain(Dense(length(old_symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),

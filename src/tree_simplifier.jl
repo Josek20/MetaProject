@@ -142,6 +142,13 @@ function push_to_tree!(soltree::Dict, new_node::Node)
         if new_node.depth < old_node.depth
             soltree[node_id] = new_node
             soltree[node_id].children = old_node.children
+            push!(soltree[new_node.parent].children, new_node.node_id)
+            # @show keys(soltree)
+            # @show soltree[old_node.parent].children
+            # @assert haskey(soltree, old_node.parent)
+            # tmp1 = soltree[old_node.parent].children
+            # deleteat!(tmp1, UInt64(old_node.node_id))
+            filter!(x->x!=old_node.node_id, soltree[old_node.parent].children) 
         else
             soltree[node_id] = old_node
         end
@@ -311,7 +318,9 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
     for (k, n) in soltree
         if isnothing(min_node)
             min_node = n
-        elseif exp_size(n.ex) <= exp_size(min_node.ex)
+        elseif exp_size(n.ex) < exp_size(min_node.ex)
+            min_node = n
+        elseif exp_size(n.ex) == exp_size(min_node.ex)
             if n.depth < min_node.depth && n.depth != 0
                 min_node = n
             end
@@ -371,7 +380,7 @@ end
 function isbetter(a::TrainingSample, b::TrainingSample)
     if exp_size(a.expression) > exp_size(b.expression)
         return true
-      elseif exp_size(a.expression) == exp_size(b.expression) && length(a.proof) > length(b.proof)
+    elseif exp_size(a.expression) == exp_size(b.expression) && length(a.proof) > length(b.proof)
         return true
     else
         return false
@@ -383,14 +392,14 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
     # @threads for i in data
     for (index, i) in enumerate(data)
         println("Index: $index")
-        if length(training_samples) > index && training_samples[index].saturated
-            continue
-        end
+        # if length(training_samples) > index && training_samples[index].saturated
+        #     continue
+        # end
         #try
         simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector = heuristic_forward_pass(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names)
         println("Saturated: $saturated")
         new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, i)
-        if length(training_samples) > index 
+        if length(training_samples) >= index 
             training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
         end
         if length(training_samples) < index

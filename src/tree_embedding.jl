@@ -48,13 +48,17 @@ function ex2mill(ex::Symbol, symbols_to_index, all_symbols, variable_names)
         ))
 end
 
+
+my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
+
+
 function ex2mill(ex::Number, symbols_to_index, all_symbols, variable_names)
     n = length(symbols_to_index) + 2
     # encoding = Flux.onehotbatch([n-2], 1:n) * position
     # @show ex
     encoding = Flux.onehotbatch([n-1], 1:n) # * Float32(ex)
     encoding = vcat(encoding, zeros(14))
-    encoding[n + 1] = tanh(ex) 
+    encoding[n + 1] = my_sigmoid(ex) 
     # emb_ind = popfirst!(position)
     # pos_encoding = [parse(Int, i) for i in bitstring(Int16(ex))]
     # encoding = vcat(encoding, pos_encoding)

@@ -142,7 +142,7 @@ function create_latex_tree2(io, root, soltree, smallest_node, preamble, closing,
 end
 
 # function plot_tree()
-ex = train_data[1]
+ex = train_data[3]
 # ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
 
 soltree = Dict{UInt64, MyModule.Node}()
@@ -160,7 +160,7 @@ soltree[root.node_id] = root
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
 # reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
-reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 10, 3, expansion_history, theory, variable_names)
+reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 10, expansion_history, theory, variable_names)
 println("Have successfuly finished bulding simplification tree!")
 
 smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)

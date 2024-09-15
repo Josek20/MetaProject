@@ -268,7 +268,7 @@ function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symb
                 o = policy(em)
                 if o in tmp 
                     @show i
-                    @show ind
+                    # @show ind
                     index = findfirst(x->x==o, tmp)
                     # @show ind
                     @show applicable_rueles[index]

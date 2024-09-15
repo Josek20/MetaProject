@@ -6,6 +6,7 @@ using DataFrames
 using BSON
 using CSV
 using JLD2
+using Revise
 
 train_data_path = "data/neural_rewrter/train.json"
 test_data_path = "data/neural_rewrter/test.json"
@@ -14,6 +15,7 @@ train_data = isfile(train_data_path) ? load_data(train_data_path)[1:1000] : load
 test_data = load_data(test_data_path)[1:1000]
 train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
+
 
 # theory = @theory a b c begin
 #     a::Number + b::Number => a + b
@@ -91,7 +93,7 @@ theory = @theory a b c d x y begin
     a::Number + b::Number => a + b
     a::Number - b::Number => a - b
     a::Number * b::Number => a * b
-    a::Number / b::Number => b != 0 ? a / b : :($a / $b)
+    # a::Number / b::Number => b != 0 ? a / b : :($a / $b)
     # add.rc
     a + b --> b + a
     a + (b + c) --> (a + b) + c
@@ -260,16 +262,17 @@ optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 max_steps = 1000
-max_depth = 10
-n = 1
+max_depth = 25
+n = 10
 
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 df1 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
+df2 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
 # @load "training_samplesk1000_v3.jld2" training_samples
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
-x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
+# x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-@assert 0 == 1
+# @assert 0 == 1
 if isfile("models/tre1e_search_heuristic.bson")
     BSON.@load "models/tree_search_heuristic.bson" heuristic
 elseif isfile("data/training_data/tr2aining_samplesk1000_v4.jld2")
@@ -279,28 +282,43 @@ else
 
     # test_training_samples(training_samples, train_data, theory)
     stats = []
+    loss_stats = []
+    proof_stats = []
     for ep in 1:epochs 
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-        train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
+        println("Training===========================================")
+        train_heuristic!(heuristic, train_data[1:n], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
+        ltmp = []
+        MyModule.test_expr_embedding(heuristic, training_samples[1:n], theory, symbols_to_index, all_symbols, variable_names)
+
+
         for sample in training_samples
             if isnothing(sample.training_data) 
                 continue
             end
             grad = gradient(pc) do
                 # o = heuristic(sample.training_data)
-                a = heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                # a = loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                # a = heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                a = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
                 @show a
                 # if isnan(a)
                 #     println(sample.expression)
                 # end
                 return a
             end
+            # sa = heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            sa = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            push!(ltmp, sa)
             Flux.update!(optimizer, pc, grad)
         end
         # @show avarage_length_reduction
-        length_reduction, proofs, simp_expressions = test_heuristic(heuristic, train_data[1:10], max_steps, max_depth, variable_names, theory)
-        push!(stats, simp_expressions)
+
+        println("Testing===========================================")
+        # length_reduction, proofs, simp_expressions = test_heuristic(heuristic, train_data[1:n], max_steps, max_depth, variable_names, theory)
+        # push!(stats, simp_expressions)
+        push!(stats, [i.expression for i in training_samples])
+        push!(proof_stats, [i.proof for i in training_samples])
+        push!(loss_stats, ltmp)
         # @show length_reduction
         # @show proofs
         # @show length_reduction
@@ -313,10 +331,36 @@ else
     # CSV.write("stats/data100.csv", df)
 end
 for i in 1:length(stats[1])
-  tmp = []
-  for j in 1:epochs
-      push!(tmp, stats[j][i])
-  end
-  push!(df1, tmp)
+    tmp = []
+    for j in 1:epochs
+        push!(tmp, stats[j][i])
+    end
+    push!(df1, tmp)
 end
-CSV.write("stats/new_theory_epoch_progress1.csv", df1)
+for i in 1:length(proof_stats[1])
+    tmp = []
+    for j in 1:epochs
+        push!(tmp, proof_stats[j][i])
+    end
+    push!(df2, tmp)
+end
+r = "test"
+CSV.write("stats/new_theory_epoch_exp_progress$r.csv", df1)
+CSV.write("stats/new_theory_epoch_proof_progress$r.csv", df2)
+using Plots
+plot(1:epochs, transpose(hcat(loss_stats...)))
+savefig("stats/loss_new_theory$r.png")
+plot()
+for i in 1:size(df1)[1]
+    tmp = MyModule.exp_size.(Vector(df1[i, :]))
+    plot!(1:size(df1)[2], tmp)
+end
+plot!()
+savefig("stats/new_theory_expr_size_progress_$r.png")
+plot()
+for i in 1:size(df2)[1]
+    tmp = length.(Vector(df2[i, :]))
+    plot!(1:size(df2)[2], tmp)
+end
+plot!()
+savefig("stats/new_theory_proof_progress_$r.png")
