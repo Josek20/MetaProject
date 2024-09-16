@@ -173,14 +173,15 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
     # 7.739473 seconds (18.29 M allocations: 2.389 GiB, 4.01% gc time)
 
     for (rule_index, new_exp) in succesors
-        if !haskey(encodings_buffer, hash(new_exp))
+        expr_hash = hash(new_exp)
+        if !haskey(encodings_buffer, expr_hash)
             #encodings_buffer[hash(new_exp)] = expression_encoder(new_exp, all_symbols, symbols_to_index)
             # @show new_exp
             #
             # @show rule_index 
-            encodings_buffer[hash(new_exp)] = ex2mill(new_exp, symbols_to_index, all_symbols, variable_names) 
+            encodings_buffer[expr_hash] = ex2mill(new_exp, symbols_to_index, all_symbols, variable_names) 
         end
-        new_node = Node(new_exp, rule_index, parent.node_id, parent.depth + 1, encodings_buffer[hash(new_exp)])
+        new_node = Node(new_exp, rule_index, parent.node_id, parent.depth + 1, encodings_buffer[expr_hash])
         if push_to_tree!(soltree, new_node)
             push!(parent.children, new_node.node_id)
             #println(new_exp)
@@ -417,7 +418,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         # end
     end
     data_len = length(data)
-    @save "data/training_data/training_samplesk$(data_len)_v5.jld2" training_samples
+    # @save "data/training_data/training_samplesk$(data_len)_v5.jld2" training_samples
     #return training_samples
 end
 

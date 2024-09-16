@@ -70,42 +70,14 @@ function test_policy(policy, data, theory, max_itr, symbols_to_index, all_symbol
 end
 
 
-# function policy_loss_func1(policy, ee, yj)
-#     p = policy(ee)
-#     diff = p[1, yj] .- p
-#     filtered_diff = filter(x-> x != 0, diff)
-#     loss = sum()
-# end
 logistic(x) = log(1 + exp(x))
 hinge(x) = max(0, 1 - x)
 loss01(x) = x > 0
-
-function policy_loss_func1(policy, ee, yj, surrogate::Function = logistic)
-    p = policy(ee)
-    diff = p[1, yj] .- p
-    filtered_diff = filter(!=(0), diff)
-    loss = sum(surrogate.(filtered_diff))
-end
-
-
-function policy_loss_func2(policy, ee, yj, hp, hn)
-    p = policy(ee)
-    pp = p * hp
-    pn = p[1, :] .* hn
-    diff = 0
-    for i in 1:size(pp)[2]
-          
-        diff += sum(log.(1 .+ exp.(filtered_diff)))
-    end
-    # filtered_diff = filter(x-> x != 0, diff)
-    # loss = sum(log.(1 .+ exp.(filtered_diff)))
-end
 
 
 function policy_loss_func(policy, big_vector, hp=nothing, hn=nothing, surrogate::Function = logistic)
     o = policy(big_vector) 
 
-    # diff = o * hp - o * hn
     diff = hn .* (o * hp) .- hn .* o[1,:]
     filtered_diff = filter(!=(0), diff)
     loss = sum(surrogate.(filtered_diff))

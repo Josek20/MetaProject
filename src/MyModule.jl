@@ -23,6 +23,7 @@ export load_data, preprosses_data_to_expressions
 include("tree_embedding.jl")
 include("tree_simplifier.jl")
 include("policy_tree_simplifier.jl")
+# include("generate_random_expressions.jl")
 export ex2mill, heuristic_loss, ExprModel, all_symbols, symbols_to_index, TrainingSample, train_heuristic!, build_tree, execute, policy_loss_func, test_policy, tree_sample_to_policy_sample, PolicyTrainingSample, variable_names
 
 include("tests.jl")

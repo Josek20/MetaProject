@@ -7,6 +7,7 @@ using BSON
 using CSV
 using JLD2
 using Revise
+using StatsBase
 
 train_data_path = "data/neural_rewrter/train.json"
 test_data_path = "data/neural_rewrter/test.json"
@@ -256,14 +257,14 @@ heuristic = ExprModel(
     Flux.Chain(Dense(3*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
+pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 
 epochs = 10
 optimizer = ADAM()
 training_samples = Vector{TrainingSample}()
-pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 max_steps = 1000
 max_depth = 25
-n = 10
+n = 1
 
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 df1 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
@@ -292,26 +293,19 @@ else
         MyModule.test_expr_embedding(heuristic, training_samples[1:n], theory, symbols_to_index, all_symbols, variable_names)
 
 
-        for sample in training_samples
+        # for sample in training_samples
+        for i in 1:100
+            sample = StatsBase.sample(training_samples)
             if isnothing(sample.training_data) 
                 continue
             end
-            grad = gradient(pc) do
-                # o = heuristic(sample.training_data)
-                # a = heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                a = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                @show a
-                # if isnan(a)
-                #     println(sample.expression)
-                # end
-                return a
+            sa, grad = Flux.Zygote.withgradient(pc) do
+                # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
             end
-            # sa = heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-            sa = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
             push!(ltmp, sa)
             Flux.update!(optimizer, pc, grad)
         end
-        # @show avarage_length_reduction
 
         println("Testing===========================================")
         # length_reduction, proofs, simp_expressions = test_heuristic(heuristic, train_data[1:n], max_steps, max_depth, variable_names, theory)
@@ -319,13 +313,6 @@ else
         push!(stats, [i.expression for i in training_samples])
         push!(proof_stats, [i.proof for i in training_samples])
         push!(loss_stats, ltmp)
-        # @show length_reduction
-        # @show proofs
-        # @show length_reduction
-        # new_df_rows = [(ep, ind, s[1], s[2], s[3]) for (ind,s) in enumerate(zip(simp_expressions,  proofs, length_reduction))]
-        # for row in new_df_rows
-        #     push!(df, row)
-        # end
     end
     # BSON.@save "models/tree_search_heuristic.bson" heuristic
     # CSV.write("stats/data100.csv", df)
@@ -344,7 +331,7 @@ for i in 1:length(proof_stats[1])
     end
     push!(df2, tmp)
 end
-r = "test"
+r = "1test1"
 CSV.write("stats/new_theory_epoch_exp_progress$r.csv", df1)
 CSV.write("stats/new_theory_epoch_proof_progress$r.csv", df2)
 using Plots

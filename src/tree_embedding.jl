@@ -133,14 +133,18 @@ function embed(m::ExprModel, ds::BagNode)
 end
 
 embed(m::ExprModel, ds::Missing) = missing
-
-function loss(heuristic, big_vector, hp=nothing, hn=nothing)
+logistic(x) = log(1 + exp(x))
+hinge(x) = max(0, 1 - x)
+loss01(x) = x > 0
+function loss(heuristic, big_vector, hp=nothing, hn=nothing, surrogate::Function = logistic)
     o = heuristic(big_vector) 
     p = (o * hp) .* hn
 
     diff = p - o[1, :] .* hn
-    filtered_diff = filter(x-> x != 0, diff)
-    return sum(log.(1 .+ exp.(diff)))
+    filtered_diff = filter(!=(0), diff)
+    # return sum(log.(1 .+ exp.(filtered_diff)))
+    return mean(softmax(filtered_diff))
+    # return sum(surrogate.(filtered_diff))
 end
 
 # :(min(min(v1 * 4, 67) + v0 * 71, 137) <= (1018 + v1 * 4) + v0 * 71)
