@@ -419,7 +419,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
     end
     data_len = length(data)
     # @save "data/training_data/training_samplesk$(data_len)_v5.jld2" training_samples
-    #return training_samples
+    return training_samples
 end
 
 
