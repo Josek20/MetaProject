@@ -8,7 +8,9 @@ using CSV
 using JLD2
 using Revise
 using StatsBase
+using Distributed
 
+addprocs(2)
 train_data_path = "data/neural_rewrter/train.json"
 test_data_path = "data/neural_rewrter/test.json"
 

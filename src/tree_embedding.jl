@@ -80,7 +80,7 @@ end
         )
 end
 
-struct ExprModel{HM,A,JM,H}
+@everywhere struct ExprModel{HM,A,JM,H}
     head_model::HM
     aggregation::A
     joint_model::JM    
@@ -88,21 +88,21 @@ struct ExprModel{HM,A,JM,H}
 end
 
 
-function get_product_node_matrix!(x::ProductNode, pmatrix) 
-    m = x.data.head 
-    push!(pmatrix, m)
-    get_product_node_matrix!(x.data.args, pmatrix)
-end
-
-
-function get_product_node_matrix!(x::BagNode, pmatrix) 
-    get_product_node_matrix!(x.data, pmatrix)
-end
-
-
-function get_product_node_matrix!(x::Missing, pmatrix) 
-    return
-end
+# function get_product_node_matrix!(x::ProductNode, pmatrix) 
+#     m = x.data.head 
+#     push!(pmatrix, m)
+#     get_product_node_matrix!(x.data.args, pmatrix)
+# end
+#
+#
+# function get_product_node_matrix!(x::BagNode, pmatrix) 
+#     get_product_node_matrix!(x.data, pmatrix)
+# end
+#
+#
+# function get_product_node_matrix!(x::Missing, pmatrix) 
+#     return
+# end
 
 
 # function Base.==(x::ProductNode, y::ProductNode)

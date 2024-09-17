@@ -2,19 +2,18 @@ module MyModule
 
 using Flux
 using JSON
-using Metatheory
-using .Metatheory.EGraphs: SaturationReport, eqsat_search!, eqsat_apply!, extract!
 using GraphNeuralNetworks: GNNGraph, GCNConv
 using Statistics
-using Mill
 using BSON
 using JLD2
 using CSV
 using Distributed
+@everywhere using Mill
 # using Metatheory.Rewriters
-using DataStructures
-using DataFrames
-using Base.Threads
+@everywhere using DataStructures
+@everywhere using DataFrames
+@everywhere using Metatheory
+@everywhere using .Metatheory.EGraphs: SaturationReport, eqsat_search!, eqsat_apply!, extract!
 
 include("small_data_loader.jl")
 export load_data, preprosses_data_to_expressions

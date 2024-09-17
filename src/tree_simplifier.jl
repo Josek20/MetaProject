@@ -1,4 +1,4 @@
-mutable struct Node{E, P}
+@everywhere mutable struct Node{E, P}
     ex::E
     rule_index::Tuple
     children::Vector{UInt64}
@@ -226,16 +226,16 @@ end
 end
 
 
-function extract_loss_matrices(node::Node, soltree::Dict{UInt64, Node})
-    proof_nodes_ids = []
-    push!(proof_nodes_ids, node.node_id)
-    while node.parent != node.node_id
-        parent_id = node.parent
-        node = soltree[parent_id]
-        push!(proof_nodes_ids, node.node_id)
-    end
-    return proof_nodes_ids
-end
+# function extract_loss_matrices(node::Node, soltree::Dict{UInt64, Node})
+#     proof_nodes_ids = []
+#     push!(proof_nodes_ids, node.node_id)
+#     while node.parent != node.node_id
+#         parent_id = node.parent
+#         node = soltree[parent_id]
+#         push!(proof_nodes_ids, node.node_id)
+#     end
+#     return proof_nodes_ids
+# end
 
 
 @everywhere function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node}) 
@@ -307,12 +307,12 @@ end
 end
 
 
-function extract_smallest_terminal_node1(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
-    all_nodes = [i for i in values(soltree)] 
-    exs = [i.ex for i in values(soltree)] 
-    smallest_expression_node = argmin(exp_size.(exs))
-    return all_nodes[smallest_expression_node]
-end
+# function extract_smallest_terminal_node1(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
+#     all_nodes = [i for i in values(soltree)] 
+#     exs = [i.ex for i in values(soltree)] 
+#     smallest_expression_node = argmin(exp_size.(exs))
+#     return all_nodes[smallest_expression_node]
+# end
 
 @everywhere function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
     min_node = nothing
@@ -367,7 +367,7 @@ end
 end
 
 
-mutable struct TrainingSample{D, S, E, P, HP, HN, IE}
+@everywhere mutable struct TrainingSample{D, S, E, P, HP, HN, IE}
     training_data::D
     saturated::S
     expression::E
