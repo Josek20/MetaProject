@@ -10,6 +10,7 @@ using Mill
 using BSON
 using JLD2
 using CSV
+using Distributed
 # using Metatheory.Rewriters
 using DataStructures
 using DataFrames

@@ -70,9 +70,9 @@ function test_policy(policy, data, theory, max_itr, symbols_to_index, all_symbol
 end
 
 
-logistic(x) = log(1 + exp(x))
-hinge(x) = max(0, 1 - x)
-loss01(x) = x > 0
+# logistic(x) = log(1 + exp(x))
+# hinge(x) = max(0, 1 - x)
+# loss01(x) = x > 0
 
 
 function policy_loss_func(policy, big_vector, hp=nothing, hn=nothing, surrogate::Function = logistic)

@@ -11,26 +11,26 @@ mutable struct Node{E, P}
 end
 
 
-Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+@everywhere Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 
 
-function Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode)
+@everywhere function Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode)
     Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 end
 
 
-exp_size(node::Node) = exp_size(node.ex)
-exp_size(ex::Expr) = sum(exp_size.(ex.args))
-exp_size(ex::Symbol) = 1f0
-exp_size(ex::Int) = 1f0
-exp_size(ex::Float64) = 1f0
-exp_size(ex::Float32) = 1f0
+@everywhere exp_size(node::Node) = exp_size(node.ex)
+@everywhere exp_size(ex::Expr) = sum(exp_size.(ex.args))
+@everywhere exp_size(ex::Symbol) = 1f0
+@everywhere exp_size(ex::Int) = 1f0
+@everywhere exp_size(ex::Float64) = 1f0
+@everywhere exp_size(ex::Float32) = 1f0
 
 # get all availabel rules to apply
 # execute(ex, theory) = map(th->Postwalk(Metatheory.Chain([th]))(ex), theory)
 
 
-function my_rewriter!(position, ex, rule)
+@everywhere function my_rewriter!(position, ex, rule)
     if isempty(position)
         return rule(ex) 
     end
@@ -43,7 +43,7 @@ function my_rewriter!(position, ex, rule)
 end
 
 
-function traverse_expr!(ex, matchers, tree_ind, trav_indexs, tmp)
+@everywhere function traverse_expr!(ex, matchers, tree_ind, trav_indexs, tmp)
     if typeof(ex) != Expr
         # trav_indexs = []
         return
@@ -118,7 +118,7 @@ function old_execute(ex, theory)
 end
 
 
-function execute(ex, theory)
+@everywhere function execute(ex, theory)
     res = []
     tmp = []
     traverse_expr!(ex, theory, 1, Int32[], tmp) 
@@ -135,7 +135,7 @@ function execute(ex, theory)
 end
 
 
-function push_to_tree!(soltree::Dict, new_node::Node)
+@everywhere function push_to_tree!(soltree::Dict, new_node::Node)
     node_id = new_node.node_id
     if haskey(soltree, node_id)
         old_node = soltree[node_id]
@@ -161,7 +161,7 @@ function push_to_tree!(soltree::Dict, new_node::Node)
 end
 
 
-function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, theory::Vector, variable_names::Dict) 
+@everywhere function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, theory::Vector, variable_names::Dict) 
     ex = parent.ex
     #println("Expanding nodes from expression $ex")
     # succesors = filter(r -> r[2] != ex, old_execute(ex, theory))
@@ -195,7 +195,7 @@ function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::Expr
 end
 
 
-function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names)
+@everywhere function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names)
     step = 0
     reached_goal = false
     while length(open_list) > 0
@@ -238,7 +238,7 @@ function extract_loss_matrices(node::Node, soltree::Dict{UInt64, Node})
 end
 
 
-function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node}) 
+@everywhere function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node}) 
     proof_vector = Vector()
     depth_dict = Dict{Int, Vector{Any}}()
     big_vector = Vector()
@@ -314,7 +314,7 @@ function extract_smallest_terminal_node1(soltree::Dict{UInt64, Node}, close_list
     return all_nodes[smallest_expression_node]
 end
 
-function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
+@everywhere function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
     min_node = nothing
     for (k, n) in soltree
         if isnothing(min_node)
@@ -334,7 +334,7 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
 end
 
 
-function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names)
+@everywhere function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names)
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
@@ -378,7 +378,7 @@ mutable struct TrainingSample{D, S, E, P, HP, HN, IE}
 end
 
 
-function isbetter(a::TrainingSample, b::TrainingSample)
+@everywhere function isbetter(a::TrainingSample, b::TrainingSample)
     if exp_size(a.expression) > exp_size(b.expression)
         return true
     elseif exp_size(a.expression) == exp_size(b.expression) && length(a.proof) > length(b.proof)
@@ -389,7 +389,7 @@ function isbetter(a::TrainingSample, b::TrainingSample)
 end
 
 
-function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names)  
+@everywhere function train_heuristic(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names)  
     # @threads for i in data
     for (index, i) in enumerate(data)
         println("Index: $index")
@@ -419,7 +419,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
     end
     data_len = length(data)
     # @save "data/training_data/training_samplesk$(data_len)_v5.jld2" training_samples
-    #return training_samples
+    return training_samples
 end
 
 
