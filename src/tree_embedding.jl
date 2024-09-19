@@ -88,26 +88,6 @@ struct ExprModel{HM,A,JM,H}
 end
 
 
-function get_product_node_matrix!(x::ProductNode, pmatrix) 
-    m = x.data.head 
-    push!(pmatrix, m)
-    get_product_node_matrix!(x.data.args, pmatrix)
-end
-
-
-function get_product_node_matrix!(x::BagNode, pmatrix) 
-    get_product_node_matrix!(x.data, pmatrix)
-end
-
-
-function get_product_node_matrix!(x::Missing, pmatrix) 
-    return
-end
-
-
-# function Base.==(x::ProductNode, y::ProductNode)
-#      
-# end
 function (m::ExprModel)(ds::ProductNode)
     m.heuristic(embed(m, ds))
 end
@@ -127,12 +107,16 @@ function embed(m::ExprModel, ds::ProductNode)
     m.joint_model(tmp)
 end
 
+
 function embed(m::ExprModel, ds::BagNode)
     tmp = embed(m, ds.data)
     m.aggregation(tmp, ds.bags)
 end
 
+
 embed(m::ExprModel, ds::Missing) = missing
+
+
 logistic(x) = log(1 + exp(x))
 hinge(x) = max(0, 1 - x)
 loss01(x) = x > 0
@@ -147,8 +131,6 @@ function loss(heuristic, big_vector, hp=nothing, hn=nothing, surrogate::Function
     # return sum(surrogate.(filtered_diff))
 end
 
-# :(min(min(v1 * 4, 67) + v0 * 71, 137) <= (1018 + v1 * 4) + v0 * 71)
-# :(min(min(v1 * 4, 67) + v0 * 71, 137) <= (v0 * 71 + 1018) + v1 * 4)
 
 function heuristic_loss(heuristic, data, in_solution, not_in_solution)
     loss_t = 0.0

@@ -5,18 +5,13 @@ mutable struct Node{E, P}
     parent::P
     depth::Int64
     node_id::UInt64
-    #expression_encoding::Union{MyNodes, Nothing}
-    # expression_encoding::Union{ExprEncoding, ProductNode}
-    expression_encoding::ProductNode
+    expression_encoding::Union{ProductNode, Nothing}
 end
 
 
 Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-
-
-function Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode)
-    Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-end
+Node(ex, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 
 
 exp_size(node::Node) = exp_size(node.ex)
@@ -25,9 +20,6 @@ exp_size(ex::Symbol) = 1f0
 exp_size(ex::Int) = 1f0
 exp_size(ex::Float64) = 1f0
 exp_size(ex::Float32) = 1f0
-
-# get all availabel rules to apply
-# execute(ex, theory) = map(th->Postwalk(Metatheory.Chain([th]))(ex), theory)
 
 
 function my_rewriter!(position, ex, rule)
@@ -68,56 +60,6 @@ function traverse_expr!(ex, matchers, tree_ind, trav_indexs, tmp)
 end
 
 
-function old_traverse_expr!(ex, matchers, tree_ind, trav_indexs, tmp)
-    if typeof(ex) != Expr
-        # trav_indexs = []
-        return
-    end
-
-    a = matchers(ex)
-    if !isnothing(a)
-        b = copy(trav_indexs)
-        push!(tmp, b)
-    end
-
-    # Traverse sub-expressions
-    for (ind, i) in enumerate(ex.args)
-        # Update the traversal index path with the current index
-        push!(trav_indexs, ind)
-
-        # Recursively traverse the sub-expression
-        old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp)
-
-        # After recursion, pop the last index to backtrack to the correct level
-        pop!(trav_indexs)
-    end
-end
-
-
-function old_execute(ex, theory)
-    res = []
-    old_ex = copy(ex)
-    for (ind, r) in enumerate(theory)
-        tmp = []
-        old_traverse_expr!(ex, r, 1, Int32[], tmp) 
-        if isempty(tmp)
-            push!(res, ((ind, 0), ex))
-        else
-            for (ri, i) in enumerate(tmp)
-                old_ex = copy(ex)
-                if isempty(i)
-                    push!(res, ((ind, ri), r(old_ex)))
-                else 
-                    my_rewriter!(i, old_ex, r)
-                    push!(res, ((ind, ri), old_ex))
-                end
-            end
-        end
-    end
-    return res
-end
-
-
 function execute(ex, theory)
     res = []
     tmp = []
@@ -140,19 +82,12 @@ function push_to_tree!(soltree::Dict, new_node::Node)
     if haskey(soltree, node_id)
         old_node = soltree[node_id]
         if new_node.depth < old_node.depth
-            soltree[node_id] = new_node
-            soltree[node_id].children = old_node.children
+            soltree[node_id].depth = new_node.depth
             push!(soltree[new_node.parent].children, new_node.node_id)
-            # @show keys(soltree)
-            # @show soltree[old_node.parent].children
-            # @assert haskey(soltree, old_node.parent)
-            # tmp1 = soltree[old_node.parent].children
-            # deleteat!(tmp1, UInt64(old_node.node_id))
             filter!(x->x!=old_node.node_id, soltree[old_node.parent].children) 
         else
             soltree[node_id] = old_node
         end
-        #soltree[node_id] = new_node.depth < old_node.depth ? new_node : old_node
         return (false)
     else
         soltree[node_id] = new_node
@@ -161,35 +96,26 @@ function push_to_tree!(soltree::Dict, new_node::Node)
 end
 
 
-function expand_node!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, theory::Vector, variable_names::Dict) 
+# function expand_node_new!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, theory::Vector, variable_names::Dict) 
+function expand_node!(parent, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names) 
     ex = parent.ex
-    #println("Expanding nodes from expression $ex")
-    # succesors = filter(r -> r[2] != ex, old_execute(ex, theory))
-    # 14.989794 seconds (22.69 M allocations: 3.844 GiB, 3.48% gc time)
-    # 7.636094 seconds (19.08 M allocations: 2.482 GiB, 4.21% gc time)
-
     succesors = execute(ex, theory)
-    # 14.612299 seconds (22.69 M allocations: 3.844 GiB, 3.27% gc time)
-    # 7.739473 seconds (18.29 M allocations: 2.389 GiB, 4.01% gc time)
-
-    for (rule_index, new_exp) in succesors
-        expr_hash = hash(new_exp)
-        if !haskey(encodings_buffer, expr_hash)
-            #encodings_buffer[hash(new_exp)] = expression_encoder(new_exp, all_symbols, symbols_to_index)
-            # @show new_exp
-            #
-            # @show rule_index 
-            encodings_buffer[expr_hash] = ex2mill(new_exp, symbols_to_index, all_symbols, variable_names) 
-        end
-        new_node = Node(new_exp, rule_index, parent.node_id, parent.depth + 1, encodings_buffer[expr_hash])
-        if push_to_tree!(soltree, new_node)
-            push!(parent.children, new_node.node_id)
-            #println(new_exp)
-            enqueue!(open_list, new_node, only(heuristic(new_node.expression_encoding)))
-        end
-        if new_exp == 1
-            return true
-        end
+    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+   
+    filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    exprs = (x->x.ex).(filtered_new_nodes)
+    embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
+    ds = reduce(catobs, embeded_exprs)
+    o = heuristic(ds)
+    for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
+        soltree[n.node_id].expression_encoding = e
+        n.expression_encoding = e
+        enqueue!(open_list, n, v)
+    end
+    nodes_ids = (x->x.node_id).(filtered_new_nodes)
+    append!(parent.children, nodes_ids)
+    if in(:1, exprs)
+        return true
     end
     return false
 end
@@ -205,15 +131,9 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         node, prob = dequeue_pair!(open_list)
         expansion_history[node.node_id] = [step, prob]
         step += 1
-        # println(node.rule_index)
         if node.depth >= max_depth
             continue
         end
-        # if node.node_id in close_list
-        #     println("Already been expanded $(node.ex)")
-        #     continue
-        # end
-
         reached_goal = expand_node!(node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names)
 
         if reached_goal
@@ -223,18 +143,6 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
     end
     
     return false
-end
-
-
-function extract_loss_matrices(node::Node, soltree::Dict{UInt64, Node})
-    proof_nodes_ids = []
-    push!(proof_nodes_ids, node.node_id)
-    while node.parent != node.node_id
-        parent_id = node.parent
-        node = soltree[parent_id]
-        push!(proof_nodes_ids, node.node_id)
-    end
-    return proof_nodes_ids
 end
 
 
@@ -314,6 +222,7 @@ function extract_smallest_terminal_node1(soltree::Dict{UInt64, Node}, close_list
     return all_nodes[smallest_expression_node]
 end
 
+
 function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
     min_node = nothing
     for (k, n) in soltree
@@ -327,9 +236,6 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
             end
         end
     end
-    # all_nodes = [i for i in values(soltree)] 
-    # exs = [i.ex for i in values(soltree)] 
-    # smallest_expression_node = argmin(exp_size.(exs))
     return min_node
 end
 
