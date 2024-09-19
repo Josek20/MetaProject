@@ -103,7 +103,7 @@ function expand_node!(parent, soltree, heuristic, open_list, encodings_buffer, a
     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
    
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
-    exprs = (x->x.ex).(filtered_new_nodes)
+    exprs = map(x->x.ex, filtered_new_nodes)
     embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
     ds = reduce(catobs, embeded_exprs)
     o = heuristic(ds)
@@ -146,6 +146,35 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
 end
 
 
+function extract_smallest_node_proof(node::Node, soltree::Dict{UInt64, Node}, rules_in_proof=[])
+    if node.parent == node.node_id
+        return reverse(rules_in_proof)
+    end
+    push!(nodes_in_proof, node.rule_index)
+    return extract_rules_applied1(soltree[node.parent], soltree, rules_in_proof)
+end
+
+
+function extract_training_data(node, soltree, in_proof, training_data=[])
+    if node.parent == node.node_id
+        return reduce(catobs, training_data)
+    end
+    children_list = soltree[node.parent].children
+    children_encoding = map(x->soltree[x].expression_encoding, children_list)
+    append!(training_data, children_encoding)
+    return extract_training_data(soltree[node.parent], soltree, training_data)
+end
+
+
+function extract_training_matrices(node, soltree, hp=[], hn=[])
+    if node.parent == node.node_id
+        return hp, hn
+    end
+
+    return extract_training_matrices(soltree[node.parent], soltree, hp, hn)
+end
+
+ 
 function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node}) 
     proof_vector = Vector()
     depth_dict = Dict{Int, Vector{Any}}()
@@ -170,7 +199,7 @@ function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node})
         push!(tmp_hp[end], 1)
         for children_id in soltree[node.parent].children
             if children_id == node.node_id
-                continue
+                continue    
             end
             push!(depth_dict[node.depth], soltree[children_id].expression_encoding)
             push!(big_vector, soltree[children_id].expression_encoding)
@@ -216,26 +245,41 @@ end
 
 
 function extract_smallest_terminal_node1(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
-    all_nodes = [i for i in values(soltree)] 
-    exs = [i.ex for i in values(soltree)] 
-    smallest_expression_node = argmin(exp_size.(exs))
-    return all_nodes[smallest_expression_node]
+    all_nodes = values(soltree)
+    tmp1 = exp_size.(all_nodes)
+    tmp2 = minimum(tmp1)
+    tmp3 = findall(x-> x == tmp2, tmp1)
+    if length(tmp3) == 1
+        return only(collect(all_nodes)[tmp3])
+    end
+    filtered_nodes = collect(all_nodes)[tmp3]
+    all_depth = map(x->x.depth, filtered_nodes)
+    tmp4 = minimum(all_depth)
+    tmp5 = findfirst(x->x.depth == tmp4, filtered_nodes)
+    return only(filtered_nodes[tmp5])
 end
 
 
 function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list::Set{UInt64})
     min_node = nothing
-    for (k, n) in soltree
-        if isnothing(min_node)
+    min_size = typemax(Int)
+    min_depth = typemax(Int)
+    
+    for n in values(soltree)
+        size_n = exp_size(n.ex)
+        
+        if size_n < min_size
             min_node = n
-        elseif exp_size(n.ex) < exp_size(min_node.ex)
-            min_node = n
-        elseif exp_size(n.ex) == exp_size(min_node.ex)
-            if n.depth < min_node.depth && n.depth != 0
+            min_size = size_n
+            min_depth = n.depth
+        elseif size_n == min_size
+            if n.depth < min_depth && n.depth != 0
                 min_node = n
+                min_depth = n.depth
             end
         end
     end
+    
     return min_node
 end
 
@@ -247,7 +291,7 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_s
     expansion_history = Dict{UInt64, Vector}()
     #encodings_buffer = Dict{UInt64, ExprEncoding}()
     encodings_buffer = Dict{UInt64, ProductNode}()
-    println("Initial expression: $ex")
+    @show ex
     #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
     encoded_ex = ex2mill(ex, symbols_to_index, all_symbols, variable_names)
     root = Node(ex, (0,0), hash(ex), 0, encoded_ex)
@@ -264,11 +308,9 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_s
     # end
     # @show expansion_history[smallest_node.node_id]
     simplified_expression = smallest_node.ex
-    println("Simplified expression: $simplified_expression")
-
+    @show simplified_expression
     proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
-    println("Proof vector: $proof_vector")
-
+    @show proof_vector
     return simplified_expression, depth_dict, big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector
 end
 
