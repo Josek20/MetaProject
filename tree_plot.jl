@@ -1,7 +1,8 @@
 # include("tree_simplifier.jl")
 using Latexify
 using MyModule
-using DataStructures
+using MyModule.DataStructures
+using BenchmarkTools
 
 
 
@@ -131,7 +132,7 @@ end
 # ex = train_data[3]
 # ex = m
 ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
-ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
+# ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = myex
 encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
@@ -150,8 +151,8 @@ soltree[root.node_id] = root
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
 # reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
-# bmark1 = @benchmark reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
-bmark1 = @time reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
+bmark1 = @benchmark reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
+# bmark1 = @time reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
 # soltree = Dict{UInt64, MyModule.Node}()
 # open_list = PriorityQueue{MyModule.Node, Float32}()
 # close_list = Set{UInt64}()

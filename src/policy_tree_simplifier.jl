@@ -151,11 +151,6 @@ function tree_sample_to_policy_sample(sample, ex, symbols_to_index, all_symbols,
 end
 
 
-function name(arguments)
-  
-end
-
-
 function str_to_expr1(string_tokens)
     if isempty(string_tokens)
         return 
@@ -184,6 +179,7 @@ function str_to_expr1(string_tokens)
     end
 end
 
+
 function caviar_data_parser(file)
     data = open(file, "r") do f
         return JSON.parse(f)
@@ -203,56 +199,4 @@ function caviar_data_parser(file)
         push!(r , tmp_r)
     end 
     return x, y, r
-end
-
-# :((((((234 - v0 * 33) / 2) * 2 + 230) + 32) + v1) - 992 <= v0 * 33 + v1)
-# :((((((234 - v0 * 33) / 2) * 2 + 32) + 230) + v1) - 992 <= v0 * 33 + v1)
-# i = ((23, 1), :(0 <= 1007))
-# ind = 2
-# applicable_rueles[index] = ((2, 1), :(0 <= 1007))
-
-function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symbols, variable_names)
-    full_proof_tmp = []
-    counter = 0
-    # @show size(variable_names)
-    # @show size(var_one_enc)
-    for (ne,sample) in enumerate(samples)
-        ex = sample.initial_expr
-        @show ne
-        for pr in sample.proof
-            applicable_rueles = filter(r-> r[2] != ex, execute(ex, theory))
-            tmp = []
-            finall_ind = 0
-            for (ind,i) in enumerate(applicable_rueles)
-                # em = nothing
-                # try
-
-                em = ex2mill(i[2], symbols_to_index, all_symbols, variable_names)
-                # catch e
-                #     @show i[1]
-                #     @show i[2]
-                # end
-                o = policy(em)
-                if o in tmp 
-                    @show i
-                    # @show ind
-                    index = findfirst(x->x==o, tmp)
-                    # @show ind
-                    @show applicable_rueles[index]
-                    counter += 1 
-                else
-                    push!(tmp, o)
-                end
-                # @show pr
-                # @show i[1]
-                if i[1] == pr
-                    finall_ind = 1
-                    ex = i[2]
-                end
-            end 
-            @assert finall_ind == 1
-            # @assert counter == 0
-        end
-    end 
-    @show counter
 end

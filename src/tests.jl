@@ -81,3 +81,72 @@ function test_training_samples(training_samples, train_data, theory)
     @assert counter_failed == 0
 end
 
+
+function test_expr_embedding(policy, samples, theory, symbols_to_index, all_symbols, variable_names)
+    full_proof_tmp = []
+    counter = 0
+    # @show size(variable_names)
+    # @show size(var_one_enc)
+    for (ne,sample) in enumerate(samples)
+        ex = sample.initial_expr
+        @show ne
+        # for pr in sample.proof
+        applicable_rueles = filter(r-> r[2] != ex, execute(ex, theory))
+        tmp = []
+        finall_ind = 0
+        for (ind,i) in enumerate(applicable_rueles)
+            # em = nothing
+            # try
+
+            em = ex2mill(i[2], symbols_to_index, all_symbols, variable_names)
+            # catch e
+            #     @show i[1]
+            #     @show i[2]
+            # end
+            o = policy(em)
+            if o in tmp 
+                @show i
+                # @show ind
+                index = findfirst(x->x==o, tmp)
+                # @show ind
+                @show applicable_rueles[index]
+                counter += 1 
+            else
+                push!(tmp, o)
+            end
+            # @show pr
+            # @show i[1]
+            # if i[1] == pr
+            #     finall_ind = 1
+            #     ex = i[2]
+            # end
+        end 
+            # @assert finall_ind == 1
+        @assert counter == 0
+        # end
+    end 
+    @show counter
+end
+
+
+function test_expr_embedding_simple_examples(heuristic, symbols_to_index, all_symbols, variable_names)
+    ex1 = :(100 - 11 <= 1011)
+    ex2 = :(100 - 1011 <= 11)
+    p1 = ex2mill(ex1, symbols_to_index, all_symbols, variable_names)
+    p2 = ex2mill(ex2, symbols_to_index, all_symbols, variable_names)
+    @assert heuristic(p1) != heuristic(p2) 
+    ex1 = :(100 - v0 * 12 <= 1011)
+    ex2 = :(100 - 12 * v0 <= 1011)
+    p1 = ex2mill(ex1, symbols_to_index, all_symbols, variable_names)
+    p2 = ex2mill(ex2, symbols_to_index, all_symbols, variable_names)
+    @assert heuristic(p1) != heuristic(p2)
+end
+
+
+function test_old_new_ex2mill(ex2mill_old::Function, ex2mill_new::Function, expressions::Vector{Expr}, heuristic, symbols_to_index, all_symbols, variable_names)
+    for ex in expressions
+        eo = ex2mill_old(ex, symbols_to_index, all_symbols, variable_names)
+        en = ex2mill_new(ex, symbols_to_index, all_symbols, variable_names)
+        @assert heuristic(eo) == heuristic(en)
+    end
+end

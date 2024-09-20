@@ -3,9 +3,8 @@ using MyModule.Metatheory
 using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataFrames
-
-number_of_workers = 10
-# using Distributed
+using Distributed
+number_of_workers = nworkers()
 
 # addprocs(number_of_workers)
 # @everywhere include("../src/MyModule.jl")
@@ -101,8 +100,8 @@ theory = @theory a b c d x y begin
     a + b --> b + a
     a + (b + c) --> (a + b) + c
     (a + b) + c --> a + (b + c)
-    (a + b) - c --> a + (b - c)
-    a + (b - c) --> (a + b) - c 
+    # (a + b) - c --> a + (b - c)
+    # a + (b - c) --> (a + b) - c 
     a + 0 --> a
     a * (b + c) --> a*b + a*c
     a*b + a*c --> a * (b + c)
@@ -281,10 +280,10 @@ df2 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
 @assert 0 == 1
-if isfile("models/tre1e_search_heuristic.bson")
-    BSON.@load "models/tree_search_heuristic.bson" heuristic
-elseif isfile("data/training_data/tr2aining_samplesk1000_v4.jld2")
-    @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
+if isfile("../models/tre1e_search_heuristic.bson")
+    BSON.@load "../models/tree_search_heuristic.bson" heuristic
+elseif isfile("../data/training_data/tr2aining_samplesk1000_v4.jld2")
+    @load "../data/training_data/training_samplesk1000_v3.jld2" training_samples
 else
     # @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
 
