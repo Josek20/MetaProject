@@ -4,11 +4,8 @@ using Flux
 using JSON
 using Metatheory
 using .Metatheory.EGraphs: SaturationReport, eqsat_search!, eqsat_apply!, extract!
-using GraphNeuralNetworks: GNNGraph, GCNConv
 using Statistics
 using Mill
-using BSON
-using JLD2
 using CSV
 # using Metatheory.Rewriters
 using DataStructures

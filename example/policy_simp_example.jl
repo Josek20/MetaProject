@@ -1,12 +1,4 @@
-using Metatheory
 using MyModule
-using BSON
-using CSV
-using DataFrames
-using JLD2
-using Flux
-using Mill
-using Plots
 
 
 train_data_path = "data/neural_rewrter/train.json"

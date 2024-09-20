@@ -1,10 +1,4 @@
-include("../src/MyModule.jl")
-using .MyModule
-using Flux
-using Metatheory
-using Statistics
-using Metatheory.EGraphs: extract!
-
+using MyModule
 
 #data = SmallDataLoader.load_data("data/test.json")
 #data = SmallDataLoader.preprosses_data_to_expressions(data)

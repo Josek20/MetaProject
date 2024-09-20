@@ -1,21 +1,18 @@
-using Metatheory
-using Flux
-using Mill
-using DataFrames
-using BSON
-using CSV
-using Revise
-using StatsBase
-using Distributed
+using MyModule
+using MyModule.Metatheory
+using MyModule.Flux
+using MyModule.Mill
+using MyModule.DataFrames
 
 number_of_workers = 10
+# using Distributed
+
 # addprocs(number_of_workers)
 # @everywhere include("../src/MyModule.jl")
 # @everywhere using MyModule
-using MyModule
 
-train_data_path = "data/neural_rewrter/train.json"
-test_data_path = "data/neural_rewrter/test.json"
+train_data_path = "../data/neural_rewrter/train.json"
+test_data_path = "../data/neural_rewrter/test.json"
 
 train_data = isfile(train_data_path) ? load_data(train_data_path)[1:1000] : load_data(test_data_path)[1:1000]
 test_data = load_data(test_data_path)[1:1000]
