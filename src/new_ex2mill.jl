@@ -69,7 +69,7 @@ function unfold_allocation(stats, encoding_length=14 + 2 + 18)
                 am
                 , ma),
         )),
-        position = ArrayNode(Flux.onehotbatch(fill(1:2, nb), 1:2)),
+        position = ArrayNode(Flux.onehotbatch(repeat([1,2], div(nb,2)), 1:2))
     ))
     return tmp
 end
