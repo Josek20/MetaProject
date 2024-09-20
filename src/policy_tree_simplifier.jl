@@ -70,11 +70,6 @@ function test_policy(policy, data, theory, max_itr, symbols_to_index, all_symbol
 end
 
 
-logistic(x) = log(1 + exp(x))
-hinge(x) = max(0, 1 - x)
-loss01(x) = x > 0
-
-
 function policy_loss_func(policy, big_vector, hp=nothing, hn=nothing, surrogate::Function = logistic)
     o = policy(big_vector) 
 
@@ -101,7 +96,7 @@ function update_policy_training_samples(training_samples, symbols_to_index, all_
         a, hn, hp = tree_sample_to_policy_sample(i.proof, i.initial_expr, symbols_to_index, all_symbols, theory)
         push!(policy_training_samples, PolicyTrainingSample(a, hp, hn))
     end
-    @save "data/training_data/policy_training_samplesk$(length(policy_training_samples))_v5.jld2" policy_training_samples
+    # @save "data/training_data/policy_training_samplesk$(length(policy_training_samples))_v5.jld2" policy_training_samples
 end
 
 

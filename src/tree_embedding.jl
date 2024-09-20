@@ -69,6 +69,7 @@ function ex2mill(ex::Number, symbols_to_index, all_symbols, variable_names)
         ))
 end
 
+
 function args2mill(args::Vector, symbols_to_index, all_symbols, variable_names)
     isempty(args) && return(BagNode(missing, [0:-1]))
     l = length(args)
@@ -79,6 +80,7 @@ function args2mill(args::Vector, symbols_to_index, all_symbols, variable_names)
         [1:l]
         )
 end
+
 
 struct ExprModel{HM,A,JM,H}
     head_model::HM
@@ -91,6 +93,7 @@ end
 function (m::ExprModel)(ds::ProductNode)
     m.heuristic(embed(m, ds))
 end
+
 
 function embed(m::ExprModel, ds::ProductNode) 
     # @show ds.data
@@ -120,6 +123,8 @@ embed(m::ExprModel, ds::Missing) = missing
 logistic(x) = log(1 + exp(x))
 hinge(x) = max(0, 1 - x)
 loss01(x) = x > 0
+
+
 function loss(heuristic, big_vector, hp=nothing, hn=nothing, surrogate::Function = logistic)
     o = heuristic(big_vector) 
     p = (o * hp) .* hn

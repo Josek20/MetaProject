@@ -4,20 +4,6 @@ using MyModule
 using DataStructures
 
 
-#ex = :((((min(v0, 509) + 6) / 8) * 8 + (v1 * 516 + v2)) + 1 <= (((509 + 13) / 16) * 16 + (v1 * 516 + v2)) + 2)
-# for i in 1:10
-#     heuristic = ExprModel(
-#         Flux.Chain(Dense(length(symbols_to_index) + 2, hidden_size,relu), Dense(hidden_size,hidden_size)),
-#         Mill.SegmentedSumMax(hidden_size),
-#         Flux.Chain(Dense(3*hidden_size, hidden_size,relu), Dense(hidden_size, hidden_size)),
-#         Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
-#         )
-#     optimizer = ADAM()
-#     pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
-#     println("Exampl number=======$i=======")
-#     single_sample_check!(heuristic, training_samples[i], train_data[i], pc, optimizer)
-# end
-
 
 preamble1 = """
 \\documentclass{standalone}
@@ -142,8 +128,14 @@ function create_latex_tree2(io, root, soltree, smallest_node, preamble, closing,
 end
 
 # function plot_tree()
-ex = train_data[3]
-# ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
+# ex = train_data[3]
+# ex = m
+ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
+ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
+ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
+# ex = myex
+encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
+root = MyModule.Node(ex, (0,0), hash(ex), 0, encoded_ex)
 
 soltree = Dict{UInt64, MyModule.Node}()
 open_list = PriorityQueue{MyModule.Node, Float32}()
@@ -153,43 +145,53 @@ expansion_history = Dict{UInt64, Vector}()
 encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
 #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
-encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
-root = MyModule.Node(ex, (0,0), hash(ex), 0, encoded_ex)
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 
 # reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
-reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 10, expansion_history, theory, variable_names)
+# bmark1 = @benchmark reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
+bmark1 = @time reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
+# soltree = Dict{UInt64, MyModule.Node}()
+# open_list = PriorityQueue{MyModule.Node, Float32}()
+# close_list = Set{UInt64}()
+# expansion_history = Dict{UInt64, Vector}()
+# #encodings_buffer = Dict{UInt64, ExprEncoding}()
+# encodings_buffer = Dict{UInt64, ProductNode}()
+# println("Initial expression: $ex")
+# #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
+# soltree[root.node_id] = root
+# #push!(open_list, root.node_id)
+# enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
+# # bmark2 = @benchmark reached_goal2 = MyModule.build_tree_new!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
+# bmark2 = @time reached_goal2 = MyModule.build_tree_new!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
+# println(bmark1)
+# println(bmark2)
 println("Have successfuly finished bulding simplification tree!")
-
 smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
-# for (ind, (i, cof)) in enumerate(open_list)
-#     expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
-# end
-# @show expansion_history[smallest_node.node_id]
-simplified_expression = smallest_node.ex
-println("Simplified expression: $simplified_expression")
+# # for (ind, (i, cof)) in enumerate(open_list)
+# #     expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
+# # end
+# # @show expansion_history[smallest_node.node_id]
+# simplified_expression = smallest_node.ex
+# println("Simplified expression: $simplified_expression")
 
 proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = MyModule.extract_rules_applied(smallest_node, soltree)
 
-println("Proof vector: $proof_vector")
+# println("Proof vector: $proof_vector")
 
-for (ind, (i, cof)) in enumerate(open_list)
-    expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
-end
-
-test_open_list = PriorityQueue{MyModule.Node, Float32}()
-test_expansion_history = Dict{UInt64, Vector}()
-for (k, n) in soltree
-    enqueue!(test_open_list, n, only(heuristic(n.expression_encoding)))
-end
-
-for (k,v) in depth_dict
-    tmp = heuristic.(v)
-    println("Depth $k: $tmp")
-end
-open(io -> create_latex_tree3(io, root, soltree, smallest_node, preamble2, closing, expansion_history, node_proof_vector), "my_tree.tex", "w")
+# for (ind, (i, cof)) in enumerate(open_list)
+#     expansion_history[i.node_id] = [length(expansion_history) + ind - 1, cof]
 # end
-#
-# plot_tree()
+
+# test_open_list = PriorityQueue{MyModule.Node, Float32}()
+# test_expansion_history = Dict{UInt64, Vector}()
+# for (k, n) in soltree
+#     enqueue!(test_open_list, n, only(heuristic(n.expression_encoding)))
+# end
+
+# for (k,v) in depth_dict
+#     tmp = heuristic.(v)
+#     println("Depth $k: $tmp")
+# end
+# open(io -> create_latex_tree3(io, root, soltree, smallest_node, preamble2, closing, expansion_history, node_proof_vector), "my_tree.tex", "w")

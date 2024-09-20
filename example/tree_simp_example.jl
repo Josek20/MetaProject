@@ -4,7 +4,6 @@ using Mill
 using DataFrames
 using BSON
 using CSV
-using JLD2
 using Revise
 using StatsBase
 using Distributed
@@ -12,7 +11,8 @@ using Distributed
 number_of_workers = 10
 # addprocs(number_of_workers)
 # @everywhere include("../src/MyModule.jl")
-@everywhere using MyModule
+# @everywhere using MyModule
+using MyModule
 
 train_data_path = "data/neural_rewrter/train.json"
 test_data_path = "data/neural_rewrter/test.json"
@@ -103,6 +103,9 @@ theory = @theory a b c d x y begin
     # add.rc
     a + b --> b + a
     a + (b + c) --> (a + b) + c
+    (a + b) + c --> a + (b + c)
+    (a + b) - c --> a + (b - c)
+    a + (b - c) --> (a + b) - c 
     a + 0 --> a
     a * (b + c) --> a*b + a*c
     a*b + a*c --> a * (b + c)
@@ -169,6 +172,7 @@ theory = @theory a b c d x y begin
     x > y --> y < x
     x < y --> (-1 * y) < (-1 * x)
     a < a --> 0
+    a <= a --> 1
     a + b < c --> a < c - b
 
     a - b < a --> 0 < b
@@ -270,7 +274,8 @@ training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
 max_steps = 1000
 max_depth = 25
 n = 1000
- 
+
+myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 df1 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
 df2 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
@@ -278,7 +283,7 @@ df2 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-# @assert 0 == 1
+@assert 0 == 1
 if isfile("models/tre1e_search_heuristic.bson")
     BSON.@load "models/tree_search_heuristic.bson" heuristic
 elseif isfile("data/training_data/tr2aining_samplesk1000_v4.jld2")
