@@ -10,8 +10,8 @@ number_of_workers = nworkers()
 # @everywhere include("../src/MyModule.jl")
 # @everywhere using MyModule
 
-train_data_path = "../data/neural_rewrter/train.json"
-test_data_path = "../data/neural_rewrter/test.json"
+train_data_path = "./data/neural_rewrter/train.json"
+test_data_path = "./data/neural_rewrter/test.json"
 
 train_data = isfile(train_data_path) ? load_data(train_data_path)[1:1000] : load_data(test_data_path)[1:1000]
 test_data = load_data(test_data_path)[1:1000]

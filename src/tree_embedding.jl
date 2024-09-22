@@ -5,6 +5,8 @@ symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
 number_of_variables = 13
 var_one_enc = Flux.onehotbatch(collect(1:number_of_variables), 1:number_of_variables)
 variable_names = Dict(Symbol("v$(i-1)")=>j for (i,j) in enumerate(1:number_of_variables))
+# new_all_symbols = append(all_symbols, keys(variable_names))
+
 
 function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict)
     if ex.head == :call
@@ -26,6 +28,7 @@ function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict)
     ))
     return(ds)
 end
+
 
 function ex2mill(ex::Symbol, symbols_to_index, all_symbols, variable_names)
     n = length(symbols_to_index) + 2

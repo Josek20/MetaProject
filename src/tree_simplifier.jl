@@ -266,14 +266,17 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
     min_depth = typemax(Int)
     
     for n in values(soltree)
+        if n.depth == 0
+            continue
+        end
         size_n = exp_size(n.ex)
-        
+         
         if size_n < min_size
             min_node = n
             min_size = size_n
             min_depth = n.depth
         elseif size_n == min_size
-            if n.depth < min_depth && n.depth != 0
+            if n.depth < min_depth
                 min_node = n
                 min_depth = n.depth
             end
@@ -338,7 +341,6 @@ end
 
 
 function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names)  
-    # @threads for i in data
     for (index, i) in enumerate(data)
         println("Index: $index")
         # if length(training_samples) > index && training_samples[index].saturated
