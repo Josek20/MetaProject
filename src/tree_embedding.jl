@@ -17,8 +17,8 @@ function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict)
     else
         error("unknown head $(ex.head)")
     end
-    n = length(symbols_to_index) + 2
-    encoding = zeros(Float32, n+14, 1)
+    n = length(symbols_to_index) + 1
+    encoding = zeros(Float32, n+13, 1)
 
     encoding[symbols_to_index[fun_name]] = 1
 
@@ -31,10 +31,10 @@ end
 
 
 function ex2mill(ex::Symbol, symbols_to_index, all_symbols, variable_names)
-    n = length(symbols_to_index) + 2
-    encoding = zeros(Float32, n+14, 1)
-    encoding[n] = 1     # encoding = Flux.onehotbatch([n], 1:n)
-    encoding[variable_names[ex] + n] = 1
+    n = length(symbols_to_index) + 1
+    encoding = zeros(Float32, n+13, 1)
+    # encoding[n] = 1     # encoding = Flux.onehotbatch([n], 1:n)
+    encoding[variable_names[ex] + length(symbols_to_index)] = 1
 
 
     ds = ProductNode((
@@ -48,10 +48,10 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 
 function ex2mill(ex::Number, symbols_to_index, all_symbols, variable_names)
-    n = length(symbols_to_index) + 2
-    encoding = zeros(Float32, n+14, 1)
-    encoding[n] = 1     # encoding = Flux.onehotbatch([n], 1:n)
-    encoding[n + 1] = my_sigmoid(ex)
+    n = length(symbols_to_index) + 1
+    encoding = zeros(Float32, n+13, 1)
+    # encoding[n] = 1     # encoding = Flux.onehotbatch([n], 1:n)
+    encoding[n + 13] = my_sigmoid(ex)
     ds = ProductNode((
         head = ArrayNode(encoding),
         args = BagNode(missing, [0:-1])

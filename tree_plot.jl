@@ -136,6 +136,7 @@ ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = myex
 encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
+# encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
 root = MyModule.Node(ex, (0,0), hash(ex), 0, encoded_ex)
 
 soltree = Dict{UInt64, MyModule.Node}()

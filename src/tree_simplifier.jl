@@ -105,6 +105,7 @@ function expand_node!(parent, soltree, heuristic, open_list, encodings_buffer, a
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     exprs = map(x->x.ex, filtered_new_nodes)
     embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
+    # embeded_exprs = multiple_fast_ex2mill(exprs, sym_enc)
     ds = reduce(catobs, embeded_exprs)
     o = heuristic(ds)
     for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
@@ -297,6 +298,7 @@ function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_s
     @show ex
     #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
     encoded_ex = ex2mill(ex, symbols_to_index, all_symbols, variable_names)
+    # encoded_ex = single_fast_ex2mill(ex, sym_enc)
     root = Node(ex, (0,0), hash(ex), 0, encoded_ex)
     soltree[root.node_id] = root
     #push!(open_list, root.node_id)

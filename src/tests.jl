@@ -143,10 +143,11 @@ function test_expr_embedding_simple_examples(heuristic, symbols_to_index, all_sy
 end
 
 
-function test_old_new_ex2mill(ex2mill_old::Function, ex2mill_new::Function, expressions::Vector{Expr}, heuristic, symbols_to_index, all_symbols, variable_names)
+function test_old_new_ex2mill(expressions::Vector{Expr}, heuristic, symbols_to_index, all_symbols, variable_names)
     for ex in expressions
-        eo = ex2mill_old(ex, symbols_to_index, all_symbols, variable_names)
-        en = ex2mill_new(ex, symbols_to_index, all_symbols, variable_names)
+        @show ex
+        eo = ex2mill(ex, symbols_to_index, all_symbols, variable_names)
+        en = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
         @assert heuristic(eo) == heuristic(en)
     end
 end
