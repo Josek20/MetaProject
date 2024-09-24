@@ -4,6 +4,7 @@ using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataFrames
 using Distributed
+using Revise
 number_of_workers = nworkers()
 
 # addprocs(number_of_workers)
@@ -257,11 +258,22 @@ end
 
 hidden_size = 256
 heuristic = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 2 + 14, hidden_size,relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
     Flux.Chain(Dense(3*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
+
+flatten(x) = sum
+(x, dims=2)
+simple_heuristic = Flux.Chain(
+    Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu),
+    Dense(hidden_size, hidden_size),
+    # flatten,
+    Dense(hidden_size, length(symbols_to_index) + 1 + 13, relu), 
+    Dense(length(symbols_to_index) + 1 + 13, 1),
+    flatten
+)
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 
 epochs = 10
@@ -281,9 +293,11 @@ df2 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
 @assert 0 == 1
 if isfile("../models/tre1e_search_heuristic.bson")
-    BSON.@load "../models/tree_search_heuristic.bson" heuristic
+    # BSON.@load "../models/tree_search_heuristic.bson" heuristic
+    tmp = []
 elseif isfile("../data/training_data/tr2aining_samplesk1000_v4.jld2")
-    @load "../data/training_data/training_samplesk1000_v3.jld2" training_samples
+    # @load "../data/training_data/training_samplesk1000_v3.jld2" training_samples
+    tmp = []
 else
     # @load "data/training_data/training_samplesk1000_v3.jld2" training_samples
 
@@ -293,10 +307,12 @@ else
     proof_stats = []
     stp = div(n, number_of_workers)
     batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
+    dt = 1
     for ep in 1:epochs 
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Training===========================================")
-        training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
+        # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
+        training_samples = train_heuristic!(heuristic, train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names)
         ltmp = []
         @show training_samples
         # @assert 0 == 1
