@@ -5,6 +5,8 @@ using MyModule.Mill
 using MyModule.DataFrames
 using Distributed
 using Revise
+using StatsBase
+using CSV
 number_of_workers = nworkers()
 
 # addprocs(number_of_workers)
@@ -264,8 +266,7 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-flatten(x) = sum
-(x, dims=2)
+flatten(x) = sum(x, dims=2)
 simple_heuristic = Flux.Chain(
     Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu),
     Dense(hidden_size, hidden_size),
@@ -278,7 +279,8 @@ pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_m
 
 epochs = 10
 optimizer = ADAM()
-training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
+# training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
+training_samples = Vector{TrainingSample}()
 max_steps = 1000
 max_depth = 25
 n = 1000
@@ -312,9 +314,9 @@ else
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
-        training_samples = train_heuristic!(heuristic, train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names)
+        train_heuristic!(heuristic, train_data[1:5], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
         ltmp = []
-        @show training_samples
+        # @show training_samples
         # @assert 0 == 1
         # MyModule.test_expr_embedding(heuristic, training_samples[1:n], theory, symbols_to_index, all_symbols, variable_names)
 

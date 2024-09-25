@@ -121,8 +121,8 @@ function loss(heuristic, big_vector, hp=nothing, hn=nothing, surrogate::Function
     diff = p - o[1, :] .* hn
     filtered_diff = filter(!=(0), diff)
     # return sum(log.(1 .+ exp.(filtered_diff)))
-    return mean(softmax(filtered_diff))
-    # return sum(surrogate.(filtered_diff))
+    # return mean(softmax(filtered_diff))
+    return sum(surrogate.(filtered_diff))
 end
 
 

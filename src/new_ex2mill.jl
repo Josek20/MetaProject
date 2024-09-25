@@ -110,7 +110,7 @@ end
 end
 
 
-function counter2(ex::Expr, sym_enc::SymbolsEncoding)
+function counter2(ex::Union{Expr,Symbol,Number}, sym_enc::SymbolsEncoding)
     depth = 1
     stats = [[] for _ in 1:10]
     numbers = [[] for _ in 1:10]
@@ -161,14 +161,14 @@ function counter2!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, numbers, po
 end
 
 
-my_sigmoid(x, k=0.01, m=0) = 1/(1 + exp(-k*(x-m)))
+# my_sigmoid(x, k=0.01, m=0) = 1/(1 + exp(-k*(x-m)))
 function counter2!(stats, ex::Union{Symbol, Number}, depth, sym_enc::SymbolsEncoding, numbers, position, bags)
     if isa(ex, Symbol)
         update_stats1!(stats, depth, sym_enc.met[ex], numbers, position, bags)
         push!(bags[depth], 0:-1)
     else
         update_stats1!(stats, depth, sym_enc.met[:Number], numbers, position, bags)
-        push!(numbers[depth], my_sigmoid(ex))
+        push!(numbers[depth], MyModule.my_sigmoid(ex))
         push!(bags[depth], 0:-1)
     end
     return stats, numbers, position, bags
@@ -217,7 +217,7 @@ end
 
 
 function unfold_allocation2(stats::Vector, depth, numbers::Vector, position::Vector, exbags::Vector, encoding_length=13 + 1 + 18)
-    if isempty(stats) || depth > length(stats)
+    if depth > length(stats)
         return missing
     end
     sz1 = length(stats[depth])
@@ -244,16 +244,16 @@ function unfold_allocation2(stats::Vector, depth, numbers::Vector, position::Vec
 end
 
 
-function multiple_fast_ex2mill(expression_vector::Vector{Expr}, sym_enc)
+function multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
     stats = map(x-> counter2(x, sym_enc), expression_vector)
-    a = map(x->unfold_allocation2(x[1], x[2], x[3]), stats)
+    a = map(x->unfold_allocation2(x[1], x[2], x[3], x[4]), stats)
     return a
 end
 
 
 function single_fast_ex2mill(ex, sym_enc)
-    st, nm, ps = counter2(ex, sym_enc)
-    a = unfold_allocation2(st, nm, ps)
+    st, nm, ps, bg = counter2(ex, sym_enc)
+    a = unfold_allocation2(st, nm, ps, bg)
     return a
 end
 
