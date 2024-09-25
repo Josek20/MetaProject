@@ -64,12 +64,15 @@ function unfold_allocation(stats::Vector, encoding_length=13 + 1 + 18)
     ne,nb = stats[depth]
     am = unfold_allocation(stats, depth + 1, encoding_length)
     # ma = ismissing(am) ? fill(0:-1, nb) : fill(1:2, nb)
-    tmp = ProductNode((
-        head = ArrayNode(zeros(Float32, encoding_length, ne)),
-        args = BagNode(
-            am
-            , fill(0:-1, nb)),
-    ))
+    tmp = ProductNode(;
+        args = ProductNode((
+            head = ArrayNode(zeros(Float32, encoding_length, ne)),
+            args = BagNode(
+                am
+                , fill(0:-1, nb)),
+        )),
+        position=ArrayNode(zeros(Float32,2,1)) 
+    )
     return tmp
 end
 
@@ -206,12 +209,16 @@ function unfold_allocation2(stats::Vector, numbers::Vector, position::Vector, ex
     arr_data = zeros(Float32, encoding_length, ne)
     cols = collect(1:ne)
     arr_data[stats[depth] .+ (cols .- 1) .* encoding_length] .= 1
-    tmp = ProductNode((
-        head = ArrayNode(arr_data),
-        args = BagNode(
-            am
-            , AlignedBags(exbags[depth])),
-    ))
+    tmp = ProductNode(;
+        args=ProductNode((
+            head = ArrayNode(arr_data),
+            args = BagNode(
+                am
+                , AlignedBags(exbags[depth])),
+        )),
+        position=ArrayNode(zeros(Float32,2,1))
+        # position=ArrayNode(Flux.onehotbatch(1,1:2))
+    )
     return tmp
 end
 

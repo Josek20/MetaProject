@@ -36,8 +36,7 @@ end
 
 
 function traverse_expr!(ex, matchers, tree_ind, trav_indexs, tmp)
-    if typeof(ex) != Expr
-        # trav_indexs = []
+    if !isa(ex, Expr)
         return
     end
     a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
@@ -103,17 +102,20 @@ function expand_node!(parent, soltree, heuristic, open_list, encodings_buffer, a
     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
    
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    # @show length(filtered_new_nodes)
+    isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
     # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
     embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
     ds = reduce(catobs, embeded_exprs)
     o = heuristic(ds)
+    # o = fill(3, length(embeded_exprs))
     for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
         soltree[n.node_id].expression_encoding = e
         n.expression_encoding = e
         enqueue!(open_list, n, v)
     end
-    nodes_ids = (x->x.node_id).(filtered_new_nodes)
+    nodes_ids = map(x->x.node_id, filtered_new_nodes)
     append!(parent.children, nodes_ids)
     if in(:1, exprs)
         return true
