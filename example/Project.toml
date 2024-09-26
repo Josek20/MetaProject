@@ -1,6 +1,7 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Latexify = "23fbe1c1-3f47-55db-b15f-69d7ec21a316"
 MyModule = "98749e58-590c-4da3-a9b4-40346e7e69f8"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"

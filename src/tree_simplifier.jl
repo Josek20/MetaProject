@@ -127,11 +127,19 @@ end
 function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names)
     step = 0
     reached_goal = false
+    epsilon = 0.2
     while length(open_list) > 0
         if max_steps == step
             break
         end
-        node, prob = dequeue_pair!(open_list)
+        if rand() < epsilon && length(open_list) > 1
+            keys_list = collect(keys(open_list))
+            node = rand(keys_list)
+            prob = open_list[node]
+            delete!(open_list, node)
+        else
+            node, prob = dequeue_pair!(open_list)
+        end
         expansion_history[node.node_id] = [step, prob]
         step += 1
         if node.depth >= max_depth

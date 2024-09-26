@@ -117,8 +117,11 @@ theory = @theory a b c d x y begin
     a && b --> b && a
     a && (b && c) --> (a && b) && c
     1 && a --> a
+    a && 1 --> a
     a && a --> a
     a && !a --> 0
+    !a && a --> 0
+
     (a == c::Number) && (b == x::Number) => c != x ? 0 : :($a)
     !a::Number && b::Number => a != b ? 0 : :($a)
     (a < y) && (a < b) --> a < min(y, b)
@@ -207,9 +210,9 @@ theory = @theory a b c d x y begin
 
     min(max(a, b::Number), c::Number) => b <= c ? :(max(min($a, $c), $b)) : :(min(max($a, $b), $c))
     max(min(a, c::Number), b::Number) => b <= c ? :(min(max($a, $b), $c)) : :(max(min($a, $c), $b))
-    min(a , b::Number) < c::Number --> :($a < $c) || :($b < $c)
-    max(a , b::Number) < c::Number --> :($a < $c) && :($b < $c)
-    c::Number < max(a , b::Number) --> :($c < $a) || :($c < $b)
+    min(a , b::Number) <= c::Number --> :($a <= $c) || :($b <= $c)
+    max(a , b::Number) <= c::Number --> :($a <= $c) && :($b <= $c)
+    c::Number <= max(a , b::Number) --> :($c <= $a) || :($c <= $b)
     min(a * b::Number, c::Number) => b % c == 0 && b > 0 ? :(min($a, $b / $c) * $c) : :(min($a * $b, $c))
     min(a * b::Number, d * c::Number) => b % c == 0 && b > 0 ? :(min($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
     min(a * b::Number, c::Number) => b % c == 0 && b < 0 ? :(max($a, $b / $c) * $c) : :(min($a * $b, $c))
@@ -256,6 +259,18 @@ theory = @theory a b c d x y begin
 
     # sub.rs
     a - b --> a + (-1 * b)
+    
+    # my rules
+    a || 1 --> 1
+    1 || a --> 1
+    a::Number <= b::Number => a<=b ? 1 : 0
+    a <= b - c --> a + c <= b
+    a + c <= b --> a <= b - c
+    #a <= b - c --> a - b <= -c
+    a <= b + c --> a - c <= b
+    a - c <= b --> a <= b + c
+    a <= b + c --> a - b <= c
+    a - b <= c --> a <= b + c
 end
 
 hidden_size = 256
@@ -282,7 +297,7 @@ optimizer = ADAM()
 # training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
 training_samples = Vector{TrainingSample}()
 max_steps = 1000
-max_depth = 25
+max_depth = 100
 n = 1000
 
 myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
@@ -293,7 +308,7 @@ df2 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-@assert 0 == 1
+# @assert 0 == 1
 if isfile("../models/tre1e_search_heuristic.bson")
     # BSON.@load "../models/tree_search_heuristic.bson" heuristic
     tmp = []
@@ -314,7 +329,7 @@ else
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
-        train_heuristic!(heuristic, train_data[1:5], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
+        train_heuristic!(heuristic, train_data[1:1], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
         ltmp = []
         # @show training_samples
         # @assert 0 == 1
@@ -332,8 +347,12 @@ else
                 MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
             end
             @show sa
-            push!(ltmp, sa)
+            # push!(ltmp, sa)
             Flux.update!(optimizer, pc, grad)
+        end
+        for sample in cat_samples
+            sa = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            push!(ltmp, sa)
         end
         #
         # println("Testing===========================================")
@@ -360,7 +379,7 @@ for i in 1:length(proof_stats[1])
     end
     push!(df2, tmp)
 end
-r = "_dist_version"
+r = "_manual_version"
 CSV.write("stats/new_theory_epoch_exp_progress$r.csv", df1)
 CSV.write("stats/new_theory_epoch_proof_progress$r.csv", df2)
 using Plots
@@ -369,14 +388,14 @@ savefig("stats/loss_new_theory$r.png")
 plot()
 for i in 1:size(df1)[1]
     tmp = MyModule.exp_size.(Vector(df1[i, :]))
-    plot!(1:size(df1)[2], tmp)
+    plot!(0:size(df1)[2] - 1, tmp)
 end
 plot!()
 savefig("stats/new_theory_expr_size_progress_$r.png")
 plot()
 for i in 1:size(df2)[1]
     tmp = length.(Vector(df2[i, :]))
-    plot!(1:size(df2)[2], tmp)
+    plot!(0:size(df2)[2] - 1, tmp)
 end
 plot!()
 savefig("stats/new_theory_proof_progress_$r.png")
