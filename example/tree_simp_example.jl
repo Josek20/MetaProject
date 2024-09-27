@@ -1,20 +1,27 @@
+using Distributed
+
+number_of_workers = nworkers()
+
+if number_of_workers > 1
+    using Pkg
+    Pkg.instantiate()
+    Pkg.add("Plots")
+    @everywhere using MyModule
+end
+
 using MyModule
 using MyModule.Metatheory
 using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataFrames
-using Distributed
 using Revise
 using StatsBase
 using CSV
-number_of_workers = nworkers()
 
-# addprocs(number_of_workers)
-# @everywhere include("../src/MyModule.jl")
-# @everywhere using MyModule
 
 train_data_path = "./data/neural_rewrter/train.json"
 test_data_path = "./data/neural_rewrter/test.json"
+
 
 train_data = isfile(train_data_path) ? load_data(train_data_path)[1:1000] : load_data(test_data_path)[1:1000]
 test_data = load_data(test_data_path)[1:1000]
@@ -22,78 +29,6 @@ train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
 
 
-# theory = @theory a b c begin
-#     a::Number + b::Number => a + b
-#     a::Number - b::Number => a - b
-#     a::Number * b::Number => a * b
-#     a::Number / b::Number => a / b
-#     #(a / b::Number) * c::Number => :($a * div(c, b))
-#     #(a * b::Number) / c::Number => :($a * div(b, c))
-#
-#
-#     a * (b * c) --> (a * b) * c
-#     (a * b) * c --> a * (b * c)
-#     a + (b + c) --> (a + b) + c
-#     (a + b) + c --> a + (b + c)
-#     a + (b + c) --> (a + c) + b
-#     (a + b) + c --> (a + c) + b
-#     (a - b) + b --> a
-#     (-a + b) + a --> b
-#
-#
-#     a + b --> b + a
-#     a * (b + c) --> (a * b) + (a * c)
-#     (a + b) * c --> (a * c) + (b * c)
-#     (a / b) * c --> (a * c) / b
-#     (a / b) * b --> a
-#     (a * b) / b --> a
-#
-#
-#
-#     #-a --> -1 * a
-#     #a - b --> a + -b
-#     1 * a --> a
-#     a + a --> 2*a
-#
-#     0 * a --> 0
-#     a + 0 --> a
-#     a - a --> 0
-#
-#     a <= a --> 1
-#     a + b <= c + b --> a <= c
-#     a + b <= b + c --> a <= c
-#     a * b <= c * b --> a <= c
-#     a / b <= c / b --> a <= c
-#     a - b <= c - b --> a <= c
-#     a::Number <= b::Number => a<=b ? 1 : 0
-#     a <= b - c --> a + c <= b
-#     #a <= b - c --> a - b <= -c
-#     a <= b + c --> a - c <= b
-#     a <= b + c --> a - b <= c
-#
-#     a + c <= b --> a <= b - c
-#     a - c <= b --> a <= b + c
-#
-#     min(a, min(a, b)) --> min(a, b)
-#     min(min(a, b), b) --> min(a, b)
-#     max(a, max(a, b)) --> max(a, b)
-#     max(max(a, b), b) --> max(a, b)
-#
-#     max(a, min(a, b)) --> a
-#     min(a, max(a, b)) --> a
-#     max(min(a, b), b) --> b
-#     min(max(a, b), b) --> b
-#
-#     min(a + b::Number, a + c::Number) => b < c ? :($a + $b) : :($a + $c)
-#     max(a + b::Number, a + c::Number) => b < c ? :($a + $c) : :($a + $b)
-#     min(a - b::Number, a - c::Number) => b < c ? :($a - $c) : :($a - $b)
-#     max(a - b::Number, a - c::Number) => b < c ? :($a - $b) : :($a - $c)
-#     min(a * b::Number, a * c::Number) => b < c ? :($a * $b) : :($a * $c)
-#     max(a + b::Number, a + c::Number) => b < c ? :($a + $c) : :($a + $b)
-#     max(a, b::Number) <= c::Number => b > c ? 0 : :($max($a, $b) <= $c)
-#     #min(a, b::Number) <= c::Number => b < c ? 0 : 1
-#     #min(a + b, a + c) --> min(b, c)
-# end
 theory = @theory a b c d x y begin
     a::Number + b::Number => a + b
     a::Number - b::Number => a - b
@@ -103,6 +38,12 @@ theory = @theory a b c d x y begin
     a + b --> b + a
     a + (b + c) --> (a + b) + c
     (a + b) + c --> a + (b + c)
+    (a + b) - c --> a + (b - c)
+    a + (b - c) --> (a + b) - c
+    (a - b) - c --> a - (b + c) 
+    a - (b + c) --> (a - b) - c
+    (a - b) + c --> a - (b - c)
+    a - (b - c) --> (a - b) + c
     # (a + b) - c --> a + (b - c)
     # a + (b - c) --> (a + b) - c 
     a + 0 --> a
@@ -229,8 +170,8 @@ theory = @theory a b c d x y begin
     -1 * (a % b) --> (a * -1) % b
     (a - b) % 2 --> (a + b) % 2
 
-    ((a * b::Number) + d) % c::Number => b % c == 0 ? :($b % $c) : :((($a * $b) + $d) % $c)
-    (b::Number * a) % c::Number => b % c == 0 ? 0 : :(($b * $a) % $c)
+    ((a * b::Number) + d) % c::Number => c != 0 && b % c == 0 ? :($b % $c) : :((($a * $b) + $d) % $c)
+    (b::Number * a) % c::Number => c != 0 && b % c == 0 ? 0 : :(($b * $a) % $c)
     
     # mul.rs
     a * b --> b * a
@@ -273,7 +214,7 @@ theory = @theory a b c d x y begin
     a - b <= c --> a <= b + c
 end
 
-hidden_size = 256
+hidden_size = 64
 heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
@@ -281,15 +222,6 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
-flatten(x) = sum(x, dims=2)
-simple_heuristic = Flux.Chain(
-    Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu),
-    Dense(hidden_size, hidden_size),
-    # flatten,
-    Dense(hidden_size, length(symbols_to_index) + 1 + 13, relu), 
-    Dense(length(symbols_to_index) + 1 + 13, 1),
-    flatten
-)
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 
 epochs = 10
@@ -308,7 +240,7 @@ df2 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-# @assert 0 == 1
+@assert 0 == 1
 if isfile("../models/tre1e_search_heuristic.bson")
     # BSON.@load "../models/tree_search_heuristic.bson" heuristic
     tmp = []
@@ -329,7 +261,7 @@ else
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
-        train_heuristic!(heuristic, train_data[1:1], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
+        train_heuristic!(heuristic, [myex], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
         ltmp = []
         # @show training_samples
         # @assert 0 == 1
@@ -391,11 +323,11 @@ for i in 1:size(df1)[1]
     plot!(0:size(df1)[2] - 1, tmp)
 end
 plot!()
-savefig("stats/new_theory_expr_size_progress_$r.png")
+savefig("stats/new_theory_expr_size_progress$r.png")
 plot()
 for i in 1:size(df2)[1]
     tmp = length.(Vector(df2[i, :]))
     plot!(0:size(df2)[2] - 1, tmp)
 end
 plot!()
-savefig("stats/new_theory_proof_progress_$r.png")
+savefig("stats/new_theory_proof_progress$r.png")

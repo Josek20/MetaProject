@@ -8,4 +8,4 @@
 #SBATCH --out=/home/shuhaole/logs/tree_simp.out
 
 ml Julia/1.10.2-linux-x86_64
-julia -p 10 --project=. example/tree_simp_example.jl
+julia -p 10 --project=./example example/tree_simp_example.jl

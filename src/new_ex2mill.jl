@@ -15,91 +15,6 @@ function create_all_symbols_encoding(all_symbols, encoding_length=13 + 1 + 18)
 end
 
 
-@inline function update_stats!(stats, depth, δne, δnb)
-    if depth > length(stats)
-      push!(stats, (0,0))
-    end
-    @inbounds ne, nb = stats[depth]
-    ne += δne
-    nb += δnb
-    @inbounds stats[depth] = (ne, nb)
-    return stats
-end
-
-
-function counter1(ex::Expr)
-    depth = 1
-    stats = fill((0,0), 10)
-    stats = counter!(stats, ex, depth)
-    last_element = findfirst(==((0,0)), stats)
-    tmp = isnothing(last_element) ? length(stats) : last_element - 1
-    return stats[1:tmp]
-end
-
-
-function counter!(stats, ex::Expr, depth)
-    if ex.head == :call
-        update_stats!(stats, depth, 1, 1)
-        for i in 2:length(ex.args)
-            stats = counter!(stats, ex.args[i], depth +1)
-        end
-    elseif ex.head in all_symbols 
-        update_stats!(stats, depth, 1, 1)
-        for a in ex.args
-            stats = counter!(stats, a, depth + 1)
-        end
-    end
-    return stats
-end
-
-
-function counter!(stats, ex::Union{Symbol, Number}, depth)
-    update_stats!(stats, depth, 1, 1)
-    return stats
-end
-
-
-function unfold_allocation(stats::Vector, encoding_length=13 + 1 + 18)
-    depth = 1
-    ne,nb = stats[depth]
-    am = unfold_allocation(stats, depth + 1, encoding_length)
-    # ma = ismissing(am) ? fill(0:-1, nb) : fill(1:2, nb)
-    tmp = ProductNode(;
-        args = ProductNode((
-            head = ArrayNode(zeros(Float32, encoding_length, ne)),
-            args = BagNode(
-                am
-                , fill(0:-1, nb)),
-        )),
-        position=ArrayNode(zeros(Float32,2,1)) 
-    )
-    return tmp
-end
-
-
-function unfold_allocation(stats, depth, encoding_length=13 + 1 + 18)
-    if depth > length(stats)
-        return missing
-    end
-    ne,nb = stats[depth]
-    am = unfold_allocation(stats, depth + 1, encoding_length)
-    # # ma = ismissing(am) ? fill(0:-1, nb) : fill(1:2, nb)
-    # tmp2 = repeat([1,2], div(nb, 2))
-    # tmp1 = isodd(nb) ?  append!([1], tmp2) : tmp2
-    pos = ArrayNode(Flux.onehotbatch(ne , 1:2))
-    tmp = ProductNode((;
-        args = ProductNode((
-            head = ArrayNode(zeros(Float32, encoding_length, ne)),
-            args = BagNode(
-                am
-                , fill(0:-1, nb)),
-        )),
-        position = pos
-    ))
-    return tmp
-end
-
-
 @inbounds function update_stats1!(stats::Vector, depth, ind, numbers, position, bags)
     if depth > length(stats)
         push!(stats, [])
@@ -178,26 +93,6 @@ function counter2!(stats, ex::Union{Symbol, Number}, depth, sym_enc::SymbolsEnco
 end
 
 
-function create_bags(n)                                  
-    ranges = UnitRange{Int}[]  # Initialize an empty array of UnitRange                                                                
-                                                                
-        if isodd(n)                                             
-        # If n is odd, start with 1:1                           
-        push!(ranges, 1:1)                                      
-        start = 2  # Start the next range from 2                
-    else                                                        
-        start = 1  # Start from 1 if n is even                  
-    end                                                         
-                                                                
-    # Create ranges in pairs (i:i+1)                            
-    for i in start:2:(n + (isodd(n) ? -1 : 0))                  
-        push!(ranges, i:i+1)                                    
-    end                                                         
-                                                                
-    return ranges                                               
-end
-
-
 # Todo : add for a single symbol or a number
 
 function unfold_allocation2(stats::Vector, numbers::Vector, position::Vector, exbags::Vector, encoding_length=13 + 1 + 18)
@@ -205,7 +100,6 @@ function unfold_allocation2(stats::Vector, numbers::Vector, position::Vector, ex
     sz1 = length(stats[depth])
     ne,nb = sz1, sz1
     am = unfold_allocation2(stats, depth + 1, numbers, position, exbags, encoding_length)
-    # ma = fill(0:-1, nb)
     arr_data = zeros(Float32, encoding_length, ne)
     cols = collect(1:ne)
     arr_data[stats[depth] .+ (cols .- 1) .* encoding_length] .= 1
@@ -217,7 +111,6 @@ function unfold_allocation2(stats::Vector, numbers::Vector, position::Vector, ex
                 , AlignedBags(exbags[depth])),
         )),
         position=ArrayNode(zeros(Float32,2,1))
-        # position=ArrayNode(Flux.onehotbatch(1,1:2))
     )
     return tmp
 end
@@ -230,7 +123,6 @@ function unfold_allocation2(stats::Vector, depth, numbers::Vector, position::Vec
     sz1 = length(stats[depth])
     ne,nb = sz1, sz1
     am = unfold_allocation2(stats::Vector, depth + 1, numbers::Vector, position::Vector, exbags::Vector, encoding_length)
-    # ma = fill(0:-1, nb)
     pos = ArrayNode(Flux.onehotbatch(position[depth], 1:2))
     arr_data = zeros(Float32, encoding_length, ne)
     cols = collect(1:ne)
@@ -263,5 +155,3 @@ function single_fast_ex2mill(ex, sym_enc)
     a = unfold_allocation2(st, nm, ps, bg)
     return a
 end
-
-
