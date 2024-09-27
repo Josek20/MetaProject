@@ -1,0 +1,7 @@
+27.09.2024
+- Disqused the ways to improve performance
+  1) caching the subtrees embeddings of the expression
+  2) expand multiple nodes at once
+- Problems that occure
+  - There is an issue with loss sometimes it becames infinit
+  - Hard to know whether the epxression cant find solution or there is not enough rules provide

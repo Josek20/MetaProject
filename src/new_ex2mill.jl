@@ -15,7 +15,7 @@ function create_all_symbols_encoding(all_symbols, encoding_length=13 + 1 + 18)
 end
 
 
-@inbounds function update_stats1!(stats::Vector, depth, ind, numbers, position, bags)
+@inbounds function update_stats1!(stats::Vector, depth::Int, ind::Int, numbers::Vector, position::Vector, bags::Vector)
     if depth > length(stats)
         push!(stats, [])
         push!(numbers, [])
@@ -23,7 +23,7 @@ end
         push!(bags, [])
     end
     # @show stats, numbers
-    push!(stats[depth], ind)
+    @inbounds push!(stats[depth], ind)
     return stats, numbers, position, bags
 end
 
@@ -48,16 +48,12 @@ function counter2!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, numbers, po
         if isempty(bags[depth]) || isnothing(tmp)
             push!(bags[depth], 1:length(ex.args)-1)
         else
-            # tmp =findlast(x->x!=0:-1,bags[depth])
-            # @show bags[depth], tmp
             nstart = bags[depth][tmp].stop + 1
             push!(bags[depth], nstart:nstart + length(ex.args) - 2)
         end
         for i in 2:length(ex.args)
             stats, numbers, position,bags = counter2!(stats, ex.args[i], depth + 1, sym_enc, numbers, position, bags)
             push!(position[depth + 1], i - 1)
-        # push!(bags[depth], 1:length(ex.args)-1)
-
         end
     elseif ex.head in all_symbols 
         update_stats1!(stats, depth, sym_enc.met[ex.head], numbers, position, bags)
@@ -72,7 +68,6 @@ function counter2!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, numbers, po
         for (ind,a) in enumerate(ex.args)
             stats, numbers, position, bags = counter2!(stats, a, depth + 1, sym_enc, numbers, position, bags)
             push!(position[depth + 1], ind)
-            # push!(bags[depth], 1:sa)
         end
     end
     return stats, numbers, position, bags
