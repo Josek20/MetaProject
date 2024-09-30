@@ -15,7 +15,7 @@ function create_all_symbols_encoding(all_symbols, encoding_length=13 + 1 + 18)
 end
 
 
-@inbounds function update_stats1!(stats::Vector, depth::Int, ind::Int, numbers::Vector, position::Vector, bags::Vector)
+@inbounds function update_stats!(stats::Vector, depth::Int, ind::Int, numbers::Vector, position::Vector, bags::Vector)
     if depth > length(stats)
         push!(stats, [])
         push!(numbers, [])
@@ -28,22 +28,22 @@ end
 end
 
 
-function counter2(ex::Union{Expr,Symbol,Number}, sym_enc::SymbolsEncoding)
+function count_expr_stats(ex::Union{Expr,Symbol,Number}, sym_enc::SymbolsEncoding)
     depth = 1
     stats = [[] for _ in 1:10]
     numbers = [[] for _ in 1:10]
     position = [[] for _ in 1:10]
     bags = [UnitRange{Int64}[] for _ in 1:10]
-    stats, numbers = counter2!(stats, ex, depth, sym_enc, numbers, position, bags)
+    stats, numbers = count_expr_stats!(stats, ex, depth, sym_enc, numbers, position, bags)
     last_element = findfirst(==([]), stats)
     tmp = isnothing(last_element) ? length(stats) : last_element - 1
     return stats[1:tmp], numbers[1:tmp], position[1:tmp], bags[1:tmp]
 end
 
 
-function counter2!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, numbers, position, bags)
+function count_expr_stats!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, numbers, position, bags)
     if ex.head == :call
-        update_stats1!(stats, depth, sym_enc.met[ex.args[1]], numbers, position, bags)
+        update_stats!(stats, depth, sym_enc.met[ex.args[1]], numbers, position, bags)
         tmp = findlast(x->x!=0:-1,bags[depth])
         if isempty(bags[depth]) || isnothing(tmp)
             push!(bags[depth], 1:length(ex.args)-1)
@@ -52,11 +52,11 @@ function counter2!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, numbers, po
             push!(bags[depth], nstart:nstart + length(ex.args) - 2)
         end
         for i in 2:length(ex.args)
-            stats, numbers, position,bags = counter2!(stats, ex.args[i], depth + 1, sym_enc, numbers, position, bags)
+            stats, numbers, position,bags = count_expr_stats!(stats, ex.args[i], depth + 1, sym_enc, numbers, position, bags)
             push!(position[depth + 1], i - 1)
         end
     elseif ex.head in all_symbols 
-        update_stats1!(stats, depth, sym_enc.met[ex.head], numbers, position, bags)
+        update_stats!(stats, depth, sym_enc.met[ex.head], numbers, position, bags)
         sa = length(ex.args)
         tmp =findlast(x->x!=0:-1,bags[depth])
         if isempty(bags[depth]) || isnothing(tmp)
@@ -66,7 +66,7 @@ function counter2!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, numbers, po
             push!(bags[depth], nstart:nstart + sa - 1)
         end
         for (ind,a) in enumerate(ex.args)
-            stats, numbers, position, bags = counter2!(stats, a, depth + 1, sym_enc, numbers, position, bags)
+            stats, numbers, position, bags = count_expr_stats!(stats, a, depth + 1, sym_enc, numbers, position, bags)
             push!(position[depth + 1], ind)
         end
     end
@@ -75,12 +75,12 @@ end
 
 
 # my_sigmoid(x, k=0.01, m=0) = 1/(1 + exp(-k*(x-m)))
-function counter2!(stats, ex::Union{Symbol, Number}, depth, sym_enc::SymbolsEncoding, numbers, position, bags)
+function count_expr_stats!(stats, ex::Union{Symbol, Number}, depth, sym_enc::SymbolsEncoding, numbers, position, bags)
     if isa(ex, Symbol)
-        update_stats1!(stats, depth, sym_enc.met[ex], numbers, position, bags)
+        update_stats!(stats, depth, sym_enc.met[ex], numbers, position, bags)
         push!(bags[depth], 0:-1)
     else
-        update_stats1!(stats, depth, sym_enc.met[:Number], numbers, position, bags)
+        update_stats!(stats, depth, sym_enc.met[:Number], numbers, position, bags)
         push!(numbers[depth], MyModule.my_sigmoid(ex))
         push!(bags[depth], 0:-1)
     end
@@ -90,34 +90,40 @@ end
 
 # Todo : add for a single symbol or a number
 
-function unfold_allocation2(stats::Vector, numbers::Vector, position::Vector, exbags::Vector, encoding_length=13 + 1 + 18)
+function unfold_allocation(stats::Vector, numbers::Vector, position::Vector, exbags::Vector, encoding_length=13 + 1 + 18)
     depth = 1
     sz1 = length(stats[depth])
     ne,nb = sz1, sz1
-    am = unfold_allocation2(stats, depth + 1, numbers, position, exbags, encoding_length)
+    am = unfold_allocation(stats, depth + 1, numbers, position, exbags, encoding_length)
     arr_data = zeros(Float32, encoding_length, ne)
     cols = collect(1:ne)
     arr_data[stats[depth] .+ (cols .- 1) .* encoding_length] .= 1
-    tmp = ProductNode(;
-        args=ProductNode((
-            head = ArrayNode(arr_data),
-            args = BagNode(
-                am
-                , AlignedBags(exbags[depth])),
-        )),
-        position=ArrayNode(zeros(Float32,2,1))
-    )
+    # tmp = ProductNode(;
+    #     args=ProductNode((
+    #         head = ArrayNode(arr_data),
+    #         args = BagNode(
+    #             am
+    #             , AlignedBags(exbags[depth])),
+    #     )),
+    #     position=ArrayNode(zeros(Float32,2,1))
+    # )
+    tmp = ProductNode((
+        head = ArrayNode(arr_data),
+        args = BagNode(
+            am
+            , AlignedBags(exbags[depth])),
+    ))
     return tmp
 end
 
 
-function unfold_allocation2(stats::Vector, depth, numbers::Vector, position::Vector, exbags::Vector, encoding_length=13 + 1 + 18)
+function unfold_allocation(stats::Vector, depth, numbers::Vector, position::Vector, exbags::Vector, encoding_length=13 + 1 + 18)
     if depth > length(stats)
         return missing
     end
     sz1 = length(stats[depth])
     ne,nb = sz1, sz1
-    am = unfold_allocation2(stats::Vector, depth + 1, numbers::Vector, position::Vector, exbags::Vector, encoding_length)
+    am = unfold_allocation(stats::Vector, depth + 1, numbers::Vector, position::Vector, exbags::Vector, encoding_length)
     pos = ArrayNode(Flux.onehotbatch(position[depth], 1:2))
     arr_data = zeros(Float32, encoding_length, ne)
     cols = collect(1:ne)
@@ -139,14 +145,14 @@ end
 
 
 function multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
-    stats = map(x-> counter2(x, sym_enc), expression_vector)
-    a = map(x->unfold_allocation2(x[1], x[2], x[3], x[4]), stats)
+    stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
+    a = map(x->unfold_allocation(x[1], x[2], x[3], x[4]), stats)
     return a
 end
 
 
 function single_fast_ex2mill(ex, sym_enc)
-    st, nm, ps, bg = counter2(ex, sym_enc)
-    a = unfold_allocation2(st, nm, ps, bg)
+    st, nm, ps, bg = count_expr_stats(ex, sym_enc)
+    a = unfold_allocation(st, nm, ps, bg)
     return a
 end

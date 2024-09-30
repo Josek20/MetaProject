@@ -91,26 +91,26 @@ function (m::ExprModel)(ds::ProductNode)
 end
 
 
-# function embed(m::ExprModel, ds::ProductNode) 
-#     # @show ds.data
-#     if haskey(ds.data, :position)
-#         # @show size(m.head_model(ds.data.args.data.head.data))
-#         tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data)
-#         tmp = vcat(tmp, embed(m, ds.data.args.data.args))
-#     else
-#         o = m.head_model(ds.data.head.data)
-#         # tmp = vcat(o, zeros(Float32, 2, size(o)[2]))
-#         # tmp = vcat(tmp, embed(m, ds.data.args))
-#         tmp = vcat(o, zeros(Float32, 2, size(o)[2]), embed(m, ds.data.args))
-#     end
-#     # tmp = vcat(m.head_model(ds.data.args.head.data), embed(m, ds.data.args))
-#     m.joint_model(tmp)
-# end
-function embed(m::ExprModel, ds::ProductNode)
-    # tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data)
-    tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data, embed(m, ds.data.args.data.args))   
+function embed(m::ExprModel, ds::ProductNode) 
+    # @show ds.data
+    if haskey(ds.data, :position)
+        # @show size(m.head_model(ds.data.args.data.head.data))
+        tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data)
+        tmp = vcat(tmp, embed(m, ds.data.args.data.args))
+    else
+        o = m.head_model(ds.data.head.data)
+        # tmp = vcat(o, zeros(Float32, 2, size(o)[2]))
+        # tmp = vcat(tmp, embed(m, ds.data.args))
+        tmp = vcat(o, zeros(Float32, 2, size(o)[2]), embed(m, ds.data.args))
+    end
+    # tmp = vcat(m.head_model(ds.data.args.head.data), embed(m, ds.data.args))
     m.joint_model(tmp)
 end
+# function embed(m::ExprModel, ds::ProductNode)
+#     # tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data)
+#     tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data, embed(m, ds.data.args.data.args))   
+#     m.joint_model(tmp)
+# end
 
 
 function embed(m::ExprModel, ds::BagNode)

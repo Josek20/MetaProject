@@ -151,3 +151,13 @@ function test_old_new_ex2mill(expressions::Vector{Expr}, heuristic, symbols_to_i
         @assert heuristic(eo) == heuristic(en)
     end
 end
+
+
+function test_stats_proofs(initial_expr, proofs)
+    for i in proofs
+        position, rule = i
+        @show initial_expr
+        MyModule.my_rewriter!(position, initial_expr, rule)
+        # MyModule.single_fast_ex2mill(initial_expr)
+    end
+end

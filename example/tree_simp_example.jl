@@ -239,8 +239,8 @@ max_steps = 1000
 max_depth = 100
 n = 1000
 
-myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
-# myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
+# myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
+myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # myex = :((v0*23 + v2) - (v2 + v0*23) <= 100) 
 # myex = :(121 - max(v0 * 59, 109) <= 1024)
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
@@ -250,7 +250,7 @@ df2 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-# @assert 0 == 1
+@assert 0 == 1
 if isfile("../models/tre1e_search_heuristic.bson")
     # BSON.@load "../models/tree_search_heuristic.bson" heuristic
     tmp = []
@@ -272,48 +272,54 @@ else
         println("Epcoh $ep")
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
-        train_heuristic!(heuristic, [myex], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
+        # train_heuristic!(heuristic, [myex], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.heuristic_forward_pass(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names)
+        
         ltmp = []
         # @show training_samples
         # @assert 0 == 1
         # MyModule.test_expr_embedding(heuristic, training_samples[1:n], theory, symbols_to_index, all_symbols, variable_names)
 
-        cat_samples = vcat(training_samples...)
+        # cat_samples = vcat(training_samples...)
         # for sample in training_samples
         for i in 1:50
-            sample = StatsBase.sample(cat_samples)
-            if isnothing(sample.training_data) 
-                continue
-            end
-            sa, grad = Flux.Zygote.withgradient(pc) do
-                # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
-            end
-            if any(g->any(isinf, g) || any(isnan, g), grad)
-                BSON.@save "models/inf_grad_heuristic.bson" heuristic
-                JLD2.@save "data/training_data/training_samples_inf_grad.jld2" training_samples
-                @assert 0 == 1
-            end
+            # sample = StatsBase.sample(cat_samples)
+            for j in m_nodes
+            # if isnothing(sample.training_data) 
+            #     continue
+            # end
+                sa, grad = Flux.Zygote.withgradient(pc) do
+                    # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                    # MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                    MyModule.loss(heuristic, j[3], j[4], j[5])
+                end
+                if any(g->any(isinf, g) || any(isnan, g), grad)
+                    BSON.@save "models/inf_grad_heuristic.bson" heuristic
+                    JLD2.@save "data/training_data/training_samples_inf_grad.jld2" training_samples
+                    @assert 0 == 1
+                end
             # if isna(grad)
-            @show sa
-            # push!(ltmp, sa)
-            Flux.update!(optimizer, pc, grad)
+                @show sa
+                # push!(ltmp, sa)
+                Flux.update!(optimizer, pc, grad)
+            end
         end
-        for sample in cat_samples
-            sa = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
-            push!(ltmp, sa)
-        end
+        # for sample in cat_samples
+        #     sa = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
+        #     push!(ltmp, sa)
+        # end
         #
         # println("Testing===========================================")
         # # length_reduction, proofs, simp_expressions = test_heuristic(heuristic, train_data[1:n], max_steps, max_depth, variable_names, theory)
         # # push!(stats, simp_expressions)
-        push!(stats, [i.expression for i in cat_samples])
-        push!(proof_stats, [i.proof for i in cat_samples])
-        push!(loss_stats, ltmp)
+        # push!(stats, [i.expression for i in cat_samples])
+        # push!(proof_stats, [i.proof for i in cat_samples])
+        # push!(loss_stats, ltmp)
     end
     # BSON.@save "models/tree_search_heuristic.bson" heuristic
     # CSV.write("stats/data100.csv", df)
 end
+@assert 0 == 1
 for i in 1:length(stats[1])
     tmp = Any[myex]
     for j in 1:epochs

@@ -1,3 +1,13 @@
+30.09.2024
+- Disqused the ways to improve performance
+  1) caching the subtrees embeddings of the expression
+  2) Switch to A from greedy best first search
+  3) greedy epsilon takes a lot of time get read of delete!
+- Problems that occure
+  - heuristic may learn suboptimal solution does not search for a better one
+  - tree may expand in depth rather than in breadth
+
+
 27.09.2024
 - Disqused the ways to improve performance
   1) caching the subtrees embeddings of the expression
