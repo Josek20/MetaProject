@@ -17,6 +17,8 @@ using MyModule.DataFrames
 using Revise
 using StatsBase
 using CSV
+using BSON
+using JLD2
 
 
 train_data_path = "./data/neural_rewrter/train.json"
@@ -151,13 +153,14 @@ theory = @theory a b c d x y begin
 
     min(max(a, b::Number), c::Number) => b <= c ? :(max(min($a, $c), $b)) : :(min(max($a, $b), $c))
     max(min(a, c::Number), b::Number) => b <= c ? :(min(max($a, $b), $c)) : :(max(min($a, $c), $b))
-    min(a , b::Number) <= c::Number --> :($a <= $c) || :($b <= $c)
-    max(a , b::Number) <= c::Number --> :($a <= $c) && :($b <= $c)
-    c::Number <= max(a , b::Number) --> :($c <= $a) || :($c <= $b)
-    min(a * b::Number, c::Number) => b % c == 0 && b > 0 ? :(min($a, $b / $c) * $c) : :(min($a * $b, $c))
-    min(a * b::Number, d * c::Number) => b % c == 0 && b > 0 ? :(min($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
-    min(a * b::Number, c::Number) => b % c == 0 && b < 0 ? :(max($a, $b / $c) * $c) : :(min($a * $b, $c))
-    min(a * b::Number, d * c::Number) => b % c == 0 && b < 0 ? :(max($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
+    min(a , b::Number) <= c::Number --> a <= c || b <= c
+    max(a , b::Number) <= c::Number --> a <= c && b <= c
+    c::Number <= max(a , b::Number) --> c <= a || c <= b
+    c::Number <= min(a , b::Number) --> c <= a && c <= b
+    min(a * b::Number, c::Number) => c != 0 && b % c == 0 && b > 0 ? :(min($a, $b / $c) * $c) : :(min($a * $b, $c))
+    min(a * b::Number, d * c::Number) => c != 0 && b % c == 0 && b > 0 ? :(min($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
+    min(a * b::Number, c::Number) => c != 0 && b % c == 0 && b < 0 ? :(max($a, $b / $c) * $c) : :(min($a * $b, $c))
+    min(a * b::Number, d * c::Number) => c != 0 && b % c == 0 && b < 0 ? :(max($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
     max(a * c::Number, b * c::Number) => c < 0 ? :(min($a, $b) * $c) : :(max($a, $b) * $c)
 
     # modulo.rs
@@ -212,6 +215,10 @@ theory = @theory a b c d x y begin
     a - c <= b --> a <= b + c
     a <= b + c --> a - b <= c
     a - b <= c --> a <= b + c
+    a - a --> 0
+    min(a::Number, b::Number) => a >= b ? b : a 
+    max(a::Number, b::Number) => a >= b ? a : b
+    # a + b::Number <= min(a + c::Number, d) =>
 end
 
 hidden_size = 64
@@ -233,14 +240,17 @@ max_depth = 100
 n = 1000
 
 myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
+# myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
+# myex = :((v0*23 + v2) - (v2 + v0*23) <= 100) 
+# myex = :(121 - max(v0 * 59, 109) <= 1024)
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
-df1 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
-df2 = DataFrame([[] for _ in 1:epochs], ["Epoch$i" for i in 1:epochs])
+df1 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
+df2 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 # @load "training_samplesk1000_v3.jld2" training_samples
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-@assert 0 == 1
+# @assert 0 == 1
 if isfile("../models/tre1e_search_heuristic.bson")
     # BSON.@load "../models/tree_search_heuristic.bson" heuristic
     tmp = []
@@ -259,6 +269,7 @@ else
     dt = 1
     for ep in 1:epochs 
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+        println("Epcoh $ep")
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
         train_heuristic!(heuristic, [myex], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
@@ -269,7 +280,7 @@ else
 
         cat_samples = vcat(training_samples...)
         # for sample in training_samples
-        for i in 1:100
+        for i in 1:50
             sample = StatsBase.sample(cat_samples)
             if isnothing(sample.training_data) 
                 continue
@@ -278,6 +289,12 @@ else
                 # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
                 MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
             end
+            if any(g->any(isinf, g) || any(isnan, g), grad)
+                BSON.@save "models/inf_grad_heuristic.bson" heuristic
+                JLD2.@save "data/training_data/training_samples_inf_grad.jld2" training_samples
+                @assert 0 == 1
+            end
+            # if isna(grad)
             @show sa
             # push!(ltmp, sa)
             Flux.update!(optimizer, pc, grad)
@@ -298,14 +315,14 @@ else
     # CSV.write("stats/data100.csv", df)
 end
 for i in 1:length(stats[1])
-    tmp = []
+    tmp = Any[myex]
     for j in 1:epochs
         push!(tmp, stats[j][i])
     end
     push!(df1, tmp)
 end
 for i in 1:length(proof_stats[1])
-    tmp = []
+    tmp = [[]]
     for j in 1:epochs
         push!(tmp, proof_stats[j][i])
     end

@@ -22,12 +22,12 @@ exp_size(ex::Float64) = 1f0
 exp_size(ex::Float32) = 1f0
 
 
-function my_rewriter!(position, ex, rule)
+function my_rewriter!(position, ex, rule, depth)
     if isempty(position)
         return rule(ex) 
     end
     ind = position[1]
-    ret = my_rewriter!(position[2:end], ex.args[ind], rule)
+    ret = my_rewriter!(position[2:end], ex.args[ind], rule, depth+1)
     if !isnothing(ret)
         ex.args[ind] = ret
     end
@@ -68,7 +68,7 @@ function execute(ex, theory)
         if isempty(pl)
             push!(res, ((pl, r), theory[r](old_ex)))
         else
-            my_rewriter!(pl, old_ex, theory[r])
+            my_rewriter!(pl, old_ex, theory[r], 1)
             push!(res, ((pl, r), old_ex))
         end
     end
@@ -124,36 +124,36 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
 end
 
 
-# function expand_node!(parents::Vector, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names) 
-#     new_nodes = map(parents) do parent
-#         succesors = execute(parent.ex, theory)
-#         new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
-#     end
+function expand_node!(parents::Vector, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names) 
+    new_nodes = map(parents) do parent
+        succesors = execute(parent.ex, theory)
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    end
 
-#     new_nodes = vcat(new_nodes...)
-#     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
-#     # @show length(filtered_new_nodes)
-#     isempty(filtered_new_nodes) && return(false)
-#     exprs = map(x->x.ex, filtered_new_nodes)
-#     # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
-#     embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
-#     ds = reduce(catobs, embeded_exprs)
-#     o = heuristic(ds)
-#     # o = fill(3, length(embeded_exprs))
-#     for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
-#         soltree[n.node_id].expression_encoding = e
-#         n.expression_encoding = e
-#         enqueue!(open_list, n, v)
-#     end
-#     nodes_ids = map(x->x.node_id, filtered_new_nodes)
-#     map(parents) do parent
-#         append!(parent.children, nodes_ids)
-#     end
-#     if in(:1, exprs)
-#         return true
-#     end
-#     return false
-# end
+    new_nodes = vcat(new_nodes...)
+    filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    # @show length(filtered_new_nodes)
+    isempty(filtered_new_nodes) && return(false)
+    exprs = map(x->x.ex, filtered_new_nodes)
+    # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
+    embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
+    ds = reduce(catobs, embeded_exprs)
+    o = heuristic(ds)
+    # o = fill(3, length(embeded_exprs))
+    for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
+        soltree[n.node_id].expression_encoding = e
+        n.expression_encoding = e
+        enqueue!(open_list, n, v)
+    end
+    nodes_ids = map(x->x.node_id, filtered_new_nodes)
+    map(parents) do parent
+        append!(parent.children, nodes_ids)
+    end
+    if in(:1, exprs)
+        return true
+    end
+    return false
+end
 
 
 function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names)
@@ -167,21 +167,22 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         end
         # nodes = Node[]
         # if length(open_list) == 1
-        nodes, prob = dequeue_pair!(open_list)
-        step += 1
+        # nodes, prob = dequeue_pair!(open_list)
+        # step += 1
         # else
         # n = expand_n > length(open_list) ? length(open_list) : expand_n
         # nodes = map(x->dequeue_pair!(open_list)[1], 1:n)
         # step += n
         #     # for _ in 1:n
-        #     #     # if rand() < epsilon && length(open_list) > 1
-        #     #     #     keys_list = collect(keys(open_list))
-        #     #     #     node = rand(keys_list)
-        #     #     #     prob = open_list[node]
-        #     #     #     delete!(open_list, node)
-        #     #     # else
-        #     #     node, prob = dequeue_pair!(open_list)
-        #     #     # end
+        # if rand() < epsilon && length(open_list) > 1
+        #     keys_list = keys(open_list)
+        #     nodes = rand(keys_list)
+        #     prob = open_list[nodes]
+        #     delete!(open_list, nodes)
+        # else
+        nodes, prob = dequeue_pair!(open_list)
+        # end
+        step += 1
         #     #     # expansion_history[node.node_id] = [step, prob]
         #     #     push!(nodes, node)
         #     #     step += 1
