@@ -1,3 +1,11 @@
+01.10.2024
+- Trying to implement caching the subtrees
+  1) when creating ProductNode structure for an expression,
+    computing the embeddings of a substructeres 
+- Problems
+  - previous embeddings != to the caching embeddings
+
+
 30.09.2024
 - Disqused the ways to improve performance
   1) caching the subtrees embeddings of the expression

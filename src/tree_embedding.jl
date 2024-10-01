@@ -2,25 +2,31 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 
 function cached_inference(ex::Expr, cache, model, all_symbols, symbols_to_ind)
-    if ex.head == :call
-        fun_name, args =  ex.args[1], ex.args[2:end]
-    elseif ex.head in all_symbols
-        fun_name = ex.head
-        args = ex.args
-    else
-        error("unknown head $(ex.head)")
+    get!(cache, ex) do
+        if ex.head == :call
+            fun_name, args =  ex.args[1], ex.args[2:end]
+        elseif ex.head in all_symbols
+            fun_name = ex.head
+            args = ex.args
+        else
+            error("unknown head $(ex.head)")
+        end
+        encoding = zeros(Float32, length(all_symbols), 1)
+        encoding[symbols_to_index[fun_name]] = 1
+        ds = ProductNode((
+            head = ArrayNode(encoding),
+            args = cached_inference(args, cache, model, all_symbols, symbols_to_ind)
+        ))
+
+        o = model.head_model(encoding)
+        tmp = vcat(o, zeros(Float32, 2, size(o)[2]), ds.data.args.data)
+        model.joint_model(tmp)
+        # @show ds.data.args.data.data.args.data
+        # get!(cache, ex) do 
+        #     embed(model, ds)
+        # end
+        # return ds
     end
-    encoding = zeros(Float32, length(all_symbols), 1)
-    encoding[symbols_to_index[fun_name]] = 1
-    ds = ProductNode((
-        head = ArrayNode(encoding),
-        args = cached_inference(args, cache, model, all_symbols, symbols_to_ind)
-    ))
-    # @show ds.data.args.data.data.args.data
-    # get!(cache, ex) do 
-    #     embed(model, ds)
-    # end
-    return ds
 end
 
 
@@ -65,10 +71,11 @@ function cached_inference(args::Vector, cache, model, all_symbols, symbols_to_in
     )
     # tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data)
     # tmp = vcat(tmp, embed(m, ds.data.args.data.args))
-    ds.data.data.args
     # get!(cache, )
     # embed(model, ds)
-    # model.aggregation(embed(model, ds.data.data),ds.bags)
+    tmp = vcat(o, ds.data.position, ds.data.args.data)
+    tmp = model.joint_model(tmp)
+    model.aggregation(ds.data.data.args.data,ds.bags)
     # embed(model, ds.data.data)
     # return ds
 end

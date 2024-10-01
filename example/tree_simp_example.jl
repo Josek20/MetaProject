@@ -248,9 +248,14 @@ myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 df1 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 df2 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
+
 ex2 = :((v0 + v1) + 110)
+ex = :(v0 -v1)
 cache = Dict()
-MyModule.cached_inference(ex2, cache, heuristic, new_all_symbols, sym_enc)
+a = MyModule.cached_inference(ex, cache, heuristic, new_all_symbols, sym_enc)
+
+b = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names, Dict(),heuristic)
+@assert heuristic(b) == heuristic.heuristic(a)
 # @load "training_samplesk1000_v3.jld2" training_samples
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
