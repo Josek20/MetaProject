@@ -25,30 +25,30 @@ end
 
 
 function cached_inference(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
-    encoding = zeros(Float32, length(all_symbols), 1)
-    encoding[symbols_to_ind[ex]] = 1
-    ds = ProductNode((
-        head = ArrayNode(encoding),
-        args = BagNode(missing, [0:-1])
-    ))
-    # get!(cache, ex) do 
-    #     embed(model,ds)
-    # end
-    return ds
+    get!(cache, ex) do 
+        encoding = zeros(Float32, length(all_symbols), 1)
+        encoding[symbols_to_ind[ex]] = 1
+        ds = ProductNode((
+            head = ArrayNode(encoding),
+            args = BagNode(missing, [0:-1])
+        ))
+        embed(model,ds)
+    end
+    # return ds
 end
 
 
 function cached_inference(ex::Number, cache, model, all_symbols, symbols_to_ind)
-    encoding = zeros(Float32, length(all_symbols), 1)
-    encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
-    ds = ProductNode((
-        head = ArrayNode(encoding),
-        args = BagNode(missing, [0:-1])
-    ))
-    # get!(cache, ex) do
-    #     embed(model,ds)
-    # end
-    return ds
+    get!(cache, ex) do
+        encoding = zeros(Float32, length(all_symbols), 1)
+        encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
+        ds = ProductNode((
+            head = ArrayNode(encoding),
+            args = BagNode(missing, [0:-1])
+        ))
+        embed(model,ds)
+    end
+    # return ds
 end
 
 
@@ -58,16 +58,19 @@ function cached_inference(args::Vector, cache, model, all_symbols, symbols_to_in
     # println("ok1")
     ds = BagNode(
         ProductNode((;
-            args = reduce(catobs, [cached_inference(a, cache, model, all_symbols, symbols_to_ind) for a in args]),
+            args = reduce(hcat, [cached_inference(a, cache, model, all_symbols, symbols_to_ind) for a in args]),
             position = ArrayNode(Flux.onehotbatch(1:l, 1:2)),
         )),
         [1:l]
     )
+    # tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data)
+    # tmp = vcat(tmp, embed(m, ds.data.args.data.args))
+    ds.data.data.args
     # get!(cache, )
     # embed(model, ds)
     # model.aggregation(embed(model, ds.data.data),ds.bags)
     # embed(model, ds.data.data)
-    return ds
+    # return ds
 end
 
 
@@ -138,6 +141,7 @@ function args2mill(args::Vector, symbols_to_index, all_symbols, variable_names, 
         )),
         [1:l]
         )
+
 end
 
 
