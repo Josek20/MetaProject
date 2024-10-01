@@ -1,20 +1,3 @@
-struct SymbolsEncoding{E,M}
-    enc::E 
-    met::M
-end
-
-var_symbols = [Symbol("v$(i-1)") for (i,j) in enumerate(1:number_of_variables)]
-new_all_symbols = vcat(all_symbols, var_symbols)
-
-function create_all_symbols_encoding(all_symbols, encoding_length=13 + 1 + 18)
-    enc = zeros(Float32, encoding_length, encoding_length)
-    enc1 = Flux.onehotbatch(1:encoding_length, 1:encoding_length)
-    meta = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
-    meta[:Number] = encoding_length
-    return SymbolsEncoding(enc1, meta)
-end
-
-
 @inbounds function update_stats!(stats::Vector, depth::Int, ind::Int, numbers::Vector, position::Vector, bags::Vector)
     if depth > length(stats)
         push!(stats, [])
@@ -28,7 +11,7 @@ end
 end
 
 
-function count_expr_stats(ex::Union{Expr,Symbol,Number}, sym_enc::SymbolsEncoding)
+function count_expr_stats(ex::Union{Expr,Symbol,Number}, sym_enc::Dict)
     depth = 1
     stats = [[] for _ in 1:10]
     numbers = [[] for _ in 1:10]
@@ -41,9 +24,9 @@ function count_expr_stats(ex::Union{Expr,Symbol,Number}, sym_enc::SymbolsEncodin
 end
 
 
-function count_expr_stats!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, numbers, position, bags)
+function count_expr_stats!(stats, ex::Expr, depth, sym_enc::Dict, numbers, position, bags)
     if ex.head == :call
-        update_stats!(stats, depth, sym_enc.met[ex.args[1]], numbers, position, bags)
+        update_stats!(stats, depth, sym_enc[ex.args[1]], numbers, position, bags)
         tmp = findlast(x->x!=0:-1,bags[depth])
         if isempty(bags[depth]) || isnothing(tmp)
             push!(bags[depth], 1:length(ex.args)-1)
@@ -56,7 +39,7 @@ function count_expr_stats!(stats, ex::Expr, depth, sym_enc::SymbolsEncoding, num
             push!(position[depth + 1], i - 1)
         end
     elseif ex.head in all_symbols 
-        update_stats!(stats, depth, sym_enc.met[ex.head], numbers, position, bags)
+        update_stats!(stats, depth, sym_enc[ex.head], numbers, position, bags)
         sa = length(ex.args)
         tmp =findlast(x->x!=0:-1,bags[depth])
         if isempty(bags[depth]) || isnothing(tmp)
@@ -75,12 +58,12 @@ end
 
 
 # my_sigmoid(x, k=0.01, m=0) = 1/(1 + exp(-k*(x-m)))
-function count_expr_stats!(stats, ex::Union{Symbol, Number}, depth, sym_enc::SymbolsEncoding, numbers, position, bags)
+function count_expr_stats!(stats, ex::Union{Symbol, Number}, depth, sym_enc::Dict, numbers, position, bags)
     if isa(ex, Symbol)
-        update_stats!(stats, depth, sym_enc.met[ex], numbers, position, bags)
+        update_stats!(stats, depth, sym_enc[ex], numbers, position, bags)
         push!(bags[depth], 0:-1)
     else
-        update_stats!(stats, depth, sym_enc.met[:Number], numbers, position, bags)
+        update_stats!(stats, depth, sym_enc[:Number], numbers, position, bags)
         push!(numbers[depth], MyModule.my_sigmoid(ex))
         push!(bags[depth], 0:-1)
     end
@@ -98,26 +81,26 @@ function unfold_allocation(stats::Vector, numbers::Vector, position::Vector, exb
     arr_data = zeros(Float32, encoding_length, ne)
     cols = collect(1:ne)
     arr_data[stats[depth] .+ (cols .- 1) .* encoding_length] .= 1
-    # tmp = ProductNode(;
-    #     args=ProductNode((
-    #         head = ArrayNode(arr_data),
-    #         args = BagNode(
-    #             am
-    #             , AlignedBags(exbags[depth])),
-    #     )),
-    #     position=ArrayNode(zeros(Float32,2,1))
-    # )
-    tmp = ProductNode((
-        head = ArrayNode(arr_data),
-        args = BagNode(
-            am
-            , AlignedBags(exbags[depth])),
-    ))
+    tmp = ProductNode(;
+        args=ProductNode((
+            head = ArrayNode(arr_data),
+            args = BagNode(
+                am
+                , AlignedBags(exbags[depth])),
+        )),
+        position=ArrayNode(zeros(Float32,2,1))
+    )
+    # tmp = ProductNode((
+    #     head = ArrayNode(arr_data),
+    #     args = BagNode(
+    #         am
+    #         , AlignedBags(exbags[depth])),
+    # ))
     return tmp
 end
 
 
-function unfold_allocation(stats::Vector, depth, numbers::Vector, position::Vector, exbags::Vector, encoding_length=13 + 1 + 18)
+function unfold_allocation(stats::Vector, depth::Int, numbers::Vector, position::Vector, exbags::Vector, encoding_length=13 + 1 + 18)
     if depth > length(stats)
         return missing
     end
@@ -146,7 +129,45 @@ end
 
 function multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
     stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
-    a = map(x->unfold_allocation(x[1], x[2], x[3], x[4]), stats)
+    # st = []
+    # nm = []
+    # ps = []
+    # bg = []
+    # for (ind,i) in enumerate(stats)
+    #     if ind == 1
+    #         st = i[1]
+    #         nm = i[2]
+    #         ps = i[3]
+    #         bg = i[4]    
+    #     else
+    #         min_length = min(length(st), length(i[1]))
+
+    #         # Concatenate corresponding elements of v1 and v2
+    #         result1 = map(vcat, st[1:min_length], i[1][1:min_length])
+    #         result2 = map(vcat, nm[1:min_length], i[2][1:min_length])
+    #         result3 = map(vcat, ps[1:min_length], i[3][1:min_length])
+    #         result4 = map(vcat, bg[1:min_length], i[4][1:min_length])
+
+    #         # Preserve the remaining elements of v1 if any
+    #         if length(st) > min_length
+    #             append!(result1, st[min_length+1:end])
+    #             append!(result2, nm[min_length+1:end])
+    #             append!(result3, ps[min_length+1:end])
+    #             append!(result4, bg[min_length+1:end])
+    #         elseif length(i[1]) > min_length
+    #             append!(result1, i[1][min_length+1:end])
+    #             append!(result2, i[2][min_length+1:end])
+    #             append!(result3, i[3][min_length+1:end])
+    #             append!(result4, i[4][min_length+1:end])
+    #         end
+    #         st = result1
+    #         nm = result1
+    #         ps = result1
+    #         bg = result1
+    #     end
+    # end
+    a = map(x->unfold_allocation(x...), stats)
+    # a = unfold_allocation(st,nm,ps,bg)
     return a
 end
 

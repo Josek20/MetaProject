@@ -1,14 +1,77 @@
-# Initialize model and example tree
-all_symbols = [:+, :-, :/, :*, :<=, :>=, :min, :max, :<, :>, :select, :&&, :||, :(==), :!, :rem, :%, :(!=)]
-symbols_to_index = Dict(i=>ind for (ind, i) in enumerate(all_symbols))
-
-number_of_variables = 13
-var_one_enc = Flux.onehotbatch(collect(1:number_of_variables), 1:number_of_variables)
-variable_names = Dict(Symbol("v$(i-1)")=>j for (i,j) in enumerate(1:number_of_variables))
-# new_all_symbols = append(all_symbols, keys(variable_names))
+my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 
-function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict)
+function cached_inference(ex::Expr, cache, model, all_symbols, symbols_to_ind)
+    if ex.head == :call
+        fun_name, args =  ex.args[1], ex.args[2:end]
+    elseif ex.head in all_symbols
+        fun_name = ex.head
+        args = ex.args
+    else
+        error("unknown head $(ex.head)")
+    end
+    encoding = zeros(Float32, length(all_symbols), 1)
+    encoding[symbols_to_index[fun_name]] = 1
+    ds = ProductNode((
+        head = ArrayNode(encoding),
+        args = cached_inference(args, cache, model, all_symbols, symbols_to_ind)
+    ))
+    # @show ds.data.args.data.data.args.data
+    # get!(cache, ex) do 
+    #     embed(model, ds)
+    # end
+    return ds
+end
+
+
+function cached_inference(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
+    encoding = zeros(Float32, length(all_symbols), 1)
+    encoding[symbols_to_ind[ex]] = 1
+    ds = ProductNode((
+        head = ArrayNode(encoding),
+        args = BagNode(missing, [0:-1])
+    ))
+    # get!(cache, ex) do 
+    #     embed(model,ds)
+    # end
+    return ds
+end
+
+
+function cached_inference(ex::Number, cache, model, all_symbols, symbols_to_ind)
+    encoding = zeros(Float32, length(all_symbols), 1)
+    encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
+    ds = ProductNode((
+        head = ArrayNode(encoding),
+        args = BagNode(missing, [0:-1])
+    ))
+    # get!(cache, ex) do
+    #     embed(model,ds)
+    # end
+    return ds
+end
+
+
+function cached_inference(args::Vector, cache, model, all_symbols, symbols_to_ind)
+    isempty(args) && return(BagNode(missing, [0:-1]))
+    l = length(args)
+    # println("ok1")
+    ds = BagNode(
+        ProductNode((;
+            args = reduce(catobs, [cached_inference(a, cache, model, all_symbols, symbols_to_ind) for a in args]),
+            position = ArrayNode(Flux.onehotbatch(1:l, 1:2)),
+        )),
+        [1:l]
+    )
+    # get!(cache, )
+    # embed(model, ds)
+    # model.aggregation(embed(model, ds.data.data),ds.bags)
+    # embed(model, ds.data.data)
+    return ds
+end
+
+
+function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict, cache, model)
     if ex.head == :call
         fun_name, args =  ex.args[1], ex.args[2:end]
     elseif ex.head in all_symbols # Symbol("&&") || ex.head == Symbol("min")
@@ -31,13 +94,16 @@ function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict)
     # )
     ds = ProductNode((
         head = ArrayNode(encoding),
-        args = args2mill(args, symbols_to_index, all_symbols, variable_names)
+        args = args2mill(args, symbols_to_index, all_symbols, variable_names, cache, model)
     ))
+    get!(cache, ex) do 
+        embed(model, ds)
+    end
     return(ds)
 end
 
 
-function ex2mill(ex::Symbol, symbols_to_index, all_symbols, variable_names)
+function ex2mill(ex::Symbol, symbols_to_index, all_symbols, variable_names, cache, model)
     n = length(symbols_to_index) + 1
     encoding = zeros(Float32, n+13, 1)
     # encoding[n] = 1     # encoding = Flux.onehotbatch([n], 1:n)
@@ -51,10 +117,7 @@ function ex2mill(ex::Symbol, symbols_to_index, all_symbols, variable_names)
 end
 
 
-my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
-
-
-function ex2mill(ex::Number, symbols_to_index, all_symbols, variable_names)
+function ex2mill(ex::Number, symbols_to_index, all_symbols, variable_names, cache, model)
     n = length(symbols_to_index) + 1
     encoding = zeros(Float32, n+13, 1)
     # encoding[n] = 1     # encoding = Flux.onehotbatch([n], 1:n)
@@ -66,11 +129,11 @@ function ex2mill(ex::Number, symbols_to_index, all_symbols, variable_names)
 end
 
 
-function args2mill(args::Vector, symbols_to_index, all_symbols, variable_names)
+function args2mill(args::Vector, symbols_to_index, all_symbols, variable_names, cache, model)
     isempty(args) && return(BagNode(missing, [0:-1]))
     l = length(args)
     BagNode(ProductNode((;
-        args = reduce(catobs, [ex2mill(a, symbols_to_index, all_symbols, variable_names) for a in args]),
+        args = reduce(catobs, [ex2mill(a, symbols_to_index, all_symbols, variable_names, cache, model) for a in args]),
         position = ArrayNode(Flux.onehotbatch(1:l, 1:2)),
         )),
         [1:l]

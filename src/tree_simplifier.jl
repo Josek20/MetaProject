@@ -160,29 +160,29 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
     step = 0
     reached_goal = false
     epsilon = 0.05
-    # expand_n = 5
+    expand_n = 25
     while length(open_list) > 0
         if max_steps <= step
             break
         end
         # nodes = Node[]
         # if length(open_list) == 1
-        # nodes, prob = dequeue_pair!(open_list)
-        # step += 1
+        nodes, prob = dequeue_pair!(open_list)
+        step += 1
         # else
         # n = expand_n > length(open_list) ? length(open_list) : expand_n
         # nodes = map(x->dequeue_pair!(open_list)[1], 1:n)
         # step += n
         #     # for _ in 1:n
-        if rand() < epsilon && length(open_list) > 1
-            keys_list = keys(open_list)
-            nodes = rand(keys_list)
-            prob = open_list[nodes]
-            # delete!(open_list, nodes)
-        else
-            nodes, prob = dequeue_pair!(open_list)
-        end
-        step += 1
+        # if rand() < epsilon && length(open_list) > 1
+        #     keys_list = keys(open_list)
+        #     nodes = rand(keys_list)
+        #     prob = open_list[nodes]
+        #     # delete!(open_list, nodes)
+        # else
+        #     nodes, prob = dequeue_pair!(open_list)
+        # end
+        # step += 1
         # if isin(close_list, nodes.node_id)
         #     continue
         # end
@@ -353,7 +353,7 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
 end
 
 
-function heuristic_forward_pass(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names)
+function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names)
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
@@ -408,7 +408,7 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         # if length(training_samples) > index && training_samples[index].saturated
         #     continue
         # end
-        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = heuristic_forward_pass(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = initialize_tree_search(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names)
         println("Saturated: $saturated")
         new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, i)
         if length(training_samples) >= index 

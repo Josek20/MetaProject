@@ -135,6 +135,7 @@ end
 # ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
 # ex = myex
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
+ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # ex = train_data[1]
 # ex = myex
 # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
@@ -155,9 +156,9 @@ soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 using ProfileCanvas
-ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
+# ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
 # reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
-# bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names)
+bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names)
 # No multiple expand Single result which took 61.496 s (9.78% GC) to evaluate, 95709
 # Multiple expand 30 Single result which took 330.275 s (88.81% GC) to evaluate, 184714
 # Multiple expand 100 Single result which took 332.675 s (90.58% GC) to evaluate, 133672

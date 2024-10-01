@@ -219,9 +219,11 @@ theory = @theory a b c d x y begin
     min(a::Number, b::Number) => a >= b ? b : a 
     max(a::Number, b::Number) => a >= b ? a : b
     # a + b::Number <= min(a + c::Number, d) =>
+    a <= min(b,c) --> a<=b && a<=c
+    min(b,c) <= a --> b<=a || c<=a
 end
 
-hidden_size = 64
+hidden_size = 128
 heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSumMax(hidden_size),
@@ -246,6 +248,9 @@ myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 df1 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 df2 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
+ex2 = :((v0 + v1) + 110)
+cache = Dict()
+MyModule.cached_inference(ex2, cache, heuristic, new_all_symbols, sym_enc)
 # @load "training_samplesk1000_v3.jld2" training_samples
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
