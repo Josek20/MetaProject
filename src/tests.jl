@@ -153,6 +153,25 @@ function test_old_new_ex2mill(expressions::Vector{Expr}, heuristic, symbols_to_i
 end
 
 
+function test_old_new_ex2mill(expressions::Vector{Expr}, heuristic, symbols_to_index, all_symbols, variable_names, sym_enc)
+    cache = Dict()
+    for ex in expressions
+        @show ex
+        a = @time begin
+            eo = ex2mill(ex, symbols_to_index, all_symbols, variable_names, Dict(), heuristic)
+            ho = heuristic(eo)
+        end
+        b = @time begin
+            en = MyModule.cached_inference(ex, cache, heuristic, all_symbols, sym_enc)
+            hn = heuristic.heuristic(heuristic.joint_model(vcat(en, zeros(Float32, 2, 1))))
+        end
+        # println("Base method took $a")
+        # println("New method took $b")
+        @assert abs(only(ho) - only(hn)) <= 0.001 
+    end
+end
+
+
 function test_stats_proofs(initial_expr, proofs)
     for i in proofs
         position, rule = i

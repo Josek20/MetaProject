@@ -135,14 +135,14 @@ end
 # ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
 # ex = myex
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
-ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
+# ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # ex = train_data[1]
 # ex = myex
 # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
 # ex =  :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + (((v3 * (4 + v2 / (30 / v3)) + v5) + v4) + v7))
 # encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
-encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
-root = MyModule.Node(ex, (0,0), hash(ex), 0, encoded_ex)
+# encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
+root = MyModule.Node(ex, (0,0), hash(ex), 0, nothing)
 
 soltree = Dict{UInt64, MyModule.Node}()
 open_list = PriorityQueue{MyModule.Node, Float32}()
@@ -154,11 +154,15 @@ println("Initial expression: $ex")
 #encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
-enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
+cache = Dict()
+a = MyModule.cached_inference(ex,cache,heuristic, new_all_symbols, sym_enc)
+hp = heuristic.heuristic(heuristic.joint_model(vcat(a, zeros(Float32, 2, 1))))
+enqueue!(open_list, root, only(hp))
+# enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 using ProfileCanvas
 # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
 # reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
-bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names)
+bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names, cache)
 # No multiple expand Single result which took 61.496 s (9.78% GC) to evaluate, 95709
 # Multiple expand 30 Single result which took 330.275 s (88.81% GC) to evaluate, 184714
 # Multiple expand 100 Single result which took 332.675 s (90.58% GC) to evaluate, 133672

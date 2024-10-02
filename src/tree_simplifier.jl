@@ -96,7 +96,7 @@ end
 
 
 # function expand_node_new!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, theory::Vector, variable_names::Dict) 
-function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names) 
+function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache) 
     ex = parent.ex
     succesors = execute(ex, theory)
     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
@@ -105,14 +105,19 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
+    o = map(x->MyModule.cached_inference(x, cache, heuristic, new_all_symbols, sym_enc),exprs)
+    o = map(x->only(heuristic.heuristic(heuristic.joint_model(vcat(x,zeros(Float32, 2,1))))), o)
     # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
-    embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
-    ds = reduce(catobs, embeded_exprs)
-    o = heuristic(ds)
+    # embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
+    # ds = reduce(catobs, embeded_exprs)
+    # o = heuristic(ds)
     # o = fill(3, length(embeded_exprs))
-    for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
-        soltree[n.node_id].expression_encoding = e
-        n.expression_encoding = e
+    # for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
+    #     soltree[n.node_id].expression_encoding = e
+    #     n.expression_encoding = e
+    #     enqueue!(open_list, n, v)
+    # end
+    for (v,n) in zip(o, filtered_new_nodes)
         enqueue!(open_list, n, v)
     end
     nodes_ids = map(x->x.node_id, filtered_new_nodes)
@@ -156,11 +161,12 @@ end
 # end
 
 
-function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names)
+function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache)
     step = 0
     reached_goal = false
     epsilon = 0.05
     expand_n = 25
+    # cache = Dict()
     while length(open_list) > 0
         if max_steps <= step
             break
@@ -195,7 +201,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         #     continue
         # end
         # @show nodes
-        reached_goal = expand_node!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names)
+        reached_goal = expand_node!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache)
 
         if reached_goal
             return true 
