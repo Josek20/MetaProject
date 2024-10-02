@@ -106,7 +106,7 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
     o = map(x->MyModule.cached_inference(x, cache, heuristic, new_all_symbols, sym_enc),exprs)
-    o = map(x->embed(heuristic, x), o)
+    o = map(x->only(embed(heuristic, x)), o)
     # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
     # embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
     # ds = reduce(catobs, embeded_exprs)

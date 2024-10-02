@@ -156,7 +156,7 @@ soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 cache = Dict()
 a = MyModule.cached_inference(ex,cache,heuristic, new_all_symbols, sym_enc)
-hp = embed(heuristic, a)
+hp = MyModule.embed(heuristic, a)
 enqueue!(open_list, root, only(hp))
 # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 using ProfileCanvas
