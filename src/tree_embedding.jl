@@ -188,6 +188,12 @@ function embed(m::ExprModel, ds::BagNode)
 end
 
 
+function embed(m::ExprModel, ds::Matrix)
+    tmp = vcat(ds, zeros(Float32, 2, 1))
+    m.heuristic(m.joint_model(tmp))
+end
+
+
 embed(m::ExprModel, ds::Missing) = missing
 
 
