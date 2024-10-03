@@ -129,36 +129,44 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
 end
 
 
-# function expand_node!(parents::Vector, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names) 
-#     new_nodes = map(parents) do parent
-#         succesors = execute(parent.ex, theory)
-#         new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
-#     end
+function expand_node!(parents::Vector, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names) 
+    new_nodes = map(parents) do parent
+        succesors = execute(parent.ex, theory)
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    end
 
-#     new_nodes = vcat(new_nodes...)
-#     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
-#     # @show length(filtered_new_nodes)
-#     isempty(filtered_new_nodes) && return(false)
-#     exprs = map(x->x.ex, filtered_new_nodes)
-#     # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
-#     embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
-#     ds = reduce(catobs, embeded_exprs)
-#     o = heuristic(ds)
-#     # o = fill(3, length(embeded_exprs))
-#     for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
-#         soltree[n.node_id].expression_encoding = e
-#         n.expression_encoding = e
-#         enqueue!(open_list, n, v)
-#     end
-#     nodes_ids = map(x->x.node_id, filtered_new_nodes)
-#     map(parents) do parent
-#         append!(parent.children, nodes_ids)
-#     end
-#     if in(:1, exprs)
-#         return true
-#     end
-#     return false
-# end
+    new_nodes = vcat(new_nodes...)
+    filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    # @show length(filtered_new_nodes)
+    isempty(filtered_new_nodes) && return(false)
+    exprs = map(x->x.ex, filtered_new_nodes)
+    o = map(x->MyModule.cached_inference(x, cache, heuristic, new_all_symbols, sym_enc),exprs)
+    o = map(x->only(embed(heuristic, x)), o)
+    # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
+    # embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
+    # ds = reduce(catobs, embeded_exprs)
+    # o = heuristic(ds)
+    # o = fill(3, length(embeded_exprs))
+    # for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
+    #     soltree[n.node_id].expression_encoding = e
+    #     n.expression_encoding = e
+    #     enqueue!(open_list, n, v)
+    # end
+    for (v,n) in zip(o, filtered_new_nodes)
+        enqueue!(open_list, n, v)
+    end
+    # nodes_ids = map(x->x.node_id, filtered_new_nodes)
+    for n in filtered_new_nodes
+        push!(soltree[n.parent].children, n.node_id)
+    end
+    # map(parents) do parent
+    #     append!(parent.children, )
+    # end
+    if in(:1, exprs)
+        return true
+    end
+    return false
+end
 
 
 function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache)

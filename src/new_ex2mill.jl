@@ -57,7 +57,6 @@ function count_expr_stats!(stats, ex::Expr, depth, sym_enc::Dict, numbers, posit
 end
 
 
-# my_sigmoid(x, k=0.01, m=0) = 1/(1 + exp(-k*(x-m)))
 function count_expr_stats!(stats, ex::Union{Symbol, Number}, depth, sym_enc::Dict, numbers, position, bags)
     if isa(ex, Symbol)
         update_stats!(stats, depth, sym_enc[ex], numbers, position, bags)
@@ -81,21 +80,21 @@ function unfold_allocation(stats::Vector, numbers::Vector, position::Vector, exb
     arr_data = zeros(Float32, encoding_length, ne)
     cols = collect(1:ne)
     arr_data[stats[depth] .+ (cols .- 1) .* encoding_length] .= 1
-    tmp = ProductNode(;
-        args=ProductNode((
-            head = ArrayNode(arr_data),
-            args = BagNode(
-                am
-                , AlignedBags(exbags[depth])),
-        )),
-        position=ArrayNode(zeros(Float32,2,1))
-    )
-    # tmp = ProductNode((
-    #     head = ArrayNode(arr_data),
-    #     args = BagNode(
-    #         am
-    #         , AlignedBags(exbags[depth])),
-    # ))
+    # tmp = ProductNode(;
+    #     args=ProductNode((
+    #         head = ArrayNode(arr_data),
+    #         args = BagNode(
+    #             am
+    #             , AlignedBags(exbags[depth])),
+    #     )),
+    #     position=ArrayNode(zeros(Float32,2,1))
+    # )
+    tmp = ProductNode((
+        head = ArrayNode(arr_data),
+        args = BagNode(
+            am
+            , AlignedBags(exbags[depth])),
+    ))
     return tmp
 end
 
@@ -127,47 +126,52 @@ function unfold_allocation(stats::Vector, depth::Int, numbers::Vector, position:
 end
 
 
+function no_reduce_multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
+    stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
+    st = []
+    nm = []
+    ps = []
+    bg = []
+    for (ind,i) in enumerate(stats)
+        if ind == 1
+            st = i[1]
+            nm = i[2]
+            ps = i[3]
+            bg = i[4]    
+        else
+            min_length = min(length(st), length(i[1]))
+
+            # Concatenate corresponding elements of v1 and v2
+            result1 = map(vcat, st[1:min_length], i[1][1:min_length])
+            result2 = map(vcat, nm[1:min_length], i[2][1:min_length])
+            result3 = map(vcat, ps[1:min_length], i[3][1:min_length])
+            result4 = map(vcat, bg[1:min_length], i[4][1:min_length])
+
+            # Preserve the remaining elements of v1 if any
+            if length(st) > min_length
+                append!(result1, st[min_length+1:end])
+                append!(result2, nm[min_length+1:end])
+                append!(result3, ps[min_length+1:end])
+                append!(result4, bg[min_length+1:end])
+            elseif length(i[1]) > min_length
+                append!(result1, i[1][min_length+1:end])
+                append!(result2, i[2][min_length+1:end])
+                append!(result3, i[3][min_length+1:end])
+                append!(result4, i[4][min_length+1:end])
+            end
+            st = result1
+            nm = result2
+            ps = result3
+            bg = result4
+        end
+    end
+    a = unfold_allocation(st, nm, ps, bg)
+end
+
+
 function multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
     stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
-    # st = []
-    # nm = []
-    # ps = []
-    # bg = []
-    # for (ind,i) in enumerate(stats)
-    #     if ind == 1
-    #         st = i[1]
-    #         nm = i[2]
-    #         ps = i[3]
-    #         bg = i[4]    
-    #     else
-    #         min_length = min(length(st), length(i[1]))
-
-    #         # Concatenate corresponding elements of v1 and v2
-    #         result1 = map(vcat, st[1:min_length], i[1][1:min_length])
-    #         result2 = map(vcat, nm[1:min_length], i[2][1:min_length])
-    #         result3 = map(vcat, ps[1:min_length], i[3][1:min_length])
-    #         result4 = map(vcat, bg[1:min_length], i[4][1:min_length])
-
-    #         # Preserve the remaining elements of v1 if any
-    #         if length(st) > min_length
-    #             append!(result1, st[min_length+1:end])
-    #             append!(result2, nm[min_length+1:end])
-    #             append!(result3, ps[min_length+1:end])
-    #             append!(result4, bg[min_length+1:end])
-    #         elseif length(i[1]) > min_length
-    #             append!(result1, i[1][min_length+1:end])
-    #             append!(result2, i[2][min_length+1:end])
-    #             append!(result3, i[3][min_length+1:end])
-    #             append!(result4, i[4][min_length+1:end])
-    #         end
-    #         st = result1
-    #         nm = result1
-    #         ps = result1
-    #         bg = result1
-    #     end
-    # end
     a = map(x->unfold_allocation(x...), stats)
-    # a = unfold_allocation(st,nm,ps,bg)
     return a
 end
 
