@@ -44,7 +44,7 @@ function compare_two_methods(data, model)
         @show only(o1)
         @show only(o2)
         @assert abs(only(o1) - only(o2)) <= 0.000001
-    end 
+    end
 end
 
 

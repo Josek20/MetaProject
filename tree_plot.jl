@@ -134,44 +134,39 @@ end
 # ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
 # ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
 # ex = myex
-# ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
-ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
+ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
+# ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # ex = train_data[1]
 # ex = myex
 # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
 # ex =  :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + (((v3 * (4 + v2 / (30 / v3)) + v5) + v4) + v7))
 # encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
-# encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
-root = MyModule.Node(ex, (0,0), hash(ex), 0, nothing)
+encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
+root = MyModule.Node(ex, (0,0), hash(ex), 0, encoded_ex)
 
 soltree = Dict{UInt64, MyModule.Node}()
 open_list = PriorityQueue{MyModule.Node, Float32}()
 close_list = Set{UInt64}()
 expansion_history = Dict{UInt64, Vector}()
-#encodings_buffer = Dict{UInt64, ExprEncoding}()
 encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
-#encoded_ex = expression_encoder(ex, all_symbols, symbols_to_index)
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 cache = Dict()
-a = MyModule.cached_inference(ex,cache,heuristic, new_all_symbols, sym_enc)
-hp = MyModule.embed(heuristic, a)
-enqueue!(open_list, root, only(hp))
-# enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
-# using ProfileCanvas
-# ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
-using Profile
-using PProf
-@profile MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
-@profile peakflops()
-pprof()
+# a = MyModule.cached_inference(ex,cache,heuristic, new_all_symbols, sym_enc)
+# hp = MyModule.embed(heuristic, a)
+# enqueue!(open_list, root, only(hp))
+enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
+using ProfileCanvas
+ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
+# @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
+# using Profile
+# using PProf
+# @profile MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
+# @profile peakflops()
+# pprof()
 # reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
 # bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names, cache)
-# No multiple expand Single result which took 61.496 s (9.78% GC) to evaluate, 95709
-# Multiple expand 30 Single result which took 330.275 s (88.81% GC) to evaluate, 184714
-# Multiple expand 100 Single result which took 332.675 s (90.58% GC) to evaluate, 133672
-# Multiple expand 5 Single result which took 243.310 s (37.27% GC) to evaluate, 132833
 
 # bmark1 = @time reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)
 # soltree = Dict{UInt64, MyModule.Node}()
@@ -190,7 +185,7 @@ pprof()
 # println(bmark1)
 # println(bmark2)
 # println("Have successfuly finished bulding simplification tree!")
-# smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
+smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
 # smallest_nodes = MyModule.extract_smallest_terminal_node1(soltree, close_list)
 
 # # for (ind, (i, cof)) in enumerate(open_list)

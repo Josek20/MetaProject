@@ -2,7 +2,7 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 cache_hits = 0
 cache_misses = 0
-function cached_inference(ex::Expr, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
     global cache_hits, cache_misses
     if haskey(cache,ex)
         cache_hits += 1
@@ -19,13 +19,13 @@ function cached_inference(ex::Expr, cache, model, all_symbols, symbols_to_ind)
         end
         encoding = zeros(Float32, length(all_symbols), 1)
         encoding[symbols_to_index[fun_name]] = 1
-        args = cached_inference(args, cache, model, all_symbols, symbols_to_ind)
+        args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
         tmp = vcat(model.head_model(encoding), args)
     end
 end
 
 
-function cached_inference(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
     global cache_hits, cache_misses
     if haskey(cache,ex)
         cache_hits += 1
@@ -44,7 +44,7 @@ function cached_inference(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
 end
 
 
-function cached_inference(ex::Number, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind)
     global cache_hits, cache_misses
     if haskey(cache,ex)
         cache_hits += 1
@@ -71,29 +71,31 @@ _short_aggregation(::SegmentedMax, x, y) = max.(x, y)
 const const_left = [1, 0]
 const const_right = [0, 1]
 
-function cached_inference(args::Vector, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
     l = length(args)
-    my_tmp = [cached_inference(a, cache, model, all_symbols, symbols_to_ind) for a in args]
+    my_tmp = [cached_inference!(a, cache, model, all_symbols, symbols_to_ind) for a in args]
     # @show size(my_tmp[1])
-    # @show size(my_tmp[2])
-    my_args = reduce(hcat, my_tmp)
-    ds = BagNode(
-        ProductNode((;
-            args = my_args,
-            position = ArrayNode(Flux.onehotbatch(1:l, 1:2)),
-        )),
-        [1:l]
-    )
-    tmp = vcat(ds.data.data.args.data, ds.data.data.position.data)
+    my_args = hcat(my_tmp...)
+    tmp = vcat(my_args, Flux.onehotbatch(1:l, 1:2))
     tmp = model.joint_model(tmp)
-    model.aggregation(tmp, ds.bags)
+    model.aggregation(tmp,  Mill.AlignedBags([1:l]))
+    # _short_aggregation(model.aggregation, tmp)
 end
+# BenchmarkTools.Trial: 3 samples with 1 evaluation.
+#  Range (min … max):  1.518 s …    2.515 s  ┊ GC (min … max):  0.00% … 38.42%
+#  Time  (median):     1.749 s               ┊ GC (median):     3.77%
+#  Time  (mean ± σ):   1.927 s ± 521.783 ms  ┊ GC (mean ± σ):  17.85% ± 21.18%
 
+#   █            █                                           █
+#   █▁▁▁▁▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█ ▁
+#   1.52 s         Histogram: frequency by time         2.51 s <
 
-# function cached_inference(args::Vector, cache, model, all_symbols, symbols_to_ind)
+#  Memory estimate: 332.54 MiB, allocs estimate: 6755495.
+
+# function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
 #     l = length(args)
 #     if l == 1
-#         tmp = cached_inference(args[1], cache, model, all_symbols, symbols_to_ind)
+#         tmp = cached_inference!(args[1], cache, model, all_symbols, symbols_to_ind)
 #         # @show size(tmp)
 #         tmp = vcat(tmp, const_left)
 #         # @show size(tmp)
@@ -103,8 +105,8 @@ end
 #         # return model.aggregation(embeddding)
         
 #     elseif l == 2
-#         t₁ = vcat(cached_inference(args[1], cache, model, all_symbols, symbols_to_ind), const_left)
-#         t₂ = vcat(cached_inference(args[2], cache, model, all_symbols, symbols_to_ind), const_right)
+#         t₁ = vcat(cached_inference!(args[1], cache, model, all_symbols, symbols_to_ind), const_left)
+#         t₂ = vcat(cached_inference!(args[2], cache, model, all_symbols, symbols_to_ind), const_right)
 #         _short_aggregation(model.aggregation, model.joint_model(t₁), model.joint_model(t₂))
 #     else
 #         error("Unexpected number of arguments $l, file issue with the expression")

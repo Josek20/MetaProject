@@ -105,13 +105,15 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
-    o = map(x->MyModule.cached_inference(x, cache, heuristic, new_all_symbols, sym_enc),exprs)
-    o = map(x->only(embed(heuristic, x)), o)
+    # o = map(x->MyModule.cached_inference(x, cache, heuristic, new_all_symbols, sym_enc),exprs)
+    # o = map(x->only(embed(heuristic, x)), o)
     # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
-    # embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
     # ds = reduce(catobs, embeded_exprs)
     # o = heuristic(ds)
-    # o = fill(3, length(embeded_exprs))
+    
+    embeded_exprs = MyModule.no_reduce_multiple_fast_ex2mill(exprs, sym_enc)
+    # o = heuristic(embeded_exprs)
+    o = fill(3, length(exprs))
     # for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
     #     soltree[n.node_id].expression_encoding = e
     #     n.expression_encoding = e

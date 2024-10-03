@@ -115,7 +115,7 @@ theory = @theory a b c d x y begin
 
     # lt.rs
     x > y --> y < x
-    x < y --> (-1 * y) < (-1 * x)
+    # x < y --> (-1 * y) < (-1 * x)
     a < a --> 0
     a <= a --> 1
     a + b < c --> a < c - b
@@ -226,8 +226,8 @@ end
 hidden_size = 128
 heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu), Dense(hidden_size,hidden_size)),
-    Mill.SegmentedSumMax(hidden_size),
-    Flux.Chain(Dense(3*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
+    Mill.SegmentedSum(hidden_size),
+    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
@@ -249,13 +249,6 @@ df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof",
 df1 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 df2 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 
-ex2 = :((v0 + v1) + 110)
-ex = :(v0 -v1)
-cache = Dict()
-a = MyModule.cached_inference(ex, cache, heuristic, new_all_symbols, sym_enc)
-
-b = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names, Dict(),heuristic)
-@assert heuristic(b) == heuristic.heuristic(a)
 # @load "training_samplesk1000_v3.jld2" training_samples
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
