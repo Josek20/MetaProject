@@ -129,7 +129,7 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
 end
 
 
-function expand_node!(parents::Vector, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names) 
+function expand_node!(parents::Vector, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache) 
     new_nodes = map(parents) do parent
         succesors = execute(parent.ex, theory)
         new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
@@ -173,7 +173,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
     step = 0
     reached_goal = false
     epsilon = 0.05
-    expand_n = 25
+    expand_n = 5
     # cache = Dict()
     while length(open_list) > 0
         if max_steps <= step

@@ -1,6 +1,7 @@
 using MyModule
 using MyModule.Flux
 using MyModule.Mill
+using MyModule.DataStructures
 using Serialization
 using Profile
 using PProf
@@ -22,16 +23,15 @@ test_data = preprosses_data_to_expressions(test_data)
 hidden_size = 128
 heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu), Dense(hidden_size,hidden_size)),
-    Mill.SegmentedSumMax(hidden_size),
-    Flux.Chain(Dense(3*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
+    Mill.SegmentedSum(hidden_size),
+    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
     )
 
 
-
 function compare_two_methods(data, model)
     cache = Dict()
-    for ex in data[1:1000]
+    for ex in data
         @show ex
         @time begin
             m1 = MyModule.cached_inference(ex, cache, model, new_all_symbols, sym_enc)
@@ -44,7 +44,7 @@ function compare_two_methods(data, model)
         @show only(o1)
         @show only(o2)
         @assert abs(only(o1) - only(o2)) <= 0.000001
-    end
+    end 
 end
 
 
@@ -60,7 +60,7 @@ function compare_two_methods2(data, model)
         o2 = model(ds)
     end
 end
-compare_two_methods(test_data, heuristic)
+compare_two_methods(exp_data, heuristic)
 # compare_two_methods2(exp_data, heuristic)
 
 function profile_method(data, heuristic)
@@ -70,7 +70,7 @@ function profile_method(data, heuristic)
     # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
     # ex =  :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + (((v3 * (4 + v2 / (30 / v3)) + v5) + v4) + v7))
     # encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
-    # encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
+    # encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc) 
     root = MyModule.Node(ex, (0,0), hash(ex), 0, nothing)
     
     soltree = Dict{UInt64, MyModule.Node}()
@@ -87,7 +87,11 @@ function profile_method(data, heuristic)
     # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
     # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
 
-    @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
-    # @profile peakflops()
-    # pprof()
+    @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names, cache)
+    @profile peakflops()
+    pprof()
+    MyModule.cache_hits = 0
+    MyModule.cache_misses = 0
 end
+
+# profile_method(exp_data, heuristic) 

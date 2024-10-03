@@ -1,8 +1,14 @@
 my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
-
+cache_hits = 0
+cache_misses = 0
 function cached_inference(ex::Expr, cache, model, all_symbols, symbols_to_ind)
+    global cache_hits, cache_misses
+    if haskey(cache,ex)
+        cache_hits += 1
+    end
     get!(cache, ex) do
+        cache_misses += 1
         if ex.head == :call
             fun_name, args =  ex.args[1], ex.args[2:end]
         elseif ex.head in all_symbols
@@ -14,20 +20,18 @@ function cached_inference(ex::Expr, cache, model, all_symbols, symbols_to_ind)
         encoding = zeros(Float32, length(all_symbols), 1)
         encoding[symbols_to_index[fun_name]] = 1
         args = cached_inference(args, cache, model, all_symbols, symbols_to_ind)
-
-        # if root
-        #     tmp = vcat(model.head_model(encoding), args)
-        #     cat_tmp = vcat(tmp, zeros(Float32, 2, 1))
-        #     tmp = model.heuristic(model.joint_model(cat_tmp))
-        # else 
         tmp = vcat(model.head_model(encoding), args)
-        # end
     end
 end
 
 
 function cached_inference(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do 
+    global cache_hits, cache_misses
+    if haskey(cache,ex)
+        cache_hits += 1
+    end
+    get!(cache, ex) do
+        cache_misses += 1
         encoding = zeros(Float32, length(all_symbols), 1)
         encoding[symbols_to_ind[ex]] = 1
         ds = ProductNode((
@@ -37,12 +41,16 @@ function cached_inference(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
         tmp = embed(model,ds.data.args)
         vcat(model.head_model(ds.data.head.data), tmp)
     end
-    # return ds
 end
 
 
 function cached_inference(ex::Number, cache, model, all_symbols, symbols_to_ind)
+    global cache_hits, cache_misses
+    if haskey(cache,ex)
+        cache_hits += 1
+    end
     get!(cache, ex) do
+        cache_misses += 1
         encoding = zeros(Float32, length(all_symbols), 1)
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
         ds = ProductNode((
@@ -52,12 +60,18 @@ function cached_inference(ex::Number, cache, model, all_symbols, symbols_to_ind)
         tmp = embed(model,ds.data.args)
         vcat(model.head_model(ds.data.head.data), tmp)
     end
-    # return ds
 end
 
+_short_aggregation(::SegmentedSum, x) = x
+_short_aggregation(::SegmentedSum, x, y) = x + y
+_short_aggregation(::SegmentedMean, x) = x
+_short_aggregation(::SegmentedMean, x, y) = (x + y) ./ 2
+_short_aggregation(::SegmentedMax, x) = x
+_short_aggregation(::SegmentedMax, x, y) = max.(x, y)
+const const_left = [1, 0]
+const const_right = [0, 1]
 
 function cached_inference(args::Vector, cache, model, all_symbols, symbols_to_ind)
-    isempty(args) && return(BagNode(missing, [0:-1]))
     l = length(args)
     my_tmp = [cached_inference(a, cache, model, all_symbols, symbols_to_ind) for a in args]
     # @show size(my_tmp[1])
@@ -74,6 +88,28 @@ function cached_inference(args::Vector, cache, model, all_symbols, symbols_to_in
     tmp = model.joint_model(tmp)
     model.aggregation(tmp, ds.bags)
 end
+
+
+# function cached_inference(args::Vector, cache, model, all_symbols, symbols_to_ind)
+#     l = length(args)
+#     if l == 1
+#         tmp = cached_inference(args[1], cache, model, all_symbols, symbols_to_ind)
+#         # @show size(tmp)
+#         tmp = vcat(tmp, const_left)
+#         # @show size(tmp)
+#         embeddding = model.joint_model(tmp)
+#         # I think we can skip embeddings, since mean / max, will become identities.
+#         return(embeddding)
+#         # return model.aggregation(embeddding)
+        
+#     elseif l == 2
+#         t₁ = vcat(cached_inference(args[1], cache, model, all_symbols, symbols_to_ind), const_left)
+#         t₂ = vcat(cached_inference(args[2], cache, model, all_symbols, symbols_to_ind), const_right)
+#         _short_aggregation(model.aggregation, model.joint_model(t₁), model.joint_model(t₂))
+#     else
+#         error("Unexpected number of arguments $l, file issue with the expression")
+#     end
+# end
 
 
 function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict, cache, model)

@@ -126,46 +126,110 @@ function unfold_allocation(stats::Vector, depth::Int, numbers::Vector, position:
 end
 
 
+function handle_bags(bg, new_bg)
+    for (ind, g) in enumerate(new_bg)
+        if ind > length(bg)
+            push!(bg, g)
+        else
+            max_bg = maximum(bg[ind])
+            if max_bg == 0:-1
+                append!(bg[ind], g)
+            else
+                # Adjust the new background ranges based on max_bg
+                adjusted_g = [j == 0:-1 ? j : j .+ max_bg.stop for j in g]
+                append!(bg[ind], adjusted_g)
+            end
+        end
+    end
+    return bg
+end
+
+# function no_reduce_multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
+#     stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
+#     st = []
+#     nm = []
+#     ps = []
+#     bg = []
+#     for (ind,i) in enumerate(stats)
+#         if ind == 1
+#             st = i[1]
+#             nm = i[2]
+#             ps = i[3]
+#             bg = i[4]    
+#         else
+#             min_length = min(length(st), length(i[1]))
+
+#             # Concatenate corresponding elements of v1 and v2
+#             result1 = map(vcat, st[1:min_length], i[1][1:min_length])
+#             result2 = map(vcat, nm[1:min_length], i[2][1:min_length])
+#             result3 = map(vcat, ps[1:min_length], i[3][1:min_length])
+#             # result4 = map(vcat, bg[1:min_length], i[4][1:min_length])
+#             for (ind1, g) in enumerate(i[4])
+#                 if length(bg) < ind1
+#                     push!(bg, g)
+#                 else
+#                     max_bg = maximum(bg[ind1])
+#                     if max_bg == 0:-1
+#                         append!(bg[ind1], g)
+#                     else
+#                         tmp = []
+#                         for j in g
+#                             if j == 0:-1
+#                                 push!(tmp, j)
+#                             else
+#                                 # j.start += max_bg.stop
+#                                 # j.stop += max_bg.stop
+#                                 push!(tmp, j .+ max_bg.stop)
+#                             end
+#                         end
+#                         append!(bg[ind1], tmp)
+#                     end
+#                 end
+#             end
+#             # Preserve the remaining elements of v1 if any
+#             if length(st) > min_length
+#                 append!(result1, st[min_length+1:end])
+#                 append!(result2, nm[min_length+1:end])
+#                 append!(result3, ps[min_length+1:end])
+#                 # append!(result4, bg[min_length+1:end])
+#             elseif length(i[1]) > min_length
+#                 append!(result1, i[1][min_length+1:end])
+#                 append!(result2, i[2][min_length+1:end])
+#                 append!(result3, i[3][min_length+1:end])
+#                 # append!(result4, i[4][min_length+1:end])
+#             end
+#             st = result1
+#             nm = result2
+#             ps = result3
+#             # bg = result4
+#         end
+#     end
+#     a = unfold_allocation(st, nm, ps, bg)
+#     return a
+# end
 function no_reduce_multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
     stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
-    st = []
-    nm = []
-    ps = []
-    bg = []
-    for (ind,i) in enumerate(stats)
-        if ind == 1
-            st = i[1]
-            nm = i[2]
-            ps = i[3]
-            bg = i[4]    
-        else
-            min_length = min(length(st), length(i[1]))
+    st, nm, ps, bg = stats[1]
+    for (_,i) in enumerate(stats[2:end])
+        min_length = min(length(st), length(i[1]))
 
-            # Concatenate corresponding elements of v1 and v2
-            result1 = map(vcat, st[1:min_length], i[1][1:min_length])
-            result2 = map(vcat, nm[1:min_length], i[2][1:min_length])
-            result3 = map(vcat, ps[1:min_length], i[3][1:min_length])
-            result4 = map(vcat, bg[1:min_length], i[4][1:min_length])
-
-            # Preserve the remaining elements of v1 if any
-            if length(st) > min_length
-                append!(result1, st[min_length+1:end])
-                append!(result2, nm[min_length+1:end])
-                append!(result3, ps[min_length+1:end])
-                append!(result4, bg[min_length+1:end])
-            elseif length(i[1]) > min_length
-                append!(result1, i[1][min_length+1:end])
-                append!(result2, i[2][min_length+1:end])
-                append!(result3, i[3][min_length+1:end])
-                append!(result4, i[4][min_length+1:end])
-            end
-            st = result1
-            nm = result2
-            ps = result3
-            bg = result4
+        # Concatenate corresponding elements of v1 and v2
+        st = [vcat(st[j], i[1][j]) for j in 1:min_length]
+        nm = [vcat(nm[j], i[2][j]) for j in 1:min_length]
+        ps = [vcat(ps[j], i[3][j]) for j in 1:min_length]
+        bg = handle_bags(bg, i[4])
+        if length(st) > min_length
+            append!(st, st[min_length + 1:end])
+            append!(nm, nm[min_length + 1:end])
+            append!(ps, ps[min_length + 1:end])
+        elseif length(i[1]) > min_length
+            append!(st, i[1][min_length + 1:end])
+            append!(nm, i[2][min_length + 1:end])
+            append!(ps, i[3][min_length + 1:end])
         end
     end
     a = unfold_allocation(st, nm, ps, bg)
+    return a
 end
 
 
