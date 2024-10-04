@@ -31,10 +31,10 @@ heuristic = ExprModel(
 
 function compare_two_methods(data, model)
     cache = Dict()
-    for ex in data
+    for ex in data[1:100]
         @show ex
         @time begin
-            m1 = MyModule.cached_inference(ex, cache, model, new_all_symbols, sym_enc)
+            m1 = MyModule.cached_inference!(ex, cache, model, new_all_symbols, sym_enc)
             o1 = MyModule.embed(model, m1)
         end
         @time begin
@@ -51,7 +51,7 @@ end
 function compare_two_methods2(data, model)
     cache = Dict()
     @time begin
-        tmp = map(ex->MyModule.cached_inference(ex, cache, model, new_all_symbols, sym_enc), data)
+        tmp = map(ex->MyModule.cached_inference!(ex, cache, model, new_all_symbols, sym_enc), data)
         map(x->MyModule.embed(model, x), tmp)
     end
     @time begin

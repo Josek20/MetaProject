@@ -141,8 +141,8 @@ ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 1
 # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
 # ex =  :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + (((v3 * (4 + v2 / (30 / v3)) + v5) + v4) + v7))
 # encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
-encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
-root = MyModule.Node(ex, (0,0), hash(ex), 0, encoded_ex)
+# encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
+root = MyModule.Node(ex, (0,0), hash(ex), 0, nothing)
 
 soltree = Dict{UInt64, MyModule.Node}()
 open_list = PriorityQueue{MyModule.Node, Float32}()
@@ -153,13 +153,19 @@ println("Initial expression: $ex")
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 cache = Dict()
-# a = MyModule.cached_inference(ex,cache,heuristic, new_all_symbols, sym_enc)
-# hp = MyModule.embed(heuristic, a)
-# enqueue!(open_list, root, only(hp))
-enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
-using ProfileCanvas
-ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
-# @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
+# exp_cache = Dict{Expr, Vector}()
+a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
+hp = MyModule.embed(heuristic, a)
+enqueue!(open_list, root, only(hp))
+# enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
+# using ProfileCanvas
+# ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
+bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
+@show length(soltree)
+smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
+proof_vector, depth_dict, hp, hn, node_proof_vector = MyModule.extract_rules_applied(smallest_node, soltree)
+# tmp = map(x->extract_rules_applied(x, soltree), smallest_nodes)
+big_vector = MyModule.extract_training_data(smallest_node, soltree)
 # using Profile
 # using PProf
 # @profile MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
@@ -185,7 +191,7 @@ ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, clos
 # println(bmark1)
 # println(bmark2)
 # println("Have successfuly finished bulding simplification tree!")
-smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
+# smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
 # smallest_nodes = MyModule.extract_smallest_terminal_node1(soltree, close_list)
 
 # # for (ind, (i, cof)) in enumerate(open_list)

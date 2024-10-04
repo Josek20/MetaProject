@@ -270,15 +270,17 @@ else
     stp = div(n, number_of_workers)
     batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
     dt = 1
+    cache = Dict()
+    exp_cache = Dict{Expr, Vector}()
     for ep in 1:epochs 
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Epcoh $ep")
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
         # train_heuristic!(heuristic, [myex], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.heuristic_forward_pass(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
         
-        ltmp = []
+        # ltmp = []
         # @show training_samples
         # @assert 0 == 1
         # MyModule.test_expr_embedding(heuristic, training_samples[1:n], theory, symbols_to_index, all_symbols, variable_names)
@@ -287,25 +289,25 @@ else
         # for sample in training_samples
         for i in 1:50
             # sample = StatsBase.sample(cat_samples)
-            for j in m_nodes
+            # for j in m_nodes
             # if isnothing(sample.training_data) 
             #     continue
             # end
-                sa, grad = Flux.Zygote.withgradient(pc) do
-                    # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                    # MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                    MyModule.loss(heuristic, j[3], j[4], j[5])
-                end
-                if any(g->any(isinf, g) || any(isnan, g), grad)
-                    BSON.@save "models/inf_grad_heuristic.bson" heuristic
-                    JLD2.@save "data/training_data/training_samples_inf_grad.jld2" training_samples
-                    @assert 0 == 1
-                end
-            # if isna(grad)
-                @show sa
-                # push!(ltmp, sa)
-                Flux.update!(optimizer, pc, grad)
+            sa, grad = Flux.Zygote.withgradient(pc) do
+                # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                MyModule.loss(heuristic, big_vector, hp, hn)
+                # MyModule.loss(heuristic, j[3], j[4], j[5])
             end
+            if any(g->any(isinf, g) || any(isnan, g), grad)
+                BSON.@save "models/inf_grad_heuristic.bson" heuristic
+                JLD2.@save "data/training_data/training_samples_inf_grad.jld2" training_samples
+                @assert 0 == 1
+            end
+        # if isna(grad)
+            @show sa
+            # push!(ltmp, sa)
+            Flux.update!(optimizer, pc, grad)
+            # end
         end
         # for sample in cat_samples
         #     sa = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)

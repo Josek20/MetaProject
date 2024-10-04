@@ -1,3 +1,10 @@
+04.10.2024
+- Trying to improve performance
+  1) have implemented caching for rule matching
+- Problems
+  - performance is the main botleneck, large expr takes 1m to search
+
+
 03.10.2024
 - Trying to improve performance
 - Problems
