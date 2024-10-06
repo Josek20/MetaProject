@@ -35,7 +35,7 @@ function my_rewriter!(position::Vector{Int}, ex::Expr, rule::AbstractRule)
 end
 
 
-function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::Dict{Expr, Vector})
+function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
     if !isa(ex, Expr)
         return
     end
@@ -76,7 +76,7 @@ function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{Abstract
 end
 
 
-function execute(ex::Union{Expr, Number}, theory::Vector{AbstractRule}, caching::Dict{Expr, Vector})
+function execute(ex::Union{Expr, Number}, theory::Vector{AbstractRule}, caching::LRU{Expr, Vector})
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
     traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
@@ -202,6 +202,8 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_lis
         end
         # nodes = Node[]
         # if length(open_list) == 1
+        @show step
+        @show length(open_list)
         nodes, prob = dequeue_pair!(open_list)
         step += 1
         # else
@@ -453,13 +455,13 @@ function isbetter(a::TrainingSample, b::TrainingSample)
 end
 
 
-function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names)  
+function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)  
     for (index, i) in enumerate(data)
         println("Index: $index")
         # if length(training_samples) > index && training_samples[index].saturated
         #     continue
         # end
-        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = initialize_tree_search(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = initialize_tree_search(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
         println("Saturated: $saturated")
         new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, i)
         if length(training_samples) >= index 

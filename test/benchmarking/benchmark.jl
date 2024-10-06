@@ -2,6 +2,7 @@ using MyModule
 using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataStructures
+using MyModule.LRUCache
 using Serialization
 using Profile
 using PProf
@@ -30,7 +31,7 @@ heuristic = ExprModel(
 
 
 function compare_two_methods(data, model)
-    cache = Dict()
+    cache = LRU(maxsize=10000)
     for ex in data[1:100]
         @show ex
         @time begin
@@ -49,7 +50,7 @@ end
 
 
 function compare_two_methods2(data, model)
-    cache = Dict()
+    cache = LRU(maxsize=10000)
     @time begin
         tmp = map(ex->MyModule.cached_inference!(ex, cache, model, new_all_symbols, sym_enc), data)
         map(x->MyModule.embed(model, x), tmp)
@@ -80,16 +81,17 @@ function profile_method(data, heuristic)
     encodings_buffer = Dict{UInt64, ProductNode}()
     @show ex
     soltree[root.node_id] = root
-    cache = Dict()
-    a = MyModule.cached_inference(ex,cache,heuristic, new_all_symbols, sym_enc)
+    cache = LRU(maxsize=10000)
+    exp_cache = LRU{Expr, Vector}(maxsize=10000)
+    a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
     hp = MyModule.embed(heuristic, a)
     enqueue!(open_list, root, only(hp))
     # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
     # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
 
-    @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names, cache)
-    @profile peakflops()
-    pprof()
+    @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names, cache, exp_cache)
+    # @profile peakflops()
+    # pprof()
     MyModule.cache_hits = 0
     MyModule.cache_misses = 0
 end

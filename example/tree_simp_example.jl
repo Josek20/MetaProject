@@ -14,6 +14,7 @@ using MyModule.Metatheory
 using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataFrames
+using MyModule.LRUCache
 using Revise
 using StatsBase
 using CSV
@@ -65,7 +66,7 @@ theory = @theory a b c d x y begin
     a && !a --> 0
     !a && a --> 0
 
-    (a == c::Number) && (b == x::Number) => c != x ? 0 : :($a)
+    (a == c::Number) && (a == x::Number) => c != x ? 0 : :($a == $c)
     !a::Number && b::Number => a != b ? 0 : :($a)
     (a < y) && (a < b) --> a < min(y, b)
     a < min(y, b) --> (a < y) && (a < b)
@@ -241,8 +242,8 @@ max_steps = 1000
 max_depth = 100
 n = 1000
 
-# myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
-myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
+myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
+# myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # myex = :((v0*23 + v2) - (v2 + v0*23) <= 100) 
 # myex = :(121 - max(v0 * 59, 109) <= 1024)
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
@@ -253,7 +254,7 @@ df2 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-@assert 0 == 1
+# @assert 0 == 1
 if isfile("../models/tre1e_search_heuristic.bson")
     # BSON.@load "../models/tree_search_heuristic.bson" heuristic
     tmp = []
@@ -270,15 +271,16 @@ else
     stp = div(n, number_of_workers)
     batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
     dt = 1
-    cache = Dict()
-    exp_cache = Dict{Expr, Vector}()
+    exp_cache = LRU{Expr, Vector}(maxsize=10000)
+    cache = LRU(maxsize=10000)
     for ep in 1:epochs 
+        empty!(cache)
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Epcoh $ep")
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
-        # train_heuristic!(heuristic, [myex], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
+        train_heuristic!(heuristic, train_data[1:5], training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
+        # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
         
         # ltmp = []
         # @show training_samples
@@ -288,14 +290,15 @@ else
         # cat_samples = vcat(training_samples...)
         # for sample in training_samples
         for i in 1:50
-            # sample = StatsBase.sample(cat_samples)
+            sample = StatsBase.sample(training_samples)
             # for j in m_nodes
             # if isnothing(sample.training_data) 
             #     continue
             # end
             sa, grad = Flux.Zygote.withgradient(pc) do
                 # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                MyModule.loss(heuristic, big_vector, hp, hn)
+                # MyModule.loss(heuristic, big_vector, hp, hn)
+                MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
                 # MyModule.loss(heuristic, j[3], j[4], j[5])
             end
             if any(g->any(isinf, g) || any(isnan, g), grad)

@@ -3,12 +3,12 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 cache_hits = 0
 cache_misses = 0
 function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
-    global cache_hits, cache_misses
-    if haskey(cache,ex)
-        cache_hits += 1
-    end
+    # global cache_hits, cache_misses
+    # if haskey(cache,ex)
+    #     cache_hits += 1
+    # end
     get!(cache, ex) do
-        cache_misses += 1
+        # cache_misses += 1
         if ex.head == :call
             fun_name, args =  ex.args[1], ex.args[2:end]
         elseif ex.head in all_symbols
@@ -26,12 +26,12 @@ end
 
 
 function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
-    global cache_hits, cache_misses
-    if haskey(cache,ex)
-        cache_hits += 1
-    end
+    # global cache_hits, cache_misses
+    # if haskey(cache,ex)
+    #     cache_hits += 1
+    # end
     get!(cache, ex) do
-        cache_misses += 1
+        # cache_misses += 1
         encoding = zeros(Float32, length(all_symbols), 1)
         encoding[symbols_to_ind[ex]] = 1
         ds = ProductNode((
@@ -45,12 +45,12 @@ end
 
 
 function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind)
-    global cache_hits, cache_misses
-    if haskey(cache,ex)
-        cache_hits += 1
-    end
+    # global cache_hits, cache_misses
+    # if haskey(cache,ex)
+    #     cache_hits += 1
+    # end
     get!(cache, ex) do
-        cache_misses += 1
+        # cache_misses += 1
         encoding = zeros(Float32, length(all_symbols), 1)
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
         ds = ProductNode((
@@ -81,16 +81,38 @@ function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_i
     model.aggregation(tmp,  Mill.AlignedBags([1:l]))
     # _short_aggregation(model.aggregation, tmp)
 end
-# BenchmarkTools.Trial: 3 samples with 1 evaluation.
-#  Range (min … max):  1.518 s …    2.515 s  ┊ GC (min … max):  0.00% … 38.42%
-#  Time  (median):     1.749 s               ┊ GC (median):     3.77%
-#  Time  (mean ± σ):   1.927 s ± 521.783 ms  ┊ GC (mean ± σ):  17.85% ± 21.18%
 
-#   █            █                                           █
-#   █▁▁▁▁▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█ ▁
-#   1.52 s         Histogram: frequency by time         2.51 s <
+# julia> @benchmark begin
+#            cache = LRU(maxsize=10000)
+#            m1 = map(x->MyModule.cached_inference!(x,cache, heuristic, new_all_symbols, sym_enc), exp_data[1:100])
+#            o1 = map(x->MyModule.embed(heuristic,x), m1)
+#        end
+# BenchmarkTools.Trial: 92 samples with 1 evaluation.
+#  Range (min … max):  48.447 ms … 100.228 ms  ┊ GC (min … max): 0.00% … 44.71%
+#  Time  (median):     53.311 ms               ┊ GC (median):    0.00%
+#  Time  (mean ± σ):   54.699 ms ±   9.041 ms  ┊ GC (mean ± σ):  3.31% ±  8.90%
+#
+#        █▆                                                       
+#   ▅▆▂▂▄██▇▃▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂▁▂▁▁▁▂ ▁
+#   48.4 ms         Histogram: frequency by time         97.8 ms <
+#
+#  Memory estimate: 16.13 MiB, allocs estimate: 213996.
 
-#  Memory estimate: 332.54 MiB, allocs estimate: 6755495.
+# julia> @benchmark begin
+#            cache = LRU(maxsize=10000)
+#            m1 = map(x->MyModule.cached_inference!(x,cache, heuristic, new_all_symbols, sym_enc), exp_data[1:100])
+#            o1 = map(x->MyModule.embed(heuristic,x), m1)
+#        end
+# BenchmarkTools.Trial: 92 samples with 1 evaluation.
+#  Range (min … max):  50.961 ms … 70.206 ms  ┊ GC (min … max): 0.00% … 20.41%
+#  Time  (median):     52.012 ms              ┊ GC (median):    0.00%
+#  Time  (mean ± σ):   53.896 ms ±  3.734 ms  ┊ GC (mean ± σ):  2.94% ±  5.08%
+#
+#    █▇                                                          
+#   ▇███▆▃▃▃▁▃▃▁▁▃▁▁▄▅▃▄▃▅▃▃▃▁▁▃▃▁▁▁▁▁▁▁▁▁▁▁▁▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▃ ▁
+#   51 ms           Histogram: frequency by time          70 ms <
+#
+#  Memory estimate: 16.96 MiB, allocs estimate: 268270.
 
 # function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
 #     l = length(args)

@@ -131,10 +131,10 @@ end
 # function plot_tree()
 # ex = train_data[3]
 # ex = m
-# ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
+ex = :(v2 <= v2 && ((v0 + v1) + 120) - 1 <= (v0 + v1) + 119)
 # ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
 # ex = myex
-ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
+# ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # ex = train_data[1]
 # ex = myex
@@ -152,8 +152,8 @@ encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
-cache = Dict()
-# exp_cache = Dict{Expr, Vector}()
+exp_cache = LRU{Expr, Vector}(maxsize=10000)
+cache = LRU(maxsize=10000)
 a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
 hp = MyModule.embed(heuristic, a)
 enqueue!(open_list, root, only(hp))
