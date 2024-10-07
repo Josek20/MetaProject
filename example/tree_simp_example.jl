@@ -96,14 +96,15 @@ theory = @theory a b c d x y begin
 
     (a * b) / c --> a / (c / b)
     a / (c / b) --> (a * b) / c
-    (a / b) * c --> a / (c / b)
+    (a / b) * c --> a / (b / c)
+    a / (b / c) --> (a / b) * c
     # (a * b) / c --> a * (b / c) ?
     (a + b) / c --> (a / c) + (b / c)
     ((a * b) + c) / d --> ((a * b) / d) + (c / d)
 
     # eq.rs
     x == y --> y == x
-    x == y --> (x - y) == 0
+    x == y => y != 0 ? :(($x - $y) == 0) : :($x == $y)
     x + y == a --> x == a - y
     x == x --> 1
     x*y == 0 --> (x == 0) || (y == 0)
@@ -140,6 +141,12 @@ theory = @theory a b c d x y begin
     min(max(min(a,b), c), b) --> min(max(a,c), b)
     min(a + b, c) --> min(b, c - a) + a
     min(a, b) + c --> min(a + c, b + c)
+    
+    min(a + c, b + c) --> min(a, b) + c
+    min(c + a, b + c) --> min(a, b) + c
+    min(a + c, b + c) --> min(a, b) + c
+    min(c + a, c + b) --> min(a, b) + c
+
     min(a, a + b::Number) => b > 0 ? :($a) : :($a + $b)
     min(a ,b) * c::Number => c > 0 ? :(min($a * $c, $b * $c)) : :(max($a * $c, $b * $c)) 
     min(a * c::Number, b * c::Number) => c > 0 ? :(min($a ,$b) * $c) : :(max($a, $b) * $c)
@@ -185,7 +192,7 @@ theory = @theory a b c d x y begin
     0 * a --> 0
     a * 1 --> a
     1 * a --> a
-    (a / b) * b --> (a - (a % b))
+    # (a / b) * b --> (a - (a % b))
     max(a,b) * min(a, b) --> a * b
     min(a,b) * max(a, b) --> a * b
     (a * b) / b --> a
@@ -203,7 +210,7 @@ theory = @theory a b c d x y begin
     y || x --> x || y
 
     # sub.rs
-    a - b --> a + (-1 * b)
+    # a - b --> a + (-1 * b)
     
     # my rules
     a || 1 --> 1
@@ -226,10 +233,10 @@ end
 
 hidden_size = 128
 heuristic = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, leakyrelu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSum(hidden_size),
-    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
-    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
+    Flux.Chain(Dense(2*hidden_size + 2, hidden_size, leakyrelu), Dense(hidden_size, hidden_size)),
+    Flux.Chain(Dense(hidden_size, hidden_size, leakyrelu), Dense(hidden_size, 1))
     )
 
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
@@ -239,7 +246,7 @@ optimizer = ADAM()
 # training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
 training_samples = Vector{TrainingSample}()
 max_steps = 1000
-max_depth = 100
+max_depth = 60
 n = 1000
 
 myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
@@ -268,18 +275,18 @@ else
     stats = []
     loss_stats = []
     proof_stats = []
-    stp = div(n, number_of_workers)
-    batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
+    # stp = div(n, number_of_workers)
+    # batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
     dt = 1
-    exp_cache = LRU{Expr, Vector}(maxsize=10000)
-    cache = LRU(maxsize=10000)
+    exp_cache = LRU{Expr, Vector}(maxsize=100000)
+    cache = LRU(maxsize=1000000)
     for ep in 1:epochs 
         empty!(cache)
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Epcoh $ep")
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
-        train_heuristic!(heuristic, train_data[1:5], training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
+        train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
         # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
         
         # ltmp = []
@@ -289,7 +296,7 @@ else
 
         # cat_samples = vcat(training_samples...)
         # for sample in training_samples
-        for i in 1:50
+        for i in 1:100
             sample = StatsBase.sample(training_samples)
             # for j in m_nodes
             # if isnothing(sample.training_data) 

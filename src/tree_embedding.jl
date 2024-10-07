@@ -263,7 +263,7 @@ loss01(x) = x > 0
 
 
 function loss(heuristic, big_vector, hp=nothing, hn=nothing, surrogate::Function = logistic)
-    o = heuristic(big_vector) 
+    o = heuristic(big_vector)
     p = (o * hp) .* hn
 
     diff = p - o[1, :] .* hn

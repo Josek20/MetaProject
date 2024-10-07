@@ -60,6 +60,10 @@ function compare_two_methods2(data, model)
         ds = reduce(catobs, m2)
         o2 = model(ds)
     end
+    @time begin
+        m3 = MyModule.no_reduce_multiple_fast_ex2mill(data, sym_enc)
+        o3 = model(m3)
+    end
 end
 compare_two_methods(exp_data, heuristic)
 # compare_two_methods2(exp_data, heuristic)
