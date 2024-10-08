@@ -21,7 +21,7 @@ test_data = preprosses_data_to_expressions(test_data)
 
 
 
-hidden_size = 128
+hidden_size = 64
 heuristic = ExprModel(
     Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSum(hidden_size),
@@ -30,36 +30,41 @@ heuristic = ExprModel(
     )
 
 
-function compare_two_methods(data, model)
+function compare_two_methods(data, model, batched=64)
     cache = LRU(maxsize=10000)
-    for ex in data[1:100]
+    for ex in 1:batched:batched*10
         @show ex
         @time begin
-            m1 = MyModule.cached_inference!(ex, cache, model, new_all_symbols, sym_enc)
-            o1 = MyModule.embed(model, m1)
+            # m1 = map(x->MyModule.cached_inference!(x, cache, model, new_all_symbols, sym_enc), data[ex:ex+batched])
+            o1 = map(x->only(model(x,cache)), data[ex:ex+batched])
+            # o1 = map(x->MyModule.embed(model, x), m1)
         end
         @time begin
-            m2 = MyModule.single_fast_ex2mill(ex, sym_enc)
+            m2 = MyModule.no_reduce_multiple_fast_ex2mill(data[ex:ex+batched], sym_enc)
             o2 = model(m2)
         end
-        @show only(o1)
-        @show only(o2)
-        @assert abs(only(o1) - only(o2)) <= 0.000001
+        # @show only(o1)
+        # @show only(o2)
+        # map(zip(o1,o2)) do f
+        for i in zip(o1,o2)
+            @assert abs(only(i[1]) - only(i[2])) <= 0.000001
+        end
     end
 end
-
+# use vector instead of matrix in embed
+# try using cache for your expr precompute hashs as you construct your nodes
 
 function compare_two_methods2(data, model)
-    cache = LRU(maxsize=10000)
+    cache = LRU(maxsize=100000)
     @time begin
         tmp = map(ex->MyModule.cached_inference!(ex, cache, model, new_all_symbols, sym_enc), data)
         map(x->MyModule.embed(model, x), tmp)
     end
-    @time begin
-        m2 = MyModule.multiple_fast_ex2mill(data, sym_enc)
-        ds = reduce(catobs, m2)
-        o2 = model(ds)
-    end
+    # @time begin
+    #     m2 = MyModule.multiple_fast_ex2mill(data, sym_enc)
+    #     ds = reduce(catobs, m2)
+    #     o2 = model(ds)
+    # end
     @time begin
         m3 = MyModule.no_reduce_multiple_fast_ex2mill(data, sym_enc)
         o3 = model(m3)
@@ -75,29 +80,36 @@ function profile_method(data, heuristic)
     # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
     # ex =  :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + (((v3 * (4 + v2 / (30 / v3)) + v5) + v4) + v7))
     # encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
-    # encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc) 
-    root = MyModule.Node(ex, (0,0), hash(ex), 0, nothing)
-    
-    soltree = Dict{UInt64, MyModule.Node}()
-    open_list = PriorityQueue{MyModule.Node, Float32}()
-    close_list = Set{UInt64}()
-    expansion_history = Dict{UInt64, Vector}()
-    encodings_buffer = Dict{UInt64, ProductNode}()
-    @show ex
-    soltree[root.node_id] = root
-    cache = LRU(maxsize=10000)
-    exp_cache = LRU{Expr, Vector}(maxsize=10000)
-    a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
-    hp = MyModule.embed(heuristic, a)
-    enqueue!(open_list, root, only(hp))
-    # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
-    # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
+    # encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
+    ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 
-    @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names, cache, exp_cache)
+    # root = MyModule.Node(ex, (0,0), hash(ex), 0, nothing)
+    
+    # soltree = Dict{UInt64, MyModule.Node}()
+    # open_list = PriorityQueue{MyModule.Node, Float32}()
+    # close_list = Set{UInt64}()
+    # expansion_history = Dict{UInt64, Vector}()
+    # encodings_buffer = Dict{UInt64, ProductNode}()
+    # @show ex
+    # soltree[root.node_id] = root
+    cache = LRU(maxsize=100000)
+    exp_cache = LRU{Expr, Vector}(maxsize=10000)
+    # a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
+    # hp = MyModule.embed(heuristic, a)
+    # enqueue!(open_list, root, only(hp))
+    # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
+    # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
+    training_samples = Vector{TrainingSample}()
+    # ProfileCanvas.@profview train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache)  
+    @benchmark train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache)  
+    # @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 60, expansion_history, theory, variable_names, cache, exp_cache)
+    # @show length(soltree)
+    # @show cache.hits
+    # @show cache.misses
+    # @show exp_cache.hits
+    # @show exp_cache.misses
     # @profile peakflops()
     # pprof()
-    MyModule.cache_hits = 0
-    MyModule.cache_misses = 0
 end
 
 # profile_method(exp_data, heuristic) 

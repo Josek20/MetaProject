@@ -191,6 +191,8 @@ function no_reduce_multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
     a = unfold_allocation(st, nm, ps, bg)
     return a
 end
+
+
 function no_reduce_multiple_fast_ex2mill1(expression_vector::Vector, sym_enc)
     stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
     st, nm, ps, bg = stats[1]

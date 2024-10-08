@@ -1,14 +1,8 @@
 my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
-cache_hits = 0
-cache_misses = 0
+
 function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
-    # global cache_hits, cache_misses
-    # if haskey(cache,ex)
-    #     cache_hits += 1
-    # end
     get!(cache, ex) do
-        # cache_misses += 1
         if ex.head == :call
             fun_name, args =  ex.args[1], ex.args[2:end]
         elseif ex.head in all_symbols
@@ -17,7 +11,7 @@ function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
         else
             error("unknown head $(ex.head)")
         end
-        encoding = zeros(Float32, length(all_symbols), 1)
+        encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_index[fun_name]] = 1
         args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
         tmp = vcat(model.head_model(encoding), args)
@@ -26,39 +20,19 @@ end
 
 
 function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
-    # global cache_hits, cache_misses
-    # if haskey(cache,ex)
-    #     cache_hits += 1
-    # end
     get!(cache, ex) do
-        # cache_misses += 1
-        encoding = zeros(Float32, length(all_symbols), 1)
+        encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex]] = 1
-        ds = ProductNode((
-            head = ArrayNode(encoding),
-            args = BagNode(missing, [0:-1])
-        ))
-        tmp = embed(model,ds.data.args)
-        vcat(model.head_model(ds.data.head.data), tmp)
+        vcat(model.head_model(encoding), model.aggregation.:ψ)
     end
 end
 
 
 function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind)
-    # global cache_hits, cache_misses
-    # if haskey(cache,ex)
-    #     cache_hits += 1
-    # end
     get!(cache, ex) do
-        # cache_misses += 1
-        encoding = zeros(Float32, length(all_symbols), 1)
+        encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
-        ds = ProductNode((
-            head = ArrayNode(encoding),
-            args = BagNode(missing, [0:-1])
-        ))
-        tmp = embed(model,ds.data.args)
-        vcat(model.head_model(ds.data.head.data), tmp)
+        vcat(model.head_model(encoding), model.aggregation.:ψ)
     end
 end
 
@@ -74,66 +48,12 @@ const const_right = [0, 1]
 function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
     l = length(args)
     my_tmp = [cached_inference!(a, cache, model, all_symbols, symbols_to_ind) for a in args]
-    # @show size(my_tmp[1])
     my_args = hcat(my_tmp...)
     tmp = vcat(my_args, Flux.onehotbatch(1:l, 1:2))
     tmp = model.joint_model(tmp)
-    model.aggregation(tmp,  Mill.AlignedBags([1:l]))
-    # _short_aggregation(model.aggregation, tmp)
+    a = model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
+    return a[:,1]
 end
-
-# julia> @benchmark begin
-#            cache = LRU(maxsize=10000)
-#            m1 = map(x->MyModule.cached_inference!(x,cache, heuristic, new_all_symbols, sym_enc), exp_data[1:100])
-#            o1 = map(x->MyModule.embed(heuristic,x), m1)
-#        end
-# BenchmarkTools.Trial: 92 samples with 1 evaluation.
-#  Range (min … max):  48.447 ms … 100.228 ms  ┊ GC (min … max): 0.00% … 44.71%
-#  Time  (median):     53.311 ms               ┊ GC (median):    0.00%
-#  Time  (mean ± σ):   54.699 ms ±   9.041 ms  ┊ GC (mean ± σ):  3.31% ±  8.90%
-#
-#        █▆                                                       
-#   ▅▆▂▂▄██▇▃▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂▁▂▁▁▁▂ ▁
-#   48.4 ms         Histogram: frequency by time         97.8 ms <
-#
-#  Memory estimate: 16.13 MiB, allocs estimate: 213996.
-
-# julia> @benchmark begin
-#            cache = LRU(maxsize=10000)
-#            m1 = map(x->MyModule.cached_inference!(x,cache, heuristic, new_all_symbols, sym_enc), exp_data[1:100])
-#            o1 = map(x->MyModule.embed(heuristic,x), m1)
-#        end
-# BenchmarkTools.Trial: 92 samples with 1 evaluation.
-#  Range (min … max):  50.961 ms … 70.206 ms  ┊ GC (min … max): 0.00% … 20.41%
-#  Time  (median):     52.012 ms              ┊ GC (median):    0.00%
-#  Time  (mean ± σ):   53.896 ms ±  3.734 ms  ┊ GC (mean ± σ):  2.94% ±  5.08%
-#
-#    █▇                                                          
-#   ▇███▆▃▃▃▁▃▃▁▁▃▁▁▄▅▃▄▃▅▃▃▃▁▁▃▃▁▁▁▁▁▁▁▁▁▁▁▁▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▃ ▁
-#   51 ms           Histogram: frequency by time          70 ms <
-#
-#  Memory estimate: 16.96 MiB, allocs estimate: 268270.
-
-# function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
-#     l = length(args)
-#     if l == 1
-#         tmp = cached_inference!(args[1], cache, model, all_symbols, symbols_to_ind)
-#         # @show size(tmp)
-#         tmp = vcat(tmp, const_left)
-#         # @show size(tmp)
-#         embeddding = model.joint_model(tmp)
-#         # I think we can skip embeddings, since mean / max, will become identities.
-#         return(embeddding)
-#         # return model.aggregation(embeddding)
-        
-#     elseif l == 2
-#         t₁ = vcat(cached_inference!(args[1], cache, model, all_symbols, symbols_to_ind), const_left)
-#         t₂ = vcat(cached_inference!(args[2], cache, model, all_symbols, symbols_to_ind), const_right)
-#         _short_aggregation(model.aggregation, model.joint_model(t₁), model.joint_model(t₂))
-#     else
-#         error("Unexpected number of arguments $l, file issue with the expression")
-#     end
-# end
 
 
 function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict, cache, model)
@@ -246,12 +166,18 @@ function embed(m::ExprModel, ds::BagNode)
     tmp = embed(m, ds.data)
     m.aggregation(tmp, ds.bags)
 end
+# cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
 
-
-function embed(m::ExprModel, ds::Matrix)
-    tmp = vcat(ds, zeros(Float32, 2, 1))
+function (m::ExprModel)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
+    tmp = vcat(ds, zeros(Float32, 2))
     m.heuristic(m.joint_model(tmp))
 end
+
+# function embed(m::ExprModel, ds::Vector)
+#     tmp = vcat(ds, zeros(Float32, 2))
+#     m.heuristic(m.joint_model(tmp))
+# end
 
 
 embed(m::ExprModel, ds::Missing) = missing

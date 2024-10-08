@@ -282,11 +282,13 @@ else
     cache = LRU(maxsize=1000000)
     for ep in 1:epochs 
         empty!(cache)
+
+
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Epcoh $ep")
         println("Training===========================================")
         # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
-        train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
+        train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache)
         # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
         
         # ltmp = []
@@ -309,8 +311,8 @@ else
                 # MyModule.loss(heuristic, j[3], j[4], j[5])
             end
             if any(g->any(isinf, g) || any(isnan, g), grad)
-                BSON.@save "models/inf_grad_heuristic.bson" heuristic
-                JLD2.@save "data/training_data/training_samples_inf_grad.jld2" training_samples
+                BSON.@save "models/inf_grad_heuristic1.bson" heuristic
+                JLD2.@save "data/training_data/training_samples_inf_grad1.jld2" training_samples
                 @assert 0 == 1
             end
         # if isna(grad)

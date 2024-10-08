@@ -1,3 +1,16 @@
+08.10.2024
+- Trying to improve performance
+  1) have found recursive rule x==y --> x - y == 0
+  2) there is an option to get read of hash in profiler by precomputing it 
+    before and save it in struct or have a faster hash specifically for Expr
+  3) used vectors instead of matrices when embed
+- Trying to improve heuristic learning 
+  1) can add A* instead of greedy by adding depth 
+- Problems
+  -  large expr may expand in depth, populating search tree with useless nodes
+    (happens because of expansion and assosiativity rules)
+
+
 04.10.2024
 - Trying to improve performance
   1) have implemented caching for rule matching

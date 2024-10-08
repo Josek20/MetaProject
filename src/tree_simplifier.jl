@@ -125,13 +125,13 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
-    o = map(x->MyModule.cached_inference!(x, cache, heuristic, new_all_symbols, sym_enc), exprs)
-    o = map(x->only(embed(heuristic, x)), o)
+    o = map(x->only(heuristic(x, cache)), exprs)
+    # o = map(x->only(embed(heuristic, x)), o)
     # o = map(x->only(embed(heuristic, x[1])) + x[2].depth * 500, zip(o,filtered_new_nodes))
     
     # embeded_exprs = MyModule.no_reduce_multiple_fast_ex2mill(exprs, sym_enc)
     # o = heuristic(embeded_exprs)
-    # o = fill(3, length(exprs))
+    # o = map(x->x.depth, filtered_new_nodes)
     # for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
     #     soltree[n.node_id].expression_encoding = e
     #     n.expression_encoding = e
@@ -256,7 +256,8 @@ function extract_training_data(node, soltree)
     training_exp=[]
     hp=Vector[Int16[]]
     hn=Vector[Int16[]]
-    extract_training_data!(node, soltree, training_exp, hp, hn)
+    proof_vector=[]
+    extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
     tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_exp, sym_enc)
     max_length = maximum(length, hn)
     padded_vectors = [vcat(vec, fill(0, max_length - length(vec))) for vec in hn]
@@ -267,14 +268,15 @@ function extract_training_data(node, soltree)
     max_length = maximum(length, hp)
     padded_vectors = [vcat(vec, fill(0, max_length - length(vec))) for vec in hp]
     hp = hcat(padded_vectors...)
-    return tdata, hp, hn
+    return tdata, hp, hn, reverse(proof_vector)
 end
 
 
-function extract_training_data!(node, soltree, training_exp, hp, hn)
+function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
     if node.parent == node.node_id
         return
     end
+    push!(proof_vector, node.rule_index)
     children_list = soltree[node.parent].children
     push!(hp,zeros(Int16, length(hp[end])))
     push!(hn,zeros(Int16, length(hn[end])))
@@ -288,10 +290,7 @@ function extract_training_data!(node, soltree, training_exp, hp, hn)
         end
         push!(training_exp, soltree[i].ex)
     end
-    # children_exp = map(x->soltree[x].ex, children_list)
-    # append!(training_exp, children_exp)
-    extract_training_data!(soltree[node.parent], soltree, training_exp, hp, hn)
-    # return MyModule.no_reduce_multiple_fast_ex2mill(training_exp, sym_enc), hp, hn
+    extract_training_data!(soltree[node.parent], soltree, training_exp, hp, hn, proof_vector)
 end
 
 
@@ -429,8 +428,9 @@ function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_s
     @show ex
     # encoded_ex = ex2mill(ex, symbols_to_index, all_symbols, variable_names)
     # encoded_ex = MyModule.single_fast_ex2mill(ex, sym_enc)
-    a = MyModule.cached_inference!(ex, cache, heuristic, new_all_symbols, sym_enc)
-    o = MyModule.embed(heuristic, a)
+    # a = MyModule.cached_inference!(ex, cache, heuristic, new_all_symbols, sym_enc)
+    # o = MyModule.embed(heuristic, a)
+    o = heuristic(ex, cache)
     root = Node(ex, (0,0), hash(ex), 0, nothing)
     soltree[root.node_id] = root
     enqueue!(open_list, root, only(o))
@@ -442,12 +442,12 @@ function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_s
     # smallest_nodes = extract_smallest_terminal_node1(soltree, close_list)
     simplified_expression = smallest_node.ex
     @show simplified_expression
-    proof_vector, depth_dict, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
+    # proof_vector, depth_dict, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
     # tmp = map(x->extract_rules_applied(x, soltree), smallest_nodes)
-    big_vector, hp, hn = extract_training_data(smallest_node, soltree)
+    big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
     tmp = []
     @show proof_vector
-    return simplified_expression, depth_dict, big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector, tmp
+    return simplified_expression, [], big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector, tmp
 end
 
 
