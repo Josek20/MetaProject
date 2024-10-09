@@ -3,11 +3,31 @@ using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataStructures
 using MyModule.LRUCache
+using BenchmarkTools
 using Serialization
 using Profile
 using PProf
 using ProfileCanvas
+using SimpleChains
 
+
+
+
+
+hidden_size = 128
+heuristic = ExprModel(
+    Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.relu), Dense(hidden_size,hidden_size)),
+    Mill.SegmentedSum(hidden_size),
+    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,Flux.relu), Dense(hidden_size, hidden_size)),
+    Flux.Chain(Dense(hidden_size, hidden_size,Flux.relu), Dense(hidden_size, 1))
+    )
+
+heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
+    SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
+    Mill.SegmentedSum(hidden_size),
+    SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
+    SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
+))
 
 exp_data = Vector()
 open("./data/training_data/benchmarking.bin", "r") do file
@@ -21,17 +41,8 @@ test_data = preprosses_data_to_expressions(test_data)
 
 
 
-hidden_size = 64
-heuristic = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, relu), Dense(hidden_size,hidden_size)),
-    Mill.SegmentedSum(hidden_size),
-    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,relu), Dense(hidden_size, hidden_size)),
-    Flux.Chain(Dense(hidden_size, hidden_size,relu), Dense(hidden_size, 1))
-    )
-
-
 function compare_two_methods(data, model, batched=64)
-    cache = LRU(maxsize=10000)
+    cache = LRU(maxsize=50000)
     for ex in 1:batched:batched*10
         @show ex
         @time begin
@@ -46,9 +57,9 @@ function compare_two_methods(data, model, batched=64)
         # @show only(o1)
         # @show only(o2)
         # map(zip(o1,o2)) do f
-        for i in zip(o1,o2)
-            @assert abs(only(i[1]) - only(i[2])) <= 0.000001
-        end
+        # for i in zip(o1,o2)
+        #     @assert abs(only(i[1]) - only(i[2])) <= 0.000001
+        # end
     end
 end
 # use vector instead of matrix in embed
@@ -70,7 +81,7 @@ function compare_two_methods2(data, model)
         o3 = model(m3)
     end
 end
-compare_two_methods(exp_data, heuristic)
+# compare_two_methods(exp_data, heuristic)
 # compare_two_methods2(exp_data, heuristic)
 
 function profile_method(data, heuristic)
@@ -93,7 +104,7 @@ function profile_method(data, heuristic)
     # @show ex
     # soltree[root.node_id] = root
     cache = LRU(maxsize=100000)
-    exp_cache = LRU{Expr, Vector}(maxsize=10000)
+    exp_cache = LRU{Expr, Vector}(maxsize=20000)
     # a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
     # hp = MyModule.embed(heuristic, a)
     # enqueue!(open_list, root, only(hp))

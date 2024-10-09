@@ -14,7 +14,12 @@ function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_index[fun_name]] = 1
         args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
-        tmp = vcat(model.head_model(encoding), args)
+        if isa(model, ExprModel)
+            tmp = model.head_model(encoding)
+        else
+            tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+        end
+        tmp = vcat(tmp, args)
     end
 end
 
@@ -23,7 +28,15 @@ function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind
     get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex]] = 1
-        vcat(model.head_model(encoding), model.aggregation.:ψ)
+
+        if isa(model, ExprModel)
+            tmp = model.head_model(encoding)
+            a = vcat(tmp, model.aggregation.:ψ)
+        else
+            tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+            a = vcat(tmp, model.expr_model.aggregation.:ψ)
+        end
+        return a
     end
 end
 
@@ -32,9 +45,18 @@ function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind
     get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
-        vcat(model.head_model(encoding), model.aggregation.:ψ)
+
+        if isa(model, ExprModel)
+            tmp = model.head_model(encoding)
+            a = vcat(tmp, model.aggregation.:ψ)
+        else
+            tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+            a = vcat(tmp, model.expr_model.aggregation.:ψ)
+        end
+        return a
     end
 end
+
 
 _short_aggregation(::SegmentedSum, x) = x
 _short_aggregation(::SegmentedSum, x, y) = x + y
@@ -45,13 +67,30 @@ _short_aggregation(::SegmentedMax, x, y) = max.(x, y)
 const const_left = [1, 0]
 const const_right = [0, 1]
 
+
+# BenchmarkTools.Trial: 22 samples with 1 evaluation.
+#  Range (min … max):  203.620 ms … 273.059 ms  ┊ GC (min … max): 0.00% … 8.27%
+#  Time  (median):     234.592 ms               ┊ GC (median):    8.48%
+#  Time  (mean ± σ):   229.846 ms ±  19.722 ms  ┊ GC (mean ± σ):  5.14% ± 4.55%
+#
+#    ▃  ▃                           █                              
+#   ▇█▁▁█▇▇▇▁▁▁▁▇▁▁▁▁▁▁▁▁▁▁▁▁▇▇▁▇▁▁▇█▁▇▇▁▇▇▁▁▁▁▁▁▁▁▁▇▁▁▁▁▁▁▁▁▁▁▁▇ ▁
+#   204 ms           Histogram: frequency by time          273 ms <
+#
+#  Memory estimate: 186.76 MiB, allocs estimate: 1543949.
+
 function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
     l = length(args)
     my_tmp = [cached_inference!(a, cache, model, all_symbols, symbols_to_ind) for a in args]
     my_args = hcat(my_tmp...)
     tmp = vcat(my_args, Flux.onehotbatch(1:l, 1:2))
-    tmp = model.joint_model(tmp)
-    a = model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
+    if isa(model, ExprModel)
+        tmp = model.joint_model(tmp)
+        a = model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
+    else
+        tmp = model.expr_model.joint_model(tmp, model.model_params.joint_model)
+        a = model.expr_model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
+    end
     return a[:,1]
 end
 
@@ -135,9 +174,72 @@ struct ExprModel{HM,A,JM,H}
 end
 
 
+struct InitExprModelDense{HM, JM, H}
+    head_model::HM
+    joint_model::JM 
+    heuristic::H 
+end
+
+
+function InitExprModelDense(m::ExprModel)
+    hm = SimpleChains.init_params(m.head_model)
+    jm = SimpleChains.init_params(m.joint_model)
+    h = SimpleChains.init_params(m.heuristic)
+    return InitExprModelDense(hm, jm, h) 
+end
+
+
+struct ExprModelSimpleChains
+    expr_model::ExprModel
+    model_params::InitExprModelDense
+end
+
+
+function ExprModelSimpleChains(m::ExprModel) 
+    ie = InitExprModelDense(m)
+    return ExprModelSimpleChains(m, ie)
+end
+
+
+function (m::ExprModelSimpleChains)(ds::ProductNode)
+    m.expr_model(ds, m.model_params)
+end
+
+
 function (m::ExprModel)(ds::ProductNode)
     m.heuristic(embed(m, ds))
 end
+
+
+function (m::ExprModel)(ds::ProductNode, params::InitExprModelDense)
+    m.heuristic(embed(m, ds, params), params.heuristic)
+end
+
+
+function embed(m::ExprModel, ds::ProductNode, params::InitExprModelDense) 
+    # @show ds.data
+    if haskey(ds.data, :position)
+        # @show size(m.head_model(ds.data.args.data.head.data))
+        tmp = m.head_model(ds.data.args.data.head.data, params.head_model)
+        tmp = vcat(tmp, embed(m, ds.data.args.data.args, params), ds.data.position.data)
+    else
+        o = m.head_model(ds.data.head.data, params.head_model)
+        # tmp = vcat(o, zeros(Float32, 2, size(o)[2]))
+        # tmp = vcat(tmp, embed(m, ds.data.args))
+        tmp = vcat(o, embed(m, ds.data.args, params), zeros(Float32, 2, size(o)[2]))
+    end
+    # tmp = vcat(m.head_model(ds.data.args.head.data), embed(m, ds.data.args))
+    m.joint_model(tmp, params.joint_model)
+end
+
+
+function embed(m::ExprModel, ds::BagNode,params::InitExprModelDense)
+    tmp = embed(m, ds.data, params)
+    m.aggregation(tmp, ds.bags)
+end
+
+
+embed(m::ExprModel, ds::Missing, params::InitExprModelDense) = missing
 
 
 function embed(m::ExprModel, ds::ProductNode) 
@@ -174,6 +276,12 @@ function (m::ExprModel)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to
     m.heuristic(m.joint_model(tmp))
 end
 
+
+function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
+    tmp = vcat(ds, zeros(Float32, 2))
+    m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
+end
 # function embed(m::ExprModel, ds::Vector)
 #     tmp = vcat(ds, zeros(Float32, 2))
 #     m.heuristic(m.joint_model(tmp))

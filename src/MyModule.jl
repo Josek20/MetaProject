@@ -12,6 +12,7 @@ using DataStructures
 using DataFrames
 using Base.Threads
 using LRUCache
+using SimpleChains
 
 include("small_data_loader.jl")
 export load_data, preprosses_data_to_expressions

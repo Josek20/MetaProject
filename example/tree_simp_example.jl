@@ -261,7 +261,7 @@ df2 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-# @assert 0 == 1
+@assert 0 == 1
 if isfile("../models/tre1e_search_heuristic.bson")
     # BSON.@load "../models/tree_search_heuristic.bson" heuristic
     tmp = []

@@ -1,3 +1,8 @@
+09.10.2024
+- Trying to improve performance
+  1) Mr Pevny have found library (SimpleChains.jl) that has faster Dense layers for small NN 
+    (after adding it to the pipeline everything works much faster)
+
 08.10.2024
 - Trying to improve performance
   1) have found recursive rule x==y --> x - y == 0

@@ -137,7 +137,7 @@ end
 # ex = myex
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
-ex = train_data[1]
+# ex = train_data[1]
 # ex = myex
 # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
 # ex =  :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + (((v3 * (4 + v2 / (30 / v3)) + v5) + v4) + v7))
@@ -155,9 +155,10 @@ soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 exp_cache = LRU{Expr, Vector}(maxsize=100000)
 cache = LRU(maxsize=1000000)
-a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
-hp = MyModule.embed(heuristic, a)
-enqueue!(open_list, root, only(hp))
+# a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
+# hp = MyModule.embed(heuristic, a)
+o = heuristic(ex, cache)
+enqueue!(open_list, root, only(o))
 # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 # using ProfileCanvas
 # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
@@ -166,7 +167,7 @@ bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_li
 # histogram(bmark1)
 # @show length(soltree)
 smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
-proof_vector, depth_dict, hp, hn, node_proof_vector = MyModule.extract_rules_applied(smallest_node, soltree)
+# proof_vector, depth_dict, hp, hn, node_proof_vector = MyModule.extract_rules_applied(smallest_node, soltree)
 # # tmp = map(x->extract_rules_applied(x, soltree), smallest_nodes)
 # big_vector = MyModule.extract_training_data(smallest_node, soltree)
 # using Profile

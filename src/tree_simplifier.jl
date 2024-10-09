@@ -35,7 +35,7 @@ function my_rewriter!(position::Vector{Int}, ex::Expr, rule::AbstractRule)
 end
 
 
-function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
+function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
     if !isa(ex, Expr)
         return
     end
@@ -76,12 +76,35 @@ function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{Abstract
 end
 
 
+function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
+    if !isa(ex, Expr)
+        return
+    end
+    get!(caching, ex) do
+        a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
+        if !isempty(a)
+            b = copy(trav_indexs)
+            append!(tmp, [(b, i[1]) for i in a])
+        end
+
+        for (ind, i) in enumerate(ex.args)
+            push!(trav_indexs, ind)
+
+            traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+
+            pop!(trav_indexs)
+        end
+        return tmp
+    end
+end
+
+
 function execute(ex::Union{Expr, Number}, theory::Vector{AbstractRule}, caching::LRU{Expr, Vector})
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
     traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
     # @show tmp
-
+    tmp = caching[ex]
     for (pl, r) in tmp
         old_ex = copy(ex)
         # if isempty(pl)
@@ -189,7 +212,7 @@ end
 # end
 
 
-function build_tree!(soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
+function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
     step = 0
     reached_goal = false
     epsilon = 0.05
