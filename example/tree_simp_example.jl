@@ -15,6 +15,7 @@ using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataFrames
 using MyModule.LRUCache
+using MyModule.SimpleChains
 using Revise
 using StatsBase
 using CSV
@@ -232,14 +233,14 @@ theory = @theory a b c d x y begin
 end
 
 hidden_size = 128
-heuristic = ExprModel(
-    Flux.Chain(Dense(length(symbols_to_index) + 1 + 13, hidden_size, leakyrelu), Dense(hidden_size,hidden_size)),
+heuristic = MyModule.ExprModelSimpleChains(ExprModel(
+    SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
     Mill.SegmentedSum(hidden_size),
-    Flux.Chain(Dense(2*hidden_size + 2, hidden_size, leakyrelu), Dense(hidden_size, hidden_size)),
-    Flux.Chain(Dense(hidden_size, hidden_size, leakyrelu), Dense(hidden_size, 1))
-    )
+    SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
+    SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
+))
 
-pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
+# pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 
 epochs = 10
 optimizer = ADAM()

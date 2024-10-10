@@ -135,6 +135,9 @@ end
 # ex = train_data[1]
 # ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
 # ex = myex
+using ProfileCanvas
+ProfileCanvas.@profview begin
+    
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # ex = train_data[1]
@@ -155,18 +158,23 @@ soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 exp_cache = LRU{Expr, Vector}(maxsize=100000)
 cache = LRU(maxsize=1000000)
+training_samples = Vector{TrainingSample}()
+
 # a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
 # hp = MyModule.embed(heuristic, a)
 o = heuristic(ex, cache)
 enqueue!(open_list, root, only(o))
 # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
-# using ProfileCanvas
 # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
-bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 60, expansion_history, theory, variable_names, cache, exp_cache)
+# @benchmark train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache)  
+MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 60, expansion_history, theory, variable_names, cache, exp_cache)
+@show length(soltree)
+end
+
 # using Plots
 # histogram(bmark1)
 # @show length(soltree)
-smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
+# smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
 # proof_vector, depth_dict, hp, hn, node_proof_vector = MyModule.extract_rules_applied(smallest_node, soltree)
 # # tmp = map(x->extract_rules_applied(x, soltree), smallest_nodes)
 # big_vector = MyModule.extract_training_data(smallest_node, soltree)
@@ -175,7 +183,7 @@ smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
 # @profile MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache)
 # @profile peakflops()
 # pprof()
-# reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names)
+# reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_tao_index, max_steps, max_depth, expansion_history, theory, variable_names)
 # bmark1 = @benchmark MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 100, expansion_history, theory, variable_names, cache)
 
 # bmark1 = @time reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 25, expansion_history, theory, variable_names)

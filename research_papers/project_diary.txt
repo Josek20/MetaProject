@@ -1,7 +1,13 @@
+10.10.2024
+- Adding A* to the search 
+  1) h(n)=α⋅h(n)+(1−α)⋅h(n) (alpha=1 at the start and than as we learn we make it less)
+
+
 09.10.2024
 - Trying to improve performance
   1) Mr Pevny have found library (SimpleChains.jl) that has faster Dense layers for small NN 
     (after adding it to the pipeline everything works much faster)
+
 
 08.10.2024
 - Trying to improve performance

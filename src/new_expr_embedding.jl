@@ -1,46 +1,76 @@
-function expr_to_prefix!(ex::Expr, all_symbols, prefix::Vector=[])
-    h = ex.head
-    if h == :call
-        push!(prefix, ex.args[1])
-        for i in ex.args[2:end]
-            expr_to_prefix!(i, all_symbols, prefix)
-        end
-    elseif h in all_symbols
-        push!(prefix, h)
-        for i in ex.args
-            expr_to_prefix!(i, all_symbols, prefix)
+mutable struct ExprWithHash
+    ex::Union{Expr, Symbol, Number}
+	head::Union{Symbol, Number}
+	args::Vector
+	hash::UInt
+end
+
+function ExprWithHash(ex::Expr)
+	args = ExprWithHash.(ex.args)
+	head = ex.head#SymbolWithHash(ex)
+	h = hash(hash(head), hash(args))
+	ExprWithHash(ex, head, args, h) 
+end
+
+function ExprWithHash(ex::Symbol)
+	args = []
+	head = ex
+	h = hash(ex)
+	ExprWithHash(ex, head, args, h) 
+end
+
+
+function ExprWithHash(ex::Number)
+	args = []
+	head = ex
+	h = hash(ex)
+	ExprWithHash(ex, head, args, h) 
+end
+
+
+Base.hash(e::ExprWithHash, b::UInt) = hash(e.hash, b)
+function old_traverse_expr!(ex::ExprWithHash, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{ExprWithHash, Vector})
+    if !isa(ex.ex, Expr)
+        return
+    end
+    if haskey(caching, ex)
+        b = copy(trav_indexs)
+        append!(tmp, [(b, i) for i in caching[ex]])
+        for (ind, i) in enumerate(ex.args)
+            # Update the traversal index path with the current index
+            push!(trav_indexs, ind)
+
+            # Recursively traverse the sub-expression
+            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+
+            # After recursion, pop the last index to backtrack to the correct level
+            pop!(trav_indexs)
         end
     end
-    return prefix
-end
-
-
-function expr_to_prefix!(ex::Union{Symbol, Number}, all_symbols, prefix::Vector)
-    push!(prefix, ex)
-end
-
-
-function embed_prefix_expr(prefix_ex::Vector, symb2ind::Dict{Symbol, Int})
-    n = length(symb2ind)
-    p = length(prefix_ex)
-    encoding = zeros(Float32, n, p)
-    for (ind,i) in enumerate(prefix_ex)
-        if isa(i, Number)
-            encoding[symb2ind[:Number], ind] = MyModule.my_sigmoid(i)
-        else
-            encoding[symb2ind[i], ind] = 1
+    get!(caching, ex) do
+        a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex.ex) for rt in matchers)))
+        if !isempty(a)
+            b = copy(trav_indexs)
+            append!(tmp, [(b, i[1]) for i in a])
         end
+
+        # Traverse sub-expressions
+        for (ind, i) in enumerate(ex.args)
+            # Update the traversal index path with the current index
+            push!(trav_indexs, ind)
+
+            # Recursively traverse the sub-expression
+            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+
+            # After recursion, pop the last index to backtrack to the correct level
+            pop!(trav_indexs)
+        end
+        return isempty(a) ? [] : [i[1] for i in a]
     end
-    return encoding
 end
 
-
-function simple_expression_encoding(ex::Expr, all_symbols, symb2ind)
-    expr_pref = expr_to_prefix!(ex, all_symbols)
-    return embed_prefix_expr(expr_pref, symb2ind)
-end
-
-
-function ()
-    
-end
+cache = LRU{ExprWithHash, Vector}(maxsize=10000)
+tmp = Tuple{Vector{Int}, Int}[]
+myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
+a = ExprWithHash(myex) 
+@benchmark old_traverse_expr!(a, theory, 1, Int[], tmp, cache)

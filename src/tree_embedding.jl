@@ -1,6 +1,76 @@
 my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 
+function cached_inference!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
+    get!(cache, ex) do
+        if isa(ex.ex, Expr)
+            cached_inference1!(ex, cache, model, all_symbols, symbols_to_ind)
+        elseif isa(ex.ex, Number)
+            cached_inference3!(ex, cache, model, all_symbols, symbols_to_ind)
+        elseif isa(ex.ex, Symbol)
+            cached_inference2!(ex, cache, model, all_symbols, symbols_to_ind)
+        end
+    end
+end
+
+
+function cached_inference1!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
+    get!(cache, ex) do
+        if ex.head == :call
+            fun_name, args =  ex.ex.args[1], ex.args
+        elseif ex.head in all_symbols
+            fun_name = ex.head
+            args = ex.args
+        else
+            error("unknown head $(ex.head)")
+        end
+        encoding = zeros(Float32, length(all_symbols))
+        encoding[symbols_to_index[fun_name]] = 1
+        args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
+        if isa(model, ExprModel)
+            tmp = model.head_model(encoding)
+        else
+            tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+        end
+        tmp = vcat(tmp, args)
+    end
+end
+
+
+function cached_inference2!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
+    get!(cache, ex) do
+        encoding = zeros(Float32, length(all_symbols))
+        encoding[symbols_to_ind[ex.ex]] = 1
+
+        if isa(model, ExprModel)
+            tmp = model.head_model(encoding)
+            a = vcat(tmp, model.aggregation.:ψ)
+        else
+            tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+            a = vcat(tmp, model.expr_model.aggregation.:ψ)
+        end
+        return a
+    end
+end
+
+
+function cached_inference3!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
+    get!(cache, ex) do
+        encoding = zeros(Float32, length(all_symbols))
+        encoding[symbols_to_ind[:Number]] = my_sigmoid(ex.ex)
+
+        if isa(model, ExprModel)
+            tmp = model.head_model(encoding)
+            a = vcat(tmp, model.aggregation.:ψ)
+        else
+            tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+            a = vcat(tmp, model.expr_model.aggregation.:ψ)
+        end
+        return a
+    end
+end
+
+
 function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
     get!(cache, ex) do
         if ex.head == :call
@@ -67,17 +137,6 @@ _short_aggregation(::SegmentedMax, x, y) = max.(x, y)
 const const_left = [1, 0]
 const const_right = [0, 1]
 
-
-# BenchmarkTools.Trial: 22 samples with 1 evaluation.
-#  Range (min … max):  203.620 ms … 273.059 ms  ┊ GC (min … max): 0.00% … 8.27%
-#  Time  (median):     234.592 ms               ┊ GC (median):    8.48%
-#  Time  (mean ± σ):   229.846 ms ±  19.722 ms  ┊ GC (mean ± σ):  5.14% ± 4.55%
-#
-#    ▃  ▃                           █                              
-#   ▇█▁▁█▇▇▇▁▁▁▁▇▁▁▁▁▁▁▁▁▁▁▁▁▇▇▁▇▁▁▇█▁▇▇▁▇▇▁▁▁▁▁▁▁▁▁▇▁▁▁▁▁▁▁▁▁▁▁▇ ▁
-#   204 ms           Histogram: frequency by time          273 ms <
-#
-#  Memory estimate: 186.76 MiB, allocs estimate: 1543949.
 
 function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
     l = length(args)
@@ -277,7 +336,7 @@ function (m::ExprModel)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to
 end
 
 
-function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+function (m::ExprModelSimpleChains)(ex, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
     ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
     tmp = vcat(ds, zeros(Float32, 2))
     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)

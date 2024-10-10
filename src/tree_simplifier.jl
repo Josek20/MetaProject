@@ -1,3 +1,35 @@
+mutable struct ExprWithHash
+    ex::Union{Expr, Symbol, Number}
+	head::Union{Symbol, Number}
+	args::Vector
+	hash::UInt
+end
+
+
+function ExprWithHash(ex::Expr)
+	args = length(ex.args) == 3 ? ExprWithHash.(ex.args[2:end]) : ExprWithHash.(ex.args)
+	head = ex.head#SymbolWithHash(ex)
+	h = hash(hash(head), hash(args))
+	ExprWithHash(ex, head, args, h) 
+end
+
+
+function ExprWithHash(ex::Symbol)
+	args = []
+	head = ex
+	h = hash(ex)
+	ExprWithHash(ex, head, args, h) 
+end
+
+
+function ExprWithHash(ex::Number)
+	args = []
+	head = ex
+	h = hash(ex)
+	ExprWithHash(ex, head, args, h) 
+end
+
+
 mutable struct Node{E, P}
     ex::E
     rule_index::Tuple
@@ -12,7 +44,12 @@ end
 Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 Node(ex, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+# function Node(ex, rule_index, parent, depth, ee)
+#     ex_hash = ExprWithHash(ex)
+#     Node(ex_hash, rule_index, UInt64[],  parent, depth, ex_hash.hash, ee)
+# end
 
+Base.hash(e::ExprWithHash) = e.hash
 
 exp_size(node::Node) = exp_size(node.ex)
 exp_size(ex::Expr) = sum(exp_size.(ex.args))
@@ -35,6 +72,62 @@ function my_rewriter!(position::Vector{Int}, ex::Expr, rule::AbstractRule)
 end
 
 
+function my_rewriter!(position::Vector{Int}, ex::ExprWithHash, rule::AbstractRule)
+    if isempty(position)
+        return rule(ex.ex) 
+    end
+    ind = position[1]
+    next_ex = length(ex.ex.args) == 2 ? ex.args[ind] : ex.args[ind - 1] 
+    ret = my_rewriter!(position[2:end], next_ex, rule)
+    if !isnothing(ret)
+        ex.args[ind] = ExprWithHash(ret)
+    end
+    return nothing
+end
+
+
+function old_traverse_expr!(ex::ExprWithHash, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{ExprWithHash, Vector})
+    if !isa(ex.ex, Expr)
+        return
+    end
+    if haskey(caching, ex)
+        b = copy(trav_indexs)
+        append!(tmp, [(b, i) for i in caching[ex]])
+        for (ind, i) in enumerate(ex.args)
+            # Update the traversal index path with the current index
+            push!(trav_indexs, ind)
+
+            # Recursively traverse the sub-expression
+            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+
+            # After recursion, pop the last index to backtrack to the correct level
+            pop!(trav_indexs)
+        end
+    end
+    get!(caching, ex) do
+        a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex.ex) for rt in matchers)))
+        if !isempty(a)
+            b = copy(trav_indexs)
+            append!(tmp, [(b, i[1]) for i in a])
+        end
+
+        # Traverse sub-expressions
+        for (ind, i) in enumerate(ex.args)
+            # Update the traversal index path with the current index
+            push!(trav_indexs, ind)
+
+            # Recursively traverse the sub-expression
+            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+
+            # After recursion, pop the last index to backtrack to the correct level
+            pop!(trav_indexs)
+        end
+        return isempty(a) ? [] : [i[1] for i in a]
+    end
+end
+
+
+
 function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
     if !isa(ex, Expr)
         return
@@ -47,7 +140,7 @@ function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{Abst
             push!(trav_indexs, ind)
 
             # Recursively traverse the sub-expression
-            traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
 
             # After recursion, pop the last index to backtrack to the correct level
             pop!(trav_indexs)
@@ -66,7 +159,7 @@ function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{Abst
             push!(trav_indexs, ind)
 
             # Recursively traverse the sub-expression
-            traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
 
             # After recursion, pop the last index to backtrack to the correct level
             pop!(trav_indexs)
@@ -78,39 +171,62 @@ end
 
 function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
     if !isa(ex, Expr)
-        return
+        return []
     end
     get!(caching, ex) do
         a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
+        tmp3 = []
         if !isempty(a)
             b = copy(trav_indexs)
-            append!(tmp, [(b, i[1]) for i in a])
+            tmp3 = [(b, i[1]) for i in a]
         end
-
         for (ind, i) in enumerate(ex.args)
             push!(trav_indexs, ind)
-
-            traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
-
+            
+            tmp1 = traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+            
+            # @show t mp3
+            append!(tmp3, tmp1)
             pop!(trav_indexs)
         end
-        return tmp
+        return tmp3
     end
 end
 
 
-function execute(ex::Union{Expr, Number}, theory::Vector{AbstractRule}, caching::LRU{Expr, Vector})
+function execute(ex::ExprWithHash, theory::Vector{AbstractRule}, caching::LRU{ExprWithHash, Vector}) 
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
-    traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
+    old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
     # @show tmp
-    tmp = caching[ex]
+    # tmp = caching[ex]
+    for (pl, r) in tmp
+        old_ex = copy(ex.ex)
+        # if isempty(pl)
+        #     push!(res, ((pl, r), theory[r](old_ex)))
+        # else
+            # @show old_ex
+        my_rewriter!(pl, old_ex, theory[r])
+        push!(res, ((pl, r), old_ex))
+        # end
+    end
+    return res
+end
+
+
+function execute(ex::Union{Expr, Number}, theory::Vector{AbstractRule}, caching::LRU{Expr, Vector}) 
+    res = []
+    tmp = Tuple{Vector{Int}, Int}[]
+    old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
+    # @show tmp
+    # tmp = unique(caching[ex])
     for (pl, r) in tmp
         old_ex = copy(ex)
         # if isempty(pl)
         #     push!(res, ((pl, r), theory[r](old_ex)))
         # else
-            # @show old_ex
+        # @show old_ex
+        # @show pl, r
         my_rewriter!(pl, old_ex, theory[r])
         push!(res, ((pl, r), old_ex))
         # end
@@ -148,6 +264,7 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
+    # exprs = map(x->x.ex.ex, filtered_new_nodes)
     o = map(x->only(heuristic(x, cache)), exprs)
     # o = map(x->only(embed(heuristic, x)), o)
     # o = map(x->only(embed(heuristic, x[1])) + x[2].depth * 500, zip(o,filtered_new_nodes))
@@ -224,8 +341,8 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::Priority
         end
         # nodes = Node[]
         # if length(open_list) == 1
-        # @show step
-        # @show length(open_list)
+        @show step
+        @show length(open_list)
         nodes, prob = dequeue_pair!(open_list)
         step += 1
         # push!(expanded_depth, nodes.depth)
