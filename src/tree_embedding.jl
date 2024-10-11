@@ -360,7 +360,11 @@ end
 
 
 function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    ds = cached_inference!(ExprWithHash(ex), ex, cache, m, all_symbols, symbols_to_index)
+    # By switching between this 
+    # ds = cached_inference!(ExprWithHash(ex), ex, cache, m, all_symbols, symbols_to_index)
+    # and this
+    ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
+    
     tmp = vcat(ds, zeros(Float32, 2))
     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
 end
