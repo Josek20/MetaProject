@@ -45,9 +45,12 @@ function compare_two_methods(data, model, batched=64)
     cache = LRU(maxsize=50000)
     for ex in 1:batched:batched*10
         @show ex
+        anodes = map(x->MyModule.Node(ex, (0,0), ex, 0, nothing), data[ex:ex+batched])
+        # anodes = map(x->MyModule.Node(ex, (0,0), hash(ex), 0, nothing), data[ex:ex+batched])
         @time begin
             # m1 = map(x->MyModule.cached_inference!(x, cache, model, new_all_symbols, sym_enc), data[ex:ex+batched])
-            o1 = map(x->only(model(x,cache)), data[ex:ex+batched])
+            # o1 = map(x->only(model(x,cache)), data[ex:ex+batched])
+            o1 = map(x->only(model(x.ex,cache)), anodes)
             # o1 = map(x->MyModule.embed(model, x), m1)
         end
         @time begin
@@ -81,7 +84,7 @@ function compare_two_methods2(data, model)
         o3 = model(m3)
     end
 end
-# compare_two_methods(exp_data, heuristic)
+compare_two_methods(exp_data, heuristic)
 # compare_two_methods2(exp_data, heuristic)
 
 function profile_method(data, heuristic)

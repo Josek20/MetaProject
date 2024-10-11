@@ -1,4 +1,5 @@
 mutable struct ExprWithHash
+    # ex::Union{Expr, Symbol, Number}
 	head::Union{Symbol, Number}
 	args::Vector
 	hash::UInt
@@ -6,10 +7,15 @@ end
 
 
 function ExprWithHash(ex::Expr)
-	args = length(ex.args) == 3 ? ExprWithHash.(ex.args[2:end]) : ExprWithHash.(ex.args)
-	head = ex.head
+    if length(ex.args) == 3
+        head = ex.args[1]
+        args = ExprWithHash.(ex.args[2:end])
+    else
+        head = ex.head
+        args = ExprWithHash.(ex.args)
+    end
 	h = hash(hash(head), hash(args))
-	ExprWithHash(head, args, h)
+	ExprWithHash(head, args, h) 
 end
 
 
@@ -28,6 +34,7 @@ function ExprWithHash(ex::Number)
 	ExprWithHash(head, args, h) 
 end
 
+
 mutable struct Node{E, P}
     ex::E
     rule_index::Tuple
@@ -42,20 +49,19 @@ end
 Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 Node(ex, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-
-# function Node(ex, rule_index, parent, depth, ee)
+# function Node(ex, rule_index, parent, depth, ee=nothing)
 #     ex_hash = ExprWithHash(ex)
 #     Node(ex_hash, rule_index, UInt64[],  parent, depth, ex_hash.hash, ee)
 # end
-
 Base.hash(e::ExprWithHash) = e.hash
 Base.hash(e::ExprWithHash, h::UInt) = hash(e.hash, h)
 function Base.:(==)(e1::ExprWithHash, e2::ExprWithHash) 
     e1.hash != e2.hash && return(false)
     e1.head != e2.head && return(false)
     length(e1.args) != length(e2.args) && return(false)
-    all(i == j for (i,j) in zip(e1.args, a2.args))
+    all(i == j for (i,j) in zip(e1.args, e2.args))
 end
+
 
 exp_size(node::Node) = exp_size(node.ex)
 exp_size(ex::Expr) = sum(exp_size.(ex.args))
@@ -175,29 +181,29 @@ function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{Abst
 end
 
 
-function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
-    if !isa(ex, Expr)
-        return []
-    end
-    get!(caching, ex) do
-        a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
-        tmp3 = []
-        if !isempty(a)
-            b = copy(trav_indexs)
-            tmp3 = [(b, i[1]) for i in a]
-        end
-        for (ind, i) in enumerate(ex.args)
-            push!(trav_indexs, ind)
+# function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}})
+#     if !isa(ex, Expr)
+#         return []
+#     end
+#     get!(caching, ex) do
+#         a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
+#         tmp3 = []
+#         if !isempty(a)
+#             b = copy(trav_indexs)
+#             tmp3 = [(b, i[1]) for i in a]
+#         end
+#         for (ind, i) in enumerate(ex.args)
+#             push!(trav_indexs, ind)
             
-            tmp1 = traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+#             tmp1 = traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
             
-            # @show t mp3
-            append!(tmp3, tmp1)
-            pop!(trav_indexs)
-        end
-        return tmp3
-    end
-end
+#             # @show t mp3
+#             append!(tmp3, tmp1)
+#             pop!(trav_indexs)
+#         end
+#         return tmp3
+#     end
+# end
 
 
 function execute(ex::ExprWithHash, theory::Vector{AbstractRule}, caching::LRU{ExprWithHash, Vector}) 
@@ -633,10 +639,11 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         else
             push!(training_samples, new_sample)
         end
-        if isempty(depth_dict)
-            println("Error")
-            continue
-        end
+        @show length(cache), cache.hits, cache.misses, length(exp_cache), exp_cache.hits, exp_cache.misses
+        # if isempty(depth_dict)
+        #     println("Error")
+        #     continue
+        # end
     end
     data_len = length(data)
     # @save "data/training_data/training_samplesk$(data_len)_v5.jld2" training_samples

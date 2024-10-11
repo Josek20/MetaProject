@@ -14,16 +14,18 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 # end
 
 
-function cached_inference!(ex::ExprWithHash, ex_v::Expr, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::ExprWithHash, ::Expr, cache, model, all_symbols, symbols_to_ind)
     get!(cache, ex) do
-        if ex.head == :call
-            fun_name, args =  ex.head, ex.args
-        elseif ex.head in all_symbols
-            fun_name = ex.head
-            args = ex.args
-        else
-            error("unknown head $(ex.head)")
-        end
+        # if ex.head == :call
+        #     fun_name, args =  ex.head, ex.args
+        # elseif ex.head in all_symbols
+        #     fun_name = ex.head
+        #     args = ex.args
+        # else
+        #     error("unknown head $(ex.head)")
+        # end
+        args = ex.args
+        fun_name = ex.head
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_index[fun_name]] = 1
         args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
@@ -37,10 +39,10 @@ function cached_inference!(ex::ExprWithHash, ex_v::Expr, cache, model, all_symbo
 end
 
 
-function cached_inference!(ex::ExprWithHash, ex_v::Symbol, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::ExprWithHash, ::Symbol, cache, model, all_symbols, symbols_to_ind)
     get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
-        encoding[symbols_to_ind[ex.ex]] = 1
+        encoding[symbols_to_ind[ex.head]] = 1
 
         if isa(model, ExprModel)
             tmp = model.head_model(encoding)
@@ -54,8 +56,8 @@ function cached_inference!(ex::ExprWithHash, ex_v::Symbol, cache, model, all_sym
 end
 
 
-function cached_inference!(ex::ExprWithHash, ex_v::Number, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex.ex) do
+function cached_inference!(ex::ExprWithHash, ::Number, cache, model, all_symbols, symbols_to_ind)
+    get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex.ex)
 
@@ -156,7 +158,20 @@ end
 
 function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, all_symbols, symbols_to_ind)
     l = length(args)
-    my_tmp = [cached_inference!(a, a.ex, cache, model, all_symbols, symbols_to_ind) for a in args]
+    # my_tmp = [cached_inference!(a, i, cache, model, all_symbols, symbols_to_ind) for (a,i) in zip(args, my_args)]
+    my_tmp = []
+    for i in args
+        if symbols_to_ind[i] <= 18
+            pl = cached_inference!(i, :Expr, cache, model, all_symbols, symbols_to_ind)
+        else
+            if isa(i.head, :Symbol)
+                pl = cached_inference!(i, :Symbol, cache, model, all_symbols, symbols_to_ind)
+            else
+                pl = cached_inference!(i, :Number, cache, model, all_symbols, symbols_to_ind)
+            end
+        end
+        push!(my_tmp, pl)
+    end
     my_args = hcat(my_tmp...)
     tmp = vcat(my_args, Flux.onehotbatch(1:l, 1:2))
     if isa(model, ExprModel)
@@ -359,9 +374,20 @@ end
 # end
 
 
-function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+function (m::ExprModelSimpleChains)(ex::Expr, ::Symbol, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
     # By switching between this 
-    # ds = cached_inference!(ExprWithHash(ex), ex, cache, m, all_symbols, symbols_to_index)
+    ds = cached_inference!(ExprWithHash(ex), :Expr, cache, m, all_symbols, symbols_to_index)
+    # and this
+    # ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
+    
+    tmp = vcat(ds, zeros(Float32, 2))
+    m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
+end
+
+
+function (m::ExprModelSimpleChains)(ex::Expr, ::Number, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    # By switching between this 
+    # ds = cached_inference!(ExprWithHash(ex), :Expr, cache, m, all_symbols, symbols_to_index)
     # and this
     ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
     
