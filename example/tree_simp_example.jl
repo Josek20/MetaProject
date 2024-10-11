@@ -305,12 +305,13 @@ else
             # if isnothing(sample.training_data) 
             #     continue
             # end
-            sa, grad = Flux.Zygote.withgradient(pc) do
-                # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                # MyModule.loss(heuristic, big_vector, hp, hn)
-                MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                # MyModule.loss(heuristic, j[3], j[4], j[5])
-            end
+            valgrad!($g, $schain, $x, $p)
+            # sa, grad = Flux.Zygote.withgradient(pc) do
+            #     # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            #     # MyModule.loss(heuristic, big_vector, hp, hn)
+            #     MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            #     # MyModule.loss(heuristic, j[3], j[4], j[5])
+            # end
             if any(g->any(isinf, g) || any(isnan, g), grad)
                 BSON.@save "models/inf_grad_heuristic1.bson" heuristic
                 JLD2.@save "data/training_data/training_samples_inf_grad1.jld2" training_samples

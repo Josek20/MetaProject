@@ -1,20 +1,20 @@
 my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 
-function cached_inference!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
-        if isa(ex.ex, Expr)
-            cached_inference1!(ex, cache, model, all_symbols, symbols_to_ind)
-        elseif isa(ex.ex, Number)
-            cached_inference3!(ex, cache, model, all_symbols, symbols_to_ind)
-        elseif isa(ex.ex, Symbol)
-            cached_inference2!(ex, cache, model, all_symbols, symbols_to_ind)
-        end
-    end
-end
+# function cached_inference!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
+#     get!(cache, ex) do
+#         if isa(ex.ex, Expr)
+#             cached_inference1!(ex, cache, model, all_symbols, symbols_to_ind)
+#         elseif isa(ex.ex, Number)
+#             cached_inference3!(ex, cache, model, all_symbols, symbols_to_ind)
+#         elseif isa(ex.ex, Symbol)
+#             cached_inference2!(ex, cache, model, all_symbols, symbols_to_ind)
+#         end
+#     end
+# end
 
 
-function cached_inference1!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::ExprWithHash, ex_v::Expr, cache, model, all_symbols, symbols_to_ind)
     get!(cache, ex) do
         if ex.head == :call
             fun_name, args =  ex.ex.args[1], ex.args
@@ -37,7 +37,7 @@ function cached_inference1!(ex::ExprWithHash, cache, model, all_symbols, symbols
 end
 
 
-function cached_inference2!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::ExprWithHash, ex_v::Symbol, cache, model, all_symbols, symbols_to_ind)
     get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex.ex]] = 1
@@ -54,8 +54,8 @@ function cached_inference2!(ex::ExprWithHash, cache, model, all_symbols, symbols
 end
 
 
-function cached_inference3!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+function cached_inference!(ex::ExprWithHash, ex_v::Number, cache, model, all_symbols, symbols_to_ind)
+    get!(cache, ex.ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex.ex)
 
@@ -141,6 +141,22 @@ const const_right = [0, 1]
 function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
     l = length(args)
     my_tmp = [cached_inference!(a, cache, model, all_symbols, symbols_to_ind) for a in args]
+    my_args = hcat(my_tmp...)
+    tmp = vcat(my_args, Flux.onehotbatch(1:l, 1:2))
+    if isa(model, ExprModel)
+        tmp = model.joint_model(tmp)
+        a = model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
+    else
+        tmp = model.expr_model.joint_model(tmp, model.model_params.joint_model)
+        a = model.expr_model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
+    end
+    return a[:,1]
+end
+
+
+function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, all_symbols, symbols_to_ind)
+    l = length(args)
+    my_tmp = [cached_inference!(a, a.ex, cache, model, all_symbols, symbols_to_ind) for a in args]
     my_args = hcat(my_tmp...)
     tmp = vcat(my_args, Flux.onehotbatch(1:l, 1:2))
     if isa(model, ExprModel)
@@ -336,7 +352,14 @@ function (m::ExprModel)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to
 end
 
 
-function (m::ExprModelSimpleChains)(ex, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ex, ex.ex, cache, m, all_symbols, symbols_to_index)
+    tmp = vcat(ds, zeros(Float32, 2))
+    m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
+end
+
+
+function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
     ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
     tmp = vcat(ds, zeros(Float32, 2))
     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
@@ -388,4 +411,16 @@ function check_loss(heuristics, data, hp, hn)
     fl1 = heuristic_loss(heuristics, data, hp, hn)
     fl2 = loss(heuristics, data, hp, hn)
     @assert fl1 == fl2
+end
+
+
+function loss(heuristic::ExprModel, params::InitExprModelDense, big_vector, hp, hn, surrogate::Function = logistic)
+    o = heuristic(big_vector, params)
+    p = (o * hp) .* hn
+
+    diff = p - o[1, :] .* hn
+    filtered_diff = filter(!=(0), diff)
+    # return sum(log.(1 .+ exp.(filtered_diff)))
+    # return mean(softmax(filtered_diff))
+    return sum(surrogate.(filtered_diff))
 end

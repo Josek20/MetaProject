@@ -136,7 +136,8 @@ end
 # ex = :(min((((v0 - v1) + 119) / 8) * 8 + v1, v0 + 112) <= v0 + 112)
 # ex = myex
 using ProfileCanvas
-ProfileCanvas.@profview begin
+# ProfileCanvas.@profview begin
+# @benchmark begin
     
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
@@ -167,9 +168,9 @@ enqueue!(open_list, root, only(o))
 # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
 # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
 # @benchmark train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache)  
-MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 60, expansion_history, theory, variable_names, cache, exp_cache)
+MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 60, expansion_history, theory, variable_names, cache, exp_cache, 1)
 @show length(soltree)
-end
+# end
 
 # using Plots
 # histogram(bmark1)
@@ -203,7 +204,7 @@ end
 # println(bmark1)
 # println(bmark2)
 # println("Have successfuly finished bulding simplification tree!")
-# smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
+smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
 # smallest_nodes = MyModule.extract_smallest_terminal_node1(soltree, close_list)
 
 # # for (ind, (i, cof)) in enumerate(open_list)
@@ -213,7 +214,7 @@ end
 # simplified_expression = smallest_node.ex
 # println("Simplified expression: $(smallest_node.ex)")
 
-# proof_vector, depth_dict, big_vector, hp, hn, node_proof_vector = MyModule.extract_rules_applied(smallest_node, soltree)
+big_vector, hp, hn, node_proof_vector = MyModule.extract_training_data(smallest_node, soltree)
 
 # println("Proof vector: $proof_vector")
 

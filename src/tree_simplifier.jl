@@ -49,7 +49,9 @@ Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode)
 #     Node(ex_hash, rule_index, UInt64[],  parent, depth, ex_hash.hash, ee)
 # end
 
-Base.hash(e::ExprWithHash) = e.hash
+# Base.hash(e::ExprWithHash) = e.hash
+# Base.hash(e::ExprWithHash, h::UInt) = e.hash
+# Base.:(==)(ms1::ExprWithHash, ms2::ExprWithHash) = ms1.ex == ms2.ex#ms1.a == ms2.a && ms1.b == ms2.b
 
 exp_size(node::Node) = exp_size(node.ex)
 exp_size(ex::Expr) = sum(exp_size.(ex.args))
@@ -255,7 +257,7 @@ end
 
 
 # function expand_node_new!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, theory::Vector, variable_names::Dict) 
-function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache) 
+function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, alpha=0.9) 
     ex = parent.ex
     succesors = execute(ex, theory, exp_cache)
     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
@@ -263,9 +265,9 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
-    exprs = map(x->x.ex, filtered_new_nodes)
     # exprs = map(x->x.ex.ex, filtered_new_nodes)
-    o = map(x->only(heuristic(x, cache)), exprs)
+    exprs = map(x->x.ex, filtered_new_nodes)
+    o = map(x->alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
     # o = map(x->only(embed(heuristic, x)), o)
     # o = map(x->only(embed(heuristic, x[1])) + x[2].depth * 500, zip(o,filtered_new_nodes))
     
@@ -329,7 +331,7 @@ end
 # end
 
 
-function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
+function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, alpha)
     step = 0
     reached_goal = false
     epsilon = 0.05
@@ -341,8 +343,8 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::Priority
         end
         # nodes = Node[]
         # if length(open_list) == 1
-        @show step
-        @show length(open_list)
+        # @show step
+        # @show length(open_list)
         nodes, prob = dequeue_pair!(open_list)
         step += 1
         # push!(expanded_depth, nodes.depth)
@@ -368,11 +370,11 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::Priority
         #     #     step += 1
         #     # end
         # end
-        if nodes.depth >= max_depth
-            continue
-        end
+        # if nodes.depth >= max_depth
+        #     continue
+        # end
         # @show nodes
-        reached_goal = expand_node!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache)
+        reached_goal = expand_node!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, alpha)
 
         if reached_goal
             return true 
@@ -559,7 +561,7 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
 end
 
 
-function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
+function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, alpha)
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
@@ -575,7 +577,7 @@ function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_s
     soltree[root.node_id] = root
     enqueue!(open_list, root, only(o))
 
-    reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
+    reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, alpha)
     println("Have successfuly finished bulding simplification tree!")
     @show length(soltree)
     smallest_node = extract_smallest_terminal_node(soltree, close_list)
@@ -613,13 +615,13 @@ function isbetter(a::TrainingSample, b::TrainingSample)
 end
 
 
-function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)  
+function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, alpha)  
     for (index, i) in enumerate(data)
         println("Index: $index")
         # if length(training_samples) > index && training_samples[index].saturated
         #     continue
         # end
-        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = initialize_tree_search(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = initialize_tree_search(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, alpha)
         println("Saturated: $saturated")
         new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, i)
         if length(training_samples) >= index 
@@ -635,30 +637,4 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
     data_len = length(data)
     # @save "data/training_data/training_samplesk$(data_len)_v5.jld2" training_samples
     return training_samples
-end
-
-
-function apply_proof_to_expr(ex, proof_vector, theory)
-    println("Root: $ex")
-    for rule_index in proof_vector
-        rule_applied = theory[rule_index]
-        ex = collect(execute(ex, [rule_applied]))[1]
-        println("$ex")
-    end
-end
-
-
-function plot_reduction_stats(df, epochs, n_eq)
-    # a = combine(groupby(df, "Epoch"), "Length Reduced"  => mean => "Average Reduction")
-
-    plot() 
-    for eq_id in 1:n_eq
-        eq_data = df[df[!,"Id"] .== eq_id, :]
-        plot!(eq_data[!, "Epoch"], eq_data[!, "Length Reduced"],label="Equation $eq_id" )
-    end
-    xlabel!("Epoch")
-    ylabel!("Length Reduction")
-    title!("Neural Network Simplification Performance")
-    # legend(:topright)
-    display(plot())
 end
