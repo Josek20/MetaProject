@@ -1,5 +1,4 @@
 mutable struct ExprWithHash
-    ex::Union{Expr, Symbol, Number}
 	head::Union{Symbol, Number}
 	args::Vector
 	hash::UInt
@@ -8,9 +7,9 @@ end
 
 function ExprWithHash(ex::Expr)
 	args = length(ex.args) == 3 ? ExprWithHash.(ex.args[2:end]) : ExprWithHash.(ex.args)
-	head = ex.head#SymbolWithHash(ex)
+	head = ex.head
 	h = hash(hash(head), hash(args))
-	ExprWithHash(ex, head, args, h) 
+	ExprWithHash(head, args, h)
 end
 
 
@@ -18,7 +17,7 @@ function ExprWithHash(ex::Symbol)
 	args = []
 	head = ex
 	h = hash(ex)
-	ExprWithHash(ex, head, args, h) 
+	ExprWithHash(head, args, h) 
 end
 
 
@@ -26,9 +25,8 @@ function ExprWithHash(ex::Number)
 	args = []
 	head = ex
 	h = hash(ex)
-	ExprWithHash(ex, head, args, h) 
+	ExprWithHash(head, args, h) 
 end
-
 
 mutable struct Node{E, P}
     ex::E
@@ -44,14 +42,20 @@ end
 Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 Node(ex, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+
 # function Node(ex, rule_index, parent, depth, ee)
 #     ex_hash = ExprWithHash(ex)
 #     Node(ex_hash, rule_index, UInt64[],  parent, depth, ex_hash.hash, ee)
 # end
 
-# Base.hash(e::ExprWithHash) = e.hash
-# Base.hash(e::ExprWithHash, h::UInt) = e.hash
-# Base.:(==)(ms1::ExprWithHash, ms2::ExprWithHash) = ms1.ex == ms2.ex#ms1.a == ms2.a && ms1.b == ms2.b
+Base.hash(e::ExprWithHash) = e.hash
+Base.hash(e::ExprWithHash, h::UInt) = hash(e.hash, h)
+function Base.:(==)(e1::ExprWithHash, e2::ExprWithHash) 
+    e1.hash != e2.hash && return(false)
+    e1.head != e2.head && return(false)
+    length(e1.args) != length(e2.args) && return(false)
+    all(i == j for (i,j) in zip(e1.args, a2.args))
+end
 
 exp_size(node::Node) = exp_size(node.ex)
 exp_size(ex::Expr) = sum(exp_size.(ex.args))

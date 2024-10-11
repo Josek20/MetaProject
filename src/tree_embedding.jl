@@ -17,7 +17,7 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 function cached_inference!(ex::ExprWithHash, ex_v::Expr, cache, model, all_symbols, symbols_to_ind)
     get!(cache, ex) do
         if ex.head == :call
-            fun_name, args =  ex.ex.args[1], ex.args
+            fun_name, args =  ex.head, ex.args
         elseif ex.head in all_symbols
             fun_name = ex.head
             args = ex.args
@@ -352,15 +352,15 @@ function (m::ExprModel)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to
 end
 
 
-function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    ds = cached_inference!(ex, ex.ex, cache, m, all_symbols, symbols_to_index)
-    tmp = vcat(ds, zeros(Float32, 2))
-    m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
-end
+# function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+#     ds = cached_inference!(ex, ex.ex, cache, m, all_symbols, symbols_to_index)
+#     tmp = vcat(ds, zeros(Float32, 2))
+#     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
+# end
 
 
 function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
+    ds = cached_inference!(ExprWithHash(ex), ex, cache, m, all_symbols, symbols_to_index)
     tmp = vcat(ds, zeros(Float32, 2))
     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
 end
