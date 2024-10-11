@@ -126,4 +126,17 @@ function profile_method(data, heuristic)
     # pprof()
 end
 
+
+function comp_prec_cache(heuristic, data)
+    @benchmark begin                                                  
+    cache = LRU(maxsize=100000)                                       
+    map(x->heuristic(x,typeof(:123), cache), data[1:1000])       
+    @show length(cache), cache.hits, cache.misses                     
+    end
+    @benchmark begin                                                  
+    cache = LRU(maxsize=100000)                                       
+    map(x->heuristic(x,typeof(:v0), cache), data[1:1000])       
+    @show length(cache), cache.hits, cache.misses                     
+    end
+end
 # profile_method(exp_data, heuristic) 
