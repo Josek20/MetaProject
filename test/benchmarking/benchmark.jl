@@ -3,17 +3,14 @@ using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataStructures
 using MyModule.LRUCache
-using MyModule.SimpleChains
 using MyModule.Metatheory
 using BenchmarkTools
 using Serialization
 using Profile
 using PProf
+using DataFrames
 using ProfileCanvas
-# using Tar
-# using SimpleChains
-
-
+using SimpleChains
 
 
 theory = @theory a b c d x y begin
@@ -216,6 +213,9 @@ theory = @theory a b c d x y begin
 end
 
 
+
+
+
 hidden_size = 128
 heuristic = ExprModel(
     Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.relu), Dense(hidden_size,hidden_size)),
@@ -223,6 +223,12 @@ heuristic = ExprModel(
     Flux.Chain(Dense(2*hidden_size + 2, hidden_size,Flux.relu), Dense(hidden_size, hidden_size)),
     Flux.Chain(Dense(hidden_size, hidden_size,Flux.relu), Dense(hidden_size, 1))
     )
+
+# made_simple_chain(model::BagModel) = BagModel(made_simple_chain(model.im), model.a, made_simple_chain(model.bm))
+# made_simple_chain(model::ProductModel) = ProductModel(map(made_simple_chain, model.ms), made_simple_chain(model.m))
+# made_simple_chain(model::ArrayModel) = ArrayModel(made_simple_chain(model.m))
+# made_simple_chain(m::Flux.Chain) = SimpleChain....
+# made_simple_chain(m::Dense) = SimpleDense
 
 heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
     SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
@@ -232,15 +238,12 @@ heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
 ))
 
 exp_data = Vector()
-benchmarking_data_path = joinpath(@__DIR__, "..", "..", "data", "training_data", "benchmarking.bin")
-open(benchmarking_data_path, "r") do file
+open("benchmarking.bin", "r") do file
     data = deserialize(file)
     append!(exp_data, data)
 end
 
-test_data_path = joinpath(@__DIR__, "..", "..", "data", "neural_rewrter", "test.json")
-
-# test_data_path = "./data/neural_rewrter/test.json"
+test_data_path = "./data/neural_rewrter/test.json"
 test_data = load_data(test_data_path)
 test_data = preprosses_data_to_expressions(test_data)
 
@@ -250,12 +253,9 @@ function compare_two_methods(data, model, batched=64)
     cache = LRU(maxsize=50000)
     for ex in 1:batched:batched*10
         @show ex
-        anodes = map(x->MyModule.Node(ex, (0,0), ex, 0, nothing), data[ex:ex+batched])
-        # anodes = map(x->MyModule.Node(ex, (0,0), hash(ex), 0, nothing), data[ex:ex+batched])
         @time begin
             # m1 = map(x->MyModule.cached_inference!(x, cache, model, new_all_symbols, sym_enc), data[ex:ex+batched])
-            # o1 = map(x->only(model(x,cache)), data[ex:ex+batched])
-            o1 = map(x->only(model(x.ex,cache)), anodes)
+            o1 = map(x->only(model(x,cache)), data[ex:ex+batched])
             # o1 = map(x->MyModule.embed(model, x), m1)
         end
         @time begin
@@ -293,7 +293,7 @@ end
 # compare_two_methods2(exp_data, heuristic)
 
 function profile_method(data, heuristic)
-    # ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
+    ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
     # ex = train_data[1]
     # ex = myex
     # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
@@ -311,17 +311,23 @@ function profile_method(data, heuristic)
     # encodings_buffer = Dict{UInt64, ProductNode}()
     # @show ex
     # soltree[root.node_id] = root
-    cache = LRU(maxsize=100000)
-    exp_cache = LRU{Expr, Vector}(maxsize=20000)
     # a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
     # hp = MyModule.embed(heuristic, a)
     # enqueue!(open_list, root, only(hp))
     # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
     # ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
+    cache = LRU(maxsize=100000)
+    exp_cache = LRU{Expr, Vector}(maxsize=20000)
     training_samples = Vector{TrainingSample}()
-    # @show ex
-    # ProfileCanvas.@profview train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache)  
-    @benchmark train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache,1)  
+
+    ProfileCanvas.@profview train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache, 1)  
+    @benchmark begin 
+        cache = LRU(maxsize=100_000)
+        exp_cache = LRU{Expr, Vector}(maxsize=20000)
+        training_samples = Vector{TrainingSample}()
+        train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache, 1)  
+    end
+    # @benchmark train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache)  
     # @time MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 60, expansion_history, theory, variable_names, cache, exp_cache)
     # @show length(soltree)
     # @show cache.hits
@@ -332,17 +338,16 @@ function profile_method(data, heuristic)
     # pprof()
 end
 
-
-function comp_prec_cache(heuristic, data)
-    @benchmark begin                                                  
-    cache = LRU(maxsize=100000)                                       
-    map(x->heuristic(x, cache), $data[1:1000])       
-    @show length(cache), cache.hits, cache.misses                     
-    end
-    @benchmark begin                                                  
-    cache = LRU(maxsize=100000)                                       
-    map(x->heuristic(x,typeof(:v0), cache), $data[1:1000])       
-    @show length(cache), cache.hits, cache.misses                     
-    end
+function profile_method(data, heuristic)
+    df = map(enumerate(data[1:20])) do (ex_id, ex)
+        cache = LRU(maxsize=100_000)
+        exp_cache = LRU{Expr, Vector}(maxsize=20000)
+        training_samples = Vector{TrainingSample}()
+        stats = @timed train_heuristic!(heuristic1, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache, 1)  
+        (;time = stats.time, ic_hits = cache.hits, ic_misses = cache.misses, exp_hits = exp_cache.hits, exp_misses = exp_cache.misses, gctime = stats.gctime)
+    end |> DataFrame
+    CSV.write("profile_results.csv", df)
 end
-profile_method(exp_data, heuristic) 
+
+
+# profile_method(exp_data, heuristic) 

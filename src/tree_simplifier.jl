@@ -69,7 +69,7 @@ end
 
 
 exp_size(node::Node) = exp_size(node.ex)
-exp_size(ex::Expr) = sum(exp_size.(ex.args))
+exp_size(ex::Expr) = sum(exp_size(a) for a in ex.args)
 exp_size(ex::Symbol) = 1f0
 exp_size(ex::Int) = 1f0
 exp_size(ex::Float64) = 1f0
