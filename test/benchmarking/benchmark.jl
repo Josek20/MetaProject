@@ -237,16 +237,8 @@ heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
     SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
 ))
 
-exp_data = Vector()
-open("benchmarking.bin", "r") do file
-    data = deserialize(file)
-    append!(exp_data, data)
-end
 
-test_data_path = "./data/neural_rewrter/test.json"
-test_data = load_data(test_data_path)
-test_data = preprosses_data_to_expressions(test_data)
-
+exp_data = deserialize("benchmarking.bin")
 
 
 function compare_two_methods(data, model, batched=64)
@@ -338,7 +330,7 @@ function profile_method(data, heuristic)
     # pprof()
 end
 
-function profile_method(data, heuristic)
+function pevnaks_profile_method(data, heuristic)
     df = map(enumerate(data[1:20])) do (ex_id, ex)
         cache = LRU(maxsize=100_000)
         exp_cache = LRU{Expr, Vector}(maxsize=20000)
