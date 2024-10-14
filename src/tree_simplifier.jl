@@ -11,8 +11,13 @@ function ExprWithHash(ex::Expr)
         head = ex.args[1]
         args = ExprWithHash.(ex.args[2:end])
     else
-        head = ex.head
-        args = ExprWithHash.(ex.args)
+        if ex.head == :call
+            head = ex.args[1]
+            args = [ExprWithHash(ex.args[2])]
+        else
+            head = ex.head
+            args = ExprWithHash.(ex.args)
+        end
     end
 	h = hash(hash(head), hash(args))
 	ExprWithHash(head, args, h) 

@@ -14,7 +14,8 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 # end
 
 
-function cached_inference!(ex::ExprWithHash, ::Expr, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::ExprWithHash, ::Type{Expr}, cache, model, all_symbols, symbols_to_ind)
+    # @show ex.head
     get!(cache, ex) do
         # if ex.head == :call
         #     fun_name, args =  ex.head, ex.args
@@ -39,7 +40,7 @@ function cached_inference!(ex::ExprWithHash, ::Expr, cache, model, all_symbols, 
 end
 
 
-function cached_inference!(ex::ExprWithHash, ::Symbol, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::ExprWithHash, ::Type{Symbol}, cache, model, all_symbols, symbols_to_ind)
     get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex.head]] = 1
@@ -56,10 +57,10 @@ function cached_inference!(ex::ExprWithHash, ::Symbol, cache, model, all_symbols
 end
 
 
-function cached_inference!(ex::ExprWithHash, ::Number, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(ex::ExprWithHash, ::Type{Int}, cache, model, all_symbols, symbols_to_ind)
     get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
-        encoding[symbols_to_ind[:Number]] = my_sigmoid(ex.ex)
+        encoding[symbols_to_ind[:Number]] = my_sigmoid(ex.head)
 
         if isa(model, ExprModel)
             tmp = model.head_model(encoding)
@@ -161,13 +162,18 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
     # my_tmp = [cached_inference!(a, i, cache, model, all_symbols, symbols_to_ind) for (a,i) in zip(args, my_args)]
     my_tmp = []
     for i in args
-        if symbols_to_ind[i] <= 18
-            pl = cached_inference!(i, :Expr, cache, model, all_symbols, symbols_to_ind)
+        # @show i
+        if isa(i.head, Symbol) && symbols_to_ind[i.head] <= 18
+            # @show i.head
+            # println("new expr symbol")
+            pl = cached_inference!(i, typeof(:(a-b)), cache, model, all_symbols, symbols_to_ind)
         else
-            if isa(i.head, :Symbol)
-                pl = cached_inference!(i, :Symbol, cache, model, all_symbols, symbols_to_ind)
+            if isa(i.head, Symbol)
+                # println("new expr symbol")
+                pl = cached_inference!(i, typeof(:v0), cache, model, all_symbols, symbols_to_ind)
             else
-                pl = cached_inference!(i, :Number, cache, model, all_symbols, symbols_to_ind)
+                # println("new expr number")
+                pl = cached_inference!(i, typeof(:0), cache, model, all_symbols, symbols_to_ind)
             end
         end
         push!(my_tmp, pl)
@@ -367,6 +373,13 @@ function (m::ExprModel)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to
 end
 
 
+function (m::ExprModel)(ex::Expr,::Type{Symbol}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ExprWithHash(ex), typeof(ex), cache, m, all_symbols, symbols_to_index)
+    tmp = vcat(ds, zeros(Float32, 2))
+    m.heuristic(m.joint_model(tmp))
+end
+
+
 # function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
 #     ds = cached_inference!(ex, ex.ex, cache, m, all_symbols, symbols_to_index)
 #     tmp = vcat(ds, zeros(Float32, 2))
@@ -376,7 +389,8 @@ end
 
 function (m::ExprModelSimpleChains)(ex::Expr, ::Type{Symbol}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
     # By switching between this 
-    ds = cached_inference!(ExprWithHash(ex), :Expr, cache, m, all_symbols, symbols_to_index)
+    # println("computing expr_with_hash1")
+    ds = cached_inference!(ExprWithHash(ex), typeof(ex), cache, m, all_symbols, symbols_to_index)
     # and this
     # ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
     # @show ::Symbol
@@ -386,19 +400,11 @@ function (m::ExprModelSimpleChains)(ex::Expr, ::Type{Symbol}, cache, all_symbols
 end
 
 
-function (m::ExprModelSimpleChains)(ex::Expr, ::Type{Int64}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    # By switching between this 
-    # ds = cached_inference!(ExprWithHash(ex), :Expr, cache, m, all_symbols, symbols_to_index)
-    # and this
+function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
     ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
-    # println("Number")
     tmp = vcat(ds, zeros(Float32, 2))
     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
 end
-# function embed(m::ExprModel, ds::Vector)
-#     tmp = vcat(ds, zeros(Float32, 2))
-#     m.heuristic(m.joint_model(tmp))
-# end
 
 
 embed(m::ExprModel, ds::Missing) = missing

@@ -15,7 +15,7 @@ using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataFrames
 using MyModule.LRUCache
-using MyModule.SimpleChains
+# using MyModule.SimpleChains
 using Revise
 using StatsBase
 using CSV
@@ -233,19 +233,24 @@ theory = @theory a b c d x y begin
 end
 
 hidden_size = 128
-heuristic = MyModule.ExprModelSimpleChains(ExprModel(
-    SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
+# heuristic = MyModule.ExprModelSimpleChains(ExprModel(
+#     SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
+#     Mill.SegmentedSum(hidden_size),
+#     SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
+#     SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
+# ))
+heuristic = ExprModel(
+    Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.relu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSum(hidden_size),
-    SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
-    SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
-))
+    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,Flux.relu), Dense(hidden_size, hidden_size)),
+    Flux.Chain(Dense(hidden_size, hidden_size,Flux.relu), Dense(hidden_size, 1))
+    )
+pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 
-# pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
-
-epochs = 10
+epochs = 5
 optimizer = ADAM()
-# training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
-training_samples = Vector{TrainingSample}()
+global training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
+# training_samples = Vector{TrainingSample}()
 max_steps = 1000
 max_depth = 60
 n = 1000
@@ -277,10 +282,12 @@ else
     loss_stats = []
     proof_stats = []
     # stp = div(n, number_of_workers)
-    # batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
+    batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
     dt = 1
     exp_cache = LRU{Expr, Vector}(maxsize=100000)
     cache = LRU(maxsize=1000000)
+    # global some_alpha = 1
+    some_alpha = 1
     for ep in 1:epochs 
         empty!(cache)
 
@@ -288,30 +295,29 @@ else
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Epcoh $ep")
         println("Training===========================================")
-        # training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names), collect(1:number_of_workers))
-        train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache)
+        # global training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, some_alpha), collect(1:number_of_workers))
+        train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, some_alpha)
         # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
-        
-        # ltmp = []
+        some_alpha -= 0.1
+        ltmp = []
         # @show training_samples
         # @assert 0 == 1
         # MyModule.test_expr_embedding(heuristic, training_samples[1:n], theory, symbols_to_index, all_symbols, variable_names)
 
-        # cat_samples = vcat(training_samples...)
+        cat_samples = vcat(training_samples...)
         # for sample in training_samples
         for i in 1:100
-            sample = StatsBase.sample(training_samples)
+            sample = StatsBase.sample(cat_samples)
             # for j in m_nodes
             # if isnothing(sample.training_data) 
             #     continue
             # end
-            valgrad!($g, $schain, $x, $p)
-            # sa, grad = Flux.Zygote.withgradient(pc) do
-            #     # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-            #     # MyModule.loss(heuristic, big_vector, hp, hn)
-            #     MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
-            #     # MyModule.loss(heuristic, j[3], j[4], j[5])
-            # end
+            sa, grad = Flux.Zygote.withgradient(pc) do
+                # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                # MyModule.loss(heuristic, big_vector, hp, hn)
+                MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
+                # MyModule.loss(heuristic, j[3], j[4], j[5])
+            end
             if any(g->any(isinf, g) || any(isnan, g), grad)
                 BSON.@save "models/inf_grad_heuristic1.bson" heuristic
                 JLD2.@save "data/training_data/training_samples_inf_grad1.jld2" training_samples
@@ -323,22 +329,22 @@ else
             Flux.update!(optimizer, pc, grad)
             # end
         end
-        # for sample in cat_samples
-        #     sa = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
-        #     push!(ltmp, sa)
-        # end
+        for sample in cat_samples
+            sa = MyModule.loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            push!(ltmp, sa)
+        end
         #
         # println("Testing===========================================")
         # # length_reduction, proofs, simp_expressions = test_heuristic(heuristic, train_data[1:n], max_steps, max_depth, variable_names, theory)
         # # push!(stats, simp_expressions)
-        # push!(stats, [i.expression for i in cat_samples])
-        # push!(proof_stats, [i.proof for i in cat_samples])
-        # push!(loss_stats, ltmp)
+        push!(stats, [i.expression for i in cat_samples])
+        push!(proof_stats, [i.proof for i in cat_samples])
+        push!(loss_stats, ltmp)
     end
     # BSON.@save "models/tree_search_heuristic.bson" heuristic
     # CSV.write("stats/data100.csv", df)
 end
-@assert 0 == 1
+# @assert 0 == 1
 for i in 1:length(stats[1])
     tmp = Any[myex]
     for j in 1:epochs
@@ -353,7 +359,7 @@ for i in 1:length(proof_stats[1])
     end
     push!(df2, tmp)
 end
-r = "_manual_version"
+r = "_dist_version7"
 CSV.write("stats/new_theory_epoch_exp_progress$r.csv", df1)
 CSV.write("stats/new_theory_epoch_proof_progress$r.csv", df2)
 using Plots
