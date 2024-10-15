@@ -366,7 +366,7 @@ function embed(m::ExprModel, ds::BagNode)
 end
 # cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
 
-function (m::ExprModel)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+function (m::ExprModel)(ex::Union{Expr, Int}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
     ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
     tmp = vcat(ds, zeros(Float32, 2))
     m.heuristic(m.joint_model(tmp))

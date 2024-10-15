@@ -76,6 +76,16 @@ exp_size(ex::Float64) = 1f0
 exp_size(ex::Float32) = 1f0
 
 
+function exp_size(ex::Union{Expr, Symbol, Int}, size_cache)
+    get!(size_cache, ex) do
+        if isa(ex, Symbol) || isa(ex, Number)
+            return 1f0
+        end
+        return sum(exp_size(a, size_cache) for a in ex.args)
+    end
+end
+
+
 function my_rewriter!(position::Vector{Int}, ex::Expr, rule::AbstractRule)
     if isempty(position)
         return rule(ex) 
@@ -144,7 +154,6 @@ function old_traverse_expr!(ex::ExprWithHash, matchers::Vector{AbstractRule}, tr
 end
 
 
-
 function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
     if !isa(ex, Expr)
         return
@@ -186,6 +195,46 @@ function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{Abst
 end
 
 
+function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{RewriteRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
+    if !isa(ex, Expr)
+        return
+    end
+    if haskey(caching, ex)
+        b = copy(trav_indexs)
+        append!(tmp, [(b, i) for i in caching[ex]])
+        for (ind, i) in enumerate(ex.args)
+            # Update the traversal index path with the current index
+            push!(trav_indexs, ind)
+
+            # Recursively traverse the sub-expression
+            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+
+            # After recursion, pop the last index to backtrack to the correct level
+            pop!(trav_indexs)
+        end
+    end
+    get!(caching, ex) do
+        a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
+        if !isempty(a)
+            b = copy(trav_indexs)
+            append!(tmp, [(b, i[1]) for i in a])
+        end
+
+        # Traverse sub-expressions
+        for (ind, i) in enumerate(ex.args)
+            # Update the traversal index path with the current index
+            push!(trav_indexs, ind)
+
+            # Recursively traverse the sub-expression
+            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+
+            # After recursion, pop the last index to backtrack to the correct level
+            pop!(trav_indexs)
+        end
+        return isempty(a) ? [] : [i[1] for i in a]
+    end
+end
+
 # function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}})
 #     if !isa(ex, Expr)
 #         return []
@@ -215,17 +264,14 @@ function execute(ex::ExprWithHash, theory::Vector{AbstractRule}, caching::LRU{Ex
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
     old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
-    # @show tmp
-    # tmp = caching[ex]
     for (pl, r) in tmp
         old_ex = copy(ex.ex)
-        # if isempty(pl)
-        #     push!(res, ((pl, r), theory[r](old_ex)))
-        # else
-            # @show old_ex
-        my_rewriter!(pl, old_ex, theory[r])
-        push!(res, ((pl, r), old_ex))
-        # end
+        o = my_rewriter!(pl, old_ex, theory[r])
+        if isnothing(o)
+            push!(res, ((pl, r), old_ex))
+        else
+            push!(res, ((pl, r), o))
+        end
     end
     return res
 end
@@ -235,21 +281,35 @@ function execute(ex::Union{Expr, Number}, theory::Vector{AbstractRule}, caching:
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
     old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
-    # @show tmp
-    # tmp = unique(caching[ex])
     for (pl, r) in tmp
         old_ex = copy(ex)
-        # if isempty(pl)
-        #     push!(res, ((pl, r), theory[r](old_ex)))
-        # else
-        # @show old_ex
-        # @show pl, r
-        my_rewriter!(pl, old_ex, theory[r])
-        push!(res, ((pl, r), old_ex))
-        # end
+        o = my_rewriter!(pl, old_ex, theory[r])
+        if isnothing(o)
+            push!(res, ((pl, r), old_ex))
+        else
+            push!(res, ((pl, r), o))
+        end
     end
     return res
 end
+
+
+function execute(ex::Union{Expr, Number}, theory, caching) 
+    res = []
+    tmp = Tuple{Vector{Int}, Int}[]
+    old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
+    for (pl, r) in tmp
+        old_ex = copy(ex)
+        o = my_rewriter!(pl, old_ex, theory[r])
+        if isnothing(o)
+            push!(res, ((pl, r), old_ex))
+        else
+            push!(res, ((pl, r), o))
+        end
+    end
+    return res
+end
+
 
 
 function push_to_tree!(soltree::Dict, new_node::Node)
@@ -271,8 +331,25 @@ function push_to_tree!(soltree::Dict, new_node::Node)
 end
 
 
-# function expand_node_new!(parent::Node, soltree::Dict{UInt64, Node}, heuristic::ExprModel, open_list::PriorityQueue, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, theory::Vector, variable_names::Dict) 
-function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, alpha=0.9) 
+function expand_node1!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, alpha=0.9) 
+    ex = parent.ex
+    succesors = execute(ex, theory, exp_cache)
+    for i in succesors
+        x = Node(i[2], i[1], parent.node_id, parent.depth + 1, nothing)
+        if push_to_tree!(soltree, x)
+            o = alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache))
+            push!(parent.children, x.node_id)
+            enqueue!(open_list, x, o) 
+        end
+        if x.ex == :1
+            return true
+        end
+    end
+    return false
+end
+
+
+function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, alpha=0.9, lambda=-50.4) 
     ex = parent.ex
     succesors = execute(ex, theory, exp_cache)
     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
@@ -280,22 +357,25 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
-    # exprs = map(x->x.ex.ex, filtered_new_nodes)
     exprs = map(x->x.ex, filtered_new_nodes)
-    o = map(x->alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
-    # o = map(x->only(embed(heuristic, x)), o)
-    # o = map(x->only(embed(heuristic, x[1])) + x[2].depth * 500, zip(o,filtered_new_nodes))
-    
-    # embeded_exprs = MyModule.no_reduce_multiple_fast_ex2mill(exprs, sym_enc)
-    # o = heuristic(embeded_exprs)
-    # o = map(x->x.depth, filtered_new_nodes)
-    # for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
-    #     soltree[n.node_id].expression_encoding = e
-    #     n.expression_encoding = e
-    #     enqueue!(open_list, n, v)
-    # end
-    for (v,n) in zip(o, filtered_new_nodes)
-        enqueue!(open_list, n, v)
+    # o = map(x->alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
+    if isempty(open_list)
+        o = Flux.softmax([exp_size(e, size_cache) * lambda for e in exprs])
+        for (v,n) in zip(o, filtered_new_nodes)
+            enqueue!(open_list, n, v)
+        end
+    else
+        open_keys = keys(open_list)
+        new_nodes = [exp_size(e, size_cache) * lambda for e in exprs]
+        open_nodes = [exp_size(e.ex, size_cache) * lambda for e in open_keys]
+        append!(open_nodes, new_nodes)
+        o = Flux.softmax(open_nodes)
+        for (k, i) in zip(open_keys,o)
+            open_list[k] = i
+        end
+        for (v,n) in zip(o[end - length(new_nodes) + 1:end], filtered_new_nodes)
+            enqueue!(open_list, n, v)
+        end
     end
     nodes_ids = map(x->x.node_id, filtered_new_nodes)
     append!(parent.children, nodes_ids)
@@ -306,47 +386,31 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
 end
 
 
-# function expand_node!(parents::Vector, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache) 
-#     new_nodes = map(parents) do parent
-#         succesors = execute(parent.ex, theory, exp_cache)
-#         new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
-#     end
+function expand_multiple_node!(parents::Vector, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache) 
+    new_nodes = map(parents) do parent
+        succesors = execute(parent.ex, theory, exp_cache)
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    end
 
-#     new_nodes = vcat(new_nodes...)
-#     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
-#     # @show length(filtered_new_nodes)
-#     isempty(filtered_new_nodes) && return(false)
-#     exprs = map(x->x.ex, filtered_new_nodes)
-#     # o = map(x->MyModule.cached_inference!(x, cache, heuristic, new_all_symbols, sym_enc),exprs)
-#     # o = map(x->only(embed(heuristic, x)), o)
-#     # embeded_exprs = map(x-> ex2mill(x, symbols_to_index, all_symbols, variable_names), exprs)
-#     # embeded_exprs = MyModule.multiple_fast_ex2mill(exprs, sym_enc)
-#     # ds = reduce(catobs, embeded_exprs)
-#     # o = heuristic(ds)
-#     # o = fill(3, length(embeded_exprs))
-#     # for (v,n,e) in zip(o, filtered_new_nodes, embeded_exprs)
-#     #     soltree[n.node_id].expression_encoding = e
-#     #     n.expression_encoding = e
-#     #     enqueue!(open_list, n, v)
-#     # end
-#     for (v,n) in zip(o, filtered_new_nodes)
-#         enqueue!(open_list, n, v)
-#     end
-#     # nodes_ids = map(x->x.node_id, filtered_new_nodes)
-#     for n in filtered_new_nodes
-#         push!(soltree[n.parent].children, n.node_id)
-#     end
-#     # map(parents) do parent
-#     #     append!(parent.children, )
-#     # end
-#     if in(:1, exprs)
-#         return true
-#     end
-#     return false
-# end
+    new_nodes = vcat(new_nodes...)
+    filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    isempty(filtered_new_nodes) && return(false)
+    exprs = map(x->x.ex, filtered_new_nodes)
+    o = map(x->alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
+    for (v,n) in zip(o, filtered_new_nodes)
+        enqueue!(open_list, n, v)
+    end
+    for n in filtered_new_nodes
+        push!(soltree[n.parent].children, n.node_id)
+    end
+    if in(:1, exprs)
+        return true
+    end
+    return false
+end
 
 
-function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, alpha)
+function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, alpha, size_cache)
     step = 0
     reached_goal = false
     epsilon = 0.05
@@ -356,41 +420,9 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::Priority
         if max_steps <= step
             break
         end
-        # nodes = Node[]
-        # if length(open_list) == 1
-        # @show step
-        # @show length(open_list)
         nodes, prob = dequeue_pair!(open_list)
         step += 1
-        # push!(expanded_depth, nodes.depth)
-        # else
-        # n = expand_n > length(open_list) ? length(open_list) : expand_n
-        # nodes = map(x->dequeue_pair!(open_list)[1], 1:n)
-        # step += n
-        #     # for _ in 1:n
-        # if rand() < epsilon && length(open_list) > 1
-        #     keys_list = keys(open_list)
-        #     nodes = rand(keys_list)
-        #     prob = open_list[nodes]
-        #     # delete!(open_list, nodes)
-        # else
-        #     nodes, prob = dequeue_pair!(open_list)
-        # end
-        # step += 1
-        # if isin(close_list, nodes.node_id)
-        #     continue
-        # end
-        #     #     # expansion_history[node.node_id] = [step, prob]
-        #     #     push!(nodes, node)
-        #     #     step += 1
-        #     # end
-        # end
-        # if nodes.depth >= max_depth
-        #     continue
-        # end
-        # @show nodes
-        reached_goal = expand_node!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, alpha)
-
+        reached_goal = expand_node!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, alpha)
         if reached_goal
             return true 
         end
@@ -458,75 +490,6 @@ function extract_training_matrices(node, soltree, hp=[], hn=[])
     return extract_training_matrices(soltree[node.parent], soltree, hp, hn)
 end
 
- 
-function extract_rules_applied(node::Node, soltree::Dict{UInt64, Node}) 
-    proof_vector = Vector()
-    depth_dict = Dict{Int, Vector{Any}}()
-    # big_vector = Vector()
-    tmp_hp = Vector{Vector{Int16}}()
-    tmp_hn = Vector{Vector{Int16}}()
-    node_proof_vector = Vector() 
-    #while !isnothing(node.parent)
-    #nodes_to_use = filter(n->n.depth<node.depth, values(soltree)
-    while node.parent != node.node_id
-        push!(proof_vector, node.rule_index)
-        # push!(node_proof_vector, node.ex)
-        push!(node_proof_vector, node.node_id)
-        depth_dict[node.depth] = [node.expression_encoding]
-        # push!(big_vector, node.expression_encoding)
-        push!(tmp_hp, Int16[])
-        push!(tmp_hn, Int16[])
-        padding = length(tmp_hn) > 1 ? zeros(Int16, length(tmp_hn[end - 1])) : Int16[]
-        append!(tmp_hp[end], padding)
-        append!(tmp_hn[end], padding)
-        push!(tmp_hn[end], 0)
-        push!(tmp_hp[end], 1)
-        for children_id in soltree[node.parent].children
-            if children_id == node.node_id
-                continue    
-            end
-            push!(depth_dict[node.depth], soltree[children_id].expression_encoding)
-            # push!(big_vector, soltree[children_id].expression_encoding)
-            # push!(node_proof_vector, soltree[children_id].ex)
-            push!(node_proof_vector, node.node_id)
-            push!(tmp_hp[end], 0)
-            push!(tmp_hn[end], 1)
-        end
-        node = soltree[node.parent]
-    end
-    padding_value = 0
-    hn = nothing
-    if !isempty(tmp_hn)
-        max_length = maximum(length, tmp_hn)
-
-        padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in tmp_hn]
-        hn = hcat(padded_vectors...)
-        # for i in 2:size(hn, 2)
-        #     hn[:, i] .= hn[:, i] + hn[:, i - 1]
-        # end
-
-        for i in size(hn, 2) - 1:-1:1
-            hn[:, i] .= hn[:, i] + hn[:, i + 1]
-        end
-    end
-
-    hp = nothing
-    if !isempty(tmp_hp)
-        max_length = maximum(length, tmp_hp)
-
-        padded_vectors = [vcat(vec, fill(padding_value, max_length - length(vec))) for vec in tmp_hp]
-        hp = hcat(padded_vectors...)
-    end
-
-    # ds = nothing
-    # if !isempty(big_vector)
-    #     ds = reduce(catobs, big_vector) 
-    # end
-    #hp = findall(x-> x == 1, hp)
-
-    return reverse(proof_vector), depth_dict, hp, hn, node_proof_vector
-end
-
 
 function extract_smallest_terminal_node1(soltree::Dict{UInt64, Node}, close_list::Set{UInt64}, nbest=5)
     all_nodes = values(soltree)
@@ -576,31 +539,24 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
 end
 
 
-function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, alpha)
+function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, size_cache, alpha)
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
     expansion_history = Dict{UInt64, Vector}()
     encodings_buffer = Dict{UInt64, ProductNode}()
     @show ex
-    # encoded_ex = ex2mill(ex, symbols_to_index, all_symbols, variable_names)
-    # encoded_ex = MyModule.single_fast_ex2mill(ex, sym_enc)
-    # a = MyModule.cached_inference!(ex, cache, heuristic, new_all_symbols, sym_enc)
-    # o = MyModule.embed(heuristic, a)
     o = heuristic(ex, cache)
     root = Node(ex, (0,0), hash(ex), 0, nothing)
     soltree[root.node_id] = root
     enqueue!(open_list, root, only(o))
 
-    reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, alpha)
+    reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, alpha, size_cache)
     println("Have successfuly finished bulding simplification tree!")
     @show length(soltree)
     smallest_node = extract_smallest_terminal_node(soltree, close_list)
-    # smallest_nodes = extract_smallest_terminal_node1(soltree, close_list)
     simplified_expression = smallest_node.ex
     @show simplified_expression
-    # proof_vector, depth_dict, hp, hn, node_proof_vector = extract_rules_applied(smallest_node, soltree)
-    # tmp = map(x->extract_rules_applied(x, soltree), smallest_nodes)
     big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
     tmp = []
     @show proof_vector
@@ -630,13 +586,13 @@ function isbetter(a::TrainingSample, b::TrainingSample)
 end
 
 
-function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, alpha)  
+function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, size_cache, alpha)  
     for (index, i) in enumerate(data)
         println("Index: $index")
         # if length(training_samples) > index && training_samples[index].saturated
         #     continue
         # end
-        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = initialize_tree_search(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, alpha)
+        simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = initialize_tree_search(heuristic, i, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, size_cache, alpha)
         println("Saturated: $saturated")
         new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, i)
         if length(training_samples) >= index 

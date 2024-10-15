@@ -337,6 +337,16 @@ function profile_method(data, heuristic)
     # @profile peakflops()
     # pprof()
 end
+# BenchmarkTools.Trial: 2 samples with 1 evaluation.
+#  Range (min … max):  3.609 s …    4.244 s  ┊ GC (min … max): 4.81% … 6.23%
+#  Time  (median):     3.927 s               ┊ GC (median):    5.58% 
+#  Time  (mean ± σ):   3.927 s ± 448.733 ms  ┊ GC (mean ± σ):  5.58% ± 1.01%
+
+#   █                                                        █       
+#   █▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█ ▁     
+#   3.61 s         Histogram: frequency by time         4.24 s <     
+
+#  Memory estimate: 1.13 GiB, allocs estimate: 26841698.
 
 function profile_method(data, heuristic)
     df = map(enumerate(data[1:20])) do (ex_id, ex)

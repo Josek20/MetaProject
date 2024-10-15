@@ -137,8 +137,8 @@ end
 # ex = myex
 using ProfileCanvas
 # ProfileCanvas.@profview begin
-@benchmark begin
-    
+# @benchmark begin
+begin
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # ex = train_data[1]
@@ -147,7 +147,7 @@ ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 1
 # ex =  :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + (((v3 * (4 + v2 / (30 / v3)) + v5) + v4) + v7))
 # encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
 # encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
-root = MyModule.Node(ex, (0,0), hash(ex), 0, nothing)
+root = MyModule.Node(test_data[5], (0,0), hash(ex), 0, nothing)
 
 soltree = Dict{UInt64, MyModule.Node}()
 open_list = PriorityQueue{MyModule.Node, Float32}()
@@ -159,6 +159,7 @@ soltree[root.node_id] = root
 #push!(open_list, root.node_id)
 exp_cache = LRU{Expr, Vector}(maxsize=100000)
 cache = LRU(maxsize=1000000)
+size_cache = LRU(maxsize=1000)
 training_samples = Vector{TrainingSample}()
 
 # a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
@@ -166,8 +167,8 @@ training_samples = Vector{TrainingSample}()
 o = heuristic(ex, cache)
 enqueue!(open_list, root, only(o))
 # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
-# ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
-MyModule.train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache, 1)  
+MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, 1, size_cache)
+# MyModule.train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache, 1)  
 # MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 60, expansion_history, theory, variable_names, cache, exp_cache, 1)
 # @show length(soltree), length(cache), cache.hits, cache.misses, length(exp_cache), exp_cache.hits, exp_cache.misses 
 end
