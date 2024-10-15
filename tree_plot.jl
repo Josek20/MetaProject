@@ -138,7 +138,7 @@ end
 using ProfileCanvas
 # ProfileCanvas.@profview begin
 # @benchmark begin
-begin
+bmark1 = @benchmark begin
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # ex = train_data[1]
@@ -157,9 +157,9 @@ encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
 soltree[root.node_id] = root
 #push!(open_list, root.node_id)
-exp_cache = LRU{Expr, Vector}(maxsize=100000)
-cache = LRU(maxsize=1000000)
-size_cache = LRU(maxsize=1000)
+exp_cache = LRU(maxsize=100_000)
+cache = LRU(maxsize=1_000_000)
+size_cache = LRU(maxsize=100_000)
 training_samples = Vector{TrainingSample}()
 
 # a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)

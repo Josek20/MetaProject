@@ -16,7 +16,7 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 function cached_inference!(ex::ExprWithHash, ::Type{Expr}, cache, model, all_symbols, symbols_to_ind)
     # @show ex.head
-    get!(cache, ex) do
+    get!(cache, ex.hash) do
         # if ex.head == :call
         #     fun_name, args =  ex.head, ex.args
         # elseif ex.head in all_symbols
@@ -41,7 +41,7 @@ end
 
 
 function cached_inference!(ex::ExprWithHash, ::Type{Symbol}, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+    get!(cache, ex.hash) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex.head]] = 1
 
@@ -58,7 +58,7 @@ end
 
 
 function cached_inference!(ex::ExprWithHash, ::Type{Int}, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+    get!(cache, ex.hash) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex.head)
 

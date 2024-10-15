@@ -1,4 +1,5 @@
 using Distributed
+using Revise
 
 number_of_workers = nworkers()
 
@@ -16,7 +17,6 @@ using MyModule.Mill
 using MyModule.DataFrames
 using MyModule.LRUCache
 # using MyModule.SimpleChains
-using Revise
 using StatsBase
 using CSV
 using BSON
@@ -289,7 +289,7 @@ else
     stp = div(n, number_of_workers)
     batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
     dt = 1
-    exp_cache = LRU{Expr, Vector}(maxsize=100000)
+    exp_cache = LRU(maxsize=100000)
     cache = LRU(maxsize=1000000)
     size_cache = LRU(maxsize=100000)
     # global some_alpha = 1
@@ -303,7 +303,7 @@ else
         println("Epoch $ep")
         println("Training===========================================")
         # global training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, some_alpha), collect(1:number_of_workers))
-        train_heuristic!(heuristic, test_data[5:11], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, some_alpha)
+        train_heuristic!(heuristic, test_data[5:5], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, some_alpha)
         @assert 0 == 1
         # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
         # some_alpha -= 0.1
