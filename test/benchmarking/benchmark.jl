@@ -238,7 +238,7 @@ heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
 ))
 
 exp_data = Vector()
-open("benchmarking.bin", "r") do file
+open("data/training_data/benchmarking.bin", "r") do file
     data = deserialize(file)
     append!(exp_data, data)
 end
