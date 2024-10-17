@@ -50,10 +50,16 @@ end
 
 
 function reconstruct(ex::ExprWithHash, all_symbols, reconstruct_cache)
-    get!(reconstruct_cache, ex.has) do
-        if ex.head in all_symbols
-        Expr(:call)
+    if isempty(ex.args)
+        return ex.head
+    end
+    get!(reconstruct_cache, ex) do
+        if ex.head in [:&&, :||]
+            expression = Expr(ex.head, [reconstruct(x, all_symbols, reconstruct_cache) for x in ex.args]...)
+        else
+            expression = Expr(:call, ex.head, [reconstruct(x, all_symbols, reconstruct_cache) for x in ex.args]...)
         end
+        expression
     end
 end
 
@@ -69,9 +75,10 @@ mutable struct Node{E, P}
 end
 
 
-# Node(ex::Int, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-# Node(ex, rule_index, parent, depth, ee) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-# Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+Node(ex::Int, rule_index, parent, depth, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+Node(ex, rule_index, parent, depth, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::Union{ProductNode, Nothing}) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 function Node(ex, rule_index, parent, depth, expr_cache)
     ex_hash = ExprWithHash(ex, expr_cache)
     Node(ex_hash, rule_index, UInt64[],  parent, depth, ex_hash.hash, nothing)
@@ -84,7 +91,6 @@ function Base.:(==)(e1::ExprWithHash, e2::ExprWithHash)
     e1.hash != e2.hash && return(false)
     e1.head != e2.head && return(false)
     length(e1.args) != length(e2.args) && return(false)
-    # e1.hash == e2.hash
     all(i == j for (i,j) in zip(e1.args, e2.args))
 end
 
@@ -128,46 +134,6 @@ function my_rewriter!(position::Vector{Int}, ex::Expr, rule::AbstractRule)
     end
     return nothing
 end
-
-
-# function my_rewriter!(position::Vector{Int}, ex::ExprWithHash, rule::AbstractRule)
-#     if isempty(position)
-#         return rule(ex) 
-#     end
-#     ind = position[1]
-#     ret = my_rewriter!(position[2:end], ex.args[ind], rule)
-#     if !isnothing(ret)
-#         ex.args[ind] = ret
-#     end
-#     return nothing
-# end
-
-
-# function my_rewriter!(position::Vector{Int}, ex::ExprWithHash, rule::AbstractRule)
-#     if isempty(position)
-#         return rule(ex.ex) 
-#     end
-#     ind = position[1]
-#     ret = my_rewriter!(position[2:end], ex.args[ind], rule)
-#     if !isnothing(ret)
-#         ex.args[ind] = ret
-#     end
-#     return nothing
-# end
-
-
-# function my_rewriter!(position::Vector{Int}, ex::ExprWithHash, rule::AbstractRule)
-#     if isempty(position)
-#         return rule(ex.ex) 
-#     end
-#     ind = position[1]
-#     next_ex = length(ex.ex.args) == 2 ? ex.args[ind] : ex.args[ind - 1] 
-#     ret = my_rewriter!(position[2:end], next_ex, rule)
-#     if !isnothing(ret)
-#         ex.args[ind] = ExprWithHash(ret)
-#     end
-#     return nothing
-# end
 
 
 function old_traverse_expr!(ex::ExprWithHash, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching)
@@ -296,30 +262,6 @@ function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{Rewr
     end
 end
 
-# function traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}})
-#     if !isa(ex, Expr)
-#         return []
-#     end
-#     get!(caching, ex) do
-#         a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
-#         tmp3 = []
-#         if !isempty(a)
-#             b = copy(trav_indexs)
-#             tmp3 = [(b, i[1]) for i in a]
-#         end
-#         for (ind, i) in enumerate(ex.args)
-#             push!(trav_indexs, ind)
-            
-#             tmp1 = traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
-            
-#             # @show t mp3
-#             append!(tmp3, tmp1)
-#             pop!(trav_indexs)
-#         end
-#         return tmp3
-#     end
-# end
-
 
 function execute(ex::ExprWithHash, theory::Vector{AbstractRule}, caching)
     res = []
@@ -411,20 +353,16 @@ function expand_node1!(parent::Node, soltree, heuristic, open_list, encodings_bu
 end
 
 
-function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-50.4) 
+function expand_node2!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
     ex = parent.ex
     succesors = execute(ex, theory, exp_cache)
-    # new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
-    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
+    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    # new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
    
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
-    # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
-    # o = map(x->alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
-    # for (v,n) in zip(o, filtered_new_nodes)
-    #     enqueue!(open_list, n, v)
-    # end
+    
     if isempty(open_list)
         o = Flux.softmax([exp_size(e, size_cache) * lambda for e in exprs])
         for (v,n) in zip(o, filtered_new_nodes)
@@ -442,6 +380,69 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
         for (v,n) in zip(o[end - length(new_nodes) + 1:end], filtered_new_nodes)
             enqueue!(open_list, n, v)
         end
+    end
+    nodes_ids = map(x->x.node_id, filtered_new_nodes)
+    append!(parent.children, nodes_ids)
+    if in(:1, exprs)
+        return true
+    end
+    return false
+end
+
+
+function expand_node3!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
+    ex = parent.ex
+    succesors = execute(ex, theory, exp_cache)
+    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+   
+    filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    isempty(filtered_new_nodes) && return(false)
+    exprs = map(x->x.ex, filtered_new_nodes)
+    
+    if isempty(open_list)
+        o = Flux.softmax([exp_size(e, size_cache) * lambda for e in exprs])
+        for (v,n) in zip(o, filtered_new_nodes)
+            push!(open_list, (n, v))
+        end
+    else
+        # open_keys = keys(open_list)
+        new_nodes = [exp_size(e, size_cache) * lambda for e in exprs]
+        open_nodes = [exp_size(e[1].ex, size_cache) * lambda for e in open_list]
+        append!(open_nodes, new_nodes)
+        o = Flux.softmax(open_nodes)
+        # for (k, i) in zip(open_list,o)
+        # @show length(open_nodes)
+        for i in 1:length(open_list)
+            open_list[i] = (open_list[i][1], o[i])
+        end
+        for (v,n) in zip(o[end - length(new_nodes) + 1:end], filtered_new_nodes)
+            push!(open_list, (n, v))
+        end
+    end
+    nodes_ids = map(x->x.node_id, filtered_new_nodes)
+    append!(parent.children, nodes_ids)
+    if in(:1, exprs)
+        return true
+    end
+    return false
+end
+
+
+function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
+    ex = parent.ex
+    succesors = execute(ex, theory, exp_cache)
+    if isa(ex, ExprWithHash)
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
+    else
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    end
+    filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    # @show length(filtered_new_nodes)
+    isempty(filtered_new_nodes) && return(false)
+    exprs = map(x->x.ex, filtered_new_nodes)
+    o = map(x->alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
+    for (v,n) in zip(o, filtered_new_nodes)
+        enqueue!(open_list, n, v)
     end
     nodes_ids = map(x->x.node_id, filtered_new_nodes)
     append!(parent.children, nodes_ids)
@@ -471,6 +472,49 @@ function expand_multiple_node!(parents::Vector, soltree, heuristic, open_list, e
     end
     if in(:1, exprs)
         return true
+    end
+    return false
+end
+
+
+function build_tree_with_reward_function1!(soltree::Dict{UInt64, Node}, heuristic, open_list, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha, lambda=-100.4)
+    step = 0
+    reached_goal = false
+    epsilon = 0.05
+    expand_n = 25
+    expanded_depth = []
+    while length(open_list) > 0
+        if max_steps <= step
+            break
+        end
+        nodes, prob = argmin(x->x[2], open_list)
+        open_list = filter(x->x != (nodes, prob), open_list)
+        step += 1
+        reached_goal = expand_node3!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha, lambda)
+        if reached_goal
+            return true 
+        end
+    end
+    return false
+end
+
+
+function build_tree_with_reward_function!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha, lambda=-100.4)
+    step = 0
+    reached_goal = false
+    epsilon = 0.05
+    expand_n = 25
+    expanded_depth = []
+    while length(open_list) > 0
+        if max_steps <= step
+            break
+        end
+        nodes, prob = dequeue_pair!(open_list)
+        step += 1
+        reached_goal = expand_node2!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha, lambda)
+        if reached_goal
+            return true 
+        end
     end
     return false
 end
@@ -592,7 +636,7 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
         if isa(n.ex, ExprWithHash)
             size_n = exp_size(n.ex, size_cache)
         else
-            size_n = exp_siz(n.ex)
+            size_n = exp_size(n.ex)
         end
 
         if size_n < min_size
