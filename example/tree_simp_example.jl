@@ -1,4 +1,5 @@
 using Distributed
+using Revise
 
 number_of_workers = nworkers()
 
@@ -16,7 +17,6 @@ using MyModule.Mill
 using MyModule.DataFrames
 using MyModule.LRUCache
 # using MyModule.SimpleChains
-using Revise
 using StatsBase
 using CSV
 using BSON
@@ -27,7 +27,7 @@ train_data_path = "./data/neural_rewrter/train.json"
 test_data_path = "./data/neural_rewrter/test.json"
 
 
-train_data = isfile(train_data_path) ? load_data(train_data_path)[1:1000] : load_data(test_data_path)[1:1000]
+train_data = isfile(train_data_path) ? load_data(train_data_path)[1:10000] : load_data(test_data_path)[1:1000]
 test_data = load_data(test_data_path)[1:1000]
 train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
@@ -126,12 +126,12 @@ theory = @theory a b c d x y begin
     a - b < a --> 0 < b
     0 < a::Number => 0 < a ? 1 : 0
     a::Number < 0 => a < 0 ? 1 : 0
-    min(a , b) < a --> b < a
-    min(a, b) < min(a , c) --> b < min(a, c)
-    max(a, b) < max(a , c) --> max(a ,b) < c
+    min(a , b) <= a --> b <= a
+    min(a, b) <= min(a , c) --> b <= min(a, c)
+    max(a, b) <= max(a , c) --> max(a ,b) <= c
 
     # max.rs
-    max(a, b) --> (-1 * min(-1 * a, -1 * b))
+    # max(a, b) --> (-1 * min(-1 * a, -1 * b))
     
     # min.rs
     min(a, b) --> min(b, a)
@@ -230,6 +230,11 @@ theory = @theory a b c d x y begin
     # a + b::Number <= min(a + c::Number, d) =>
     a <= min(b,c) --> a<=b && a<=c
     min(b,c) <= a --> b<=a || c<=a
+    a <= max(b,c) --> a<=b || a<=c
+    max(b,c) <= a --> b<=a || c<=a
+    a<=b && c<=a --> c <= b
+    b<=a && a<=c --> b <= c
+    a + b - c --> a - c + b
 end
 
 hidden_size = 128
@@ -240,17 +245,17 @@ hidden_size = 128
 #     SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
 # ))
 heuristic = ExprModel(
-    Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.leakyrelu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSum(hidden_size),
-    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,Flux.relu), Dense(hidden_size, hidden_size)),
-    Flux.Chain(Dense(hidden_size, hidden_size,Flux.relu), Dense(hidden_size, 1))
+    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,Flux.leakyrelu), Dense(hidden_size, hidden_size)),
+    Flux.Chain(Dense(hidden_size, hidden_size,Flux.leakyrelu), Dense(hidden_size, 1))
     )
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 
-epochs = 5
+epochs = 10
 optimizer = ADAM()
-global training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
-# training_samples = Vector{TrainingSample}()
+# global training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
+training_samples = Vector{TrainingSample}()
 max_steps = 1000
 max_depth = 60
 n = 1000
@@ -281,24 +286,28 @@ else
     stats = []
     loss_stats = []
     proof_stats = []
-    # stp = div(n, number_of_workers)
+    stp = div(n, number_of_workers)
     batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
     dt = 1
-    exp_cache = LRU{Expr, Vector}(maxsize=100000)
+    exp_cache = LRU(maxsize=100000)
     cache = LRU(maxsize=1000000)
+    size_cache = LRU(maxsize=100000)
+    expr_cache = LRU(maxsize=100000)
     # global some_alpha = 1
-    some_alpha = 1
+    some_alpha = 0
+    
     for ep in 1:epochs 
         empty!(cache)
-
-
+        
+        
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
-        println("Epcoh $ep")
+        println("Epoch $ep")
         println("Training===========================================")
         # global training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, some_alpha), collect(1:number_of_workers))
-        train_heuristic!(heuristic, train_data[1:10], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, some_alpha)
+        train_heuristic!(heuristic, test_data[5:5], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, some_alpha)
+        @assert 0 == 1
         # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
-        some_alpha -= 0.1
+        # some_alpha -= 0.1
         ltmp = []
         # @show training_samples
         # @assert 0 == 1
@@ -319,6 +328,7 @@ else
                 # MyModule.loss(heuristic, j[3], j[4], j[5])
             end
             if any(g->any(isinf, g) || any(isnan, g), grad)
+                println("Gradient is Inf/NaN")
                 BSON.@save "models/inf_grad_heuristic1.bson" heuristic
                 JLD2.@save "data/training_data/training_samples_inf_grad1.jld2" training_samples
                 @assert 0 == 1
@@ -359,7 +369,7 @@ for i in 1:length(proof_stats[1])
     end
     push!(df2, tmp)
 end
-r = "_dist_version7"
+r = "_manual_version1"
 CSV.write("stats/new_theory_epoch_exp_progress$r.csv", df1)
 CSV.write("stats/new_theory_epoch_proof_progress$r.csv", df2)
 using Plots

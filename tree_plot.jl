@@ -137,41 +137,60 @@ end
 # ex = myex
 using ProfileCanvas
 # ProfileCanvas.@profview begin
-@benchmark begin
-    
+bmark1 = @benchmark begin
 ex = :((v0 + v1) + 119 <= min(120 + (v0 + v1), v2) && min(((((v0 + v1) - v2) + 127) / 8) * 8 + v2, (v0 + v1) + 120) - 1 <= ((((v0 + v1) - v2) + 134) / 16) * 16 + v2)
 # ex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
-# ex = train_data[1]
+ex = test_data[5]
 # ex = myex
+
+
 # ex = :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + ((v2 * 30 + ((v3 * 4 + v4) + v5)) + v7))
 # ex =  :((v0 + v1) * 119 + (v3 + v7) <= (v0 + v1) * 119 + (((v3 * (4 + v2 / (30 / v3)) + v5) + v4) + v7))
 # encoded_ex = MyModule.ex2mill(ex, symbols_to_index, all_symbols, variable_names)
 # encoded_ex = MyModule.single_fast_ex2mill(ex, MyModule.sym_enc)
-root = MyModule.Node(ex, (0,0), hash(ex), 0, nothing)
+exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+cache = LRU(maxsize=1_000_000)
+size_cache = LRU(maxsize=100_000)
+expr_cache = LRU(maxsize=100_000)
+# root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
+root = MyModule.Node(myex, (0,0), nothing, 0, nothing)
 
 soltree = Dict{UInt64, MyModule.Node}()
-open_list = PriorityQueue{MyModule.Node, Float32}()
+# open_list = PriorityQueue{MyModule.Node, Float32}()
+open_list = Tuple[]
 close_list = Set{UInt64}()
 expansion_history = Dict{UInt64, Vector}()
 encodings_buffer = Dict{UInt64, ProductNode}()
 println("Initial expression: $ex")
 soltree[root.node_id] = root
-#push!(open_list, root.node_id)
-exp_cache = LRU{Expr, Vector}(maxsize=100000)
-cache = LRU(maxsize=1000000)
 training_samples = Vector{TrainingSample}()
 
 # a = MyModule.cached_inference!(ex,cache,heuristic, new_all_symbols, sym_enc)
 # hp = MyModule.embed(heuristic, a)
-o = heuristic(ex, cache)
-enqueue!(open_list, root, only(o))
+# o = heuristic(ex, cache)
+push!(open_list, (root, 0))
+# enqueue!(open_list, root, only(o))
 # enqueue!(open_list, root, only(heuristic(root.expression_encoding)))
-# ProfileCanvas.@profview MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache)
-MyModule.train_heuristic!(heuristic, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache, 1)  
+# MyModule.build_tree_with_reward_function!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1, -50)
+MyModule.build_tree_with_reward_function1!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1, -50)
+smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+@show length(exp_cache), exp_cache.hits, exp_cache.misses
+@show length(size_cache), size_cache.hits, size_cache.misses
+# @show length(cache), cache.hits, cache.misses
+@show length(soltree)
+@show smallest_node
 # MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, 1000, 60, expansion_history, theory, variable_names, cache, exp_cache, 1)
 # @show length(soltree), length(cache), cache.hits, cache.misses, length(exp_cache), exp_cache.hits, exp_cache.misses 
 end
 
+#  Memory estimate: 1.14 GiB, allocs estimate: 18623908.
+# bmark1 = @benchmark begin
+#     exp_cache = LRU(maxsize=100_000)
+#     cache = LRU(maxsize=1_000_000)
+#     size_cache = LRU(maxsize=100_000)
+#     expr_cache = LRU(maxsize=100_000)
+#     MyModule.train_heuristic!(heuristic, test_data[5:14], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+# end
 # using Plots
 # histogram(bmark1)
 # @show length(soltree)
@@ -204,7 +223,7 @@ end
 # println(bmark1)
 # println(bmark2)
 # println("Have successfuly finished bulding simplification tree!")
-smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
+# smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
 # smallest_nodes = MyModule.extract_smallest_terminal_node1(soltree, close_list)
 
 # # for (ind, (i, cof)) in enumerate(open_list)
@@ -214,7 +233,7 @@ smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
 # simplified_expression = smallest_node.ex
 # println("Simplified expression: $(smallest_node.ex)")
 
-big_vector, hp, hn, node_proof_vector = MyModule.extract_training_data(smallest_node, soltree)
+# big_vector, hp, hn, node_proof_vector = MyModule.extract_training_data(smallest_node, soltree)
 
 # println("Proof vector: $proof_vector")
 

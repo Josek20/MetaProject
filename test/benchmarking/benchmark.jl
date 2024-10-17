@@ -106,12 +106,12 @@ theory = @theory a b c d x y begin
     a - b < a --> 0 < b
     0 < a::Number => 0 < a ? 1 : 0
     a::Number < 0 => a < 0 ? 1 : 0
-    min(a , b) < a --> b < a
-    min(a, b) < min(a , c) --> b < min(a, c)
-    max(a, b) < max(a , c) --> max(a ,b) < c
+    min(a , b) <= a --> b <= a
+    min(a, b) <= min(a , c) --> b <= min(a, c)
+    max(a, b) <= max(a , c) --> max(a ,b) <= c
 
     # max.rs
-    max(a, b) --> (-1 * min(-1 * a, -1 * b))
+    # max(a, b) --> (-1 * min(-1 * a, -1 * b))
     
     # min.rs
     min(a, b) --> min(b, a)
@@ -210,8 +210,12 @@ theory = @theory a b c d x y begin
     # a + b::Number <= min(a + c::Number, d) =>
     a <= min(b,c) --> a<=b && a<=c
     min(b,c) <= a --> b<=a || c<=a
+    a <= max(b,c) --> a<=b || a<=c
+    max(b,c) <= a --> b<=a || c<=a
+    a<=b && c<=a --> c <= b
+    b<=a && a<=c --> b <= c
+    a + b - c --> a - c + b
 end
-
 
 
 
@@ -236,7 +240,6 @@ heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
     SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
     SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
 ))
-
 
 exp_data = deserialize("benchmarking.bin")
 
@@ -330,7 +333,12 @@ function profile_method(data, heuristic)
     # pprof()
 end
 
+<<<<<<< HEAD
 function pevnaks_profile_method(data, heuristic)
+=======
+
+function profile_method(data, heuristic)
+>>>>>>> f1c24c467519d706e70e4ab5fe32ca07daac9bf1
     df = map(enumerate(data[1:20])) do (ex_id, ex)
         cache = LRU(maxsize=100_000)
         exp_cache = LRU{Expr, Vector}(maxsize=20000)
@@ -342,4 +350,92 @@ function pevnaks_profile_method(data, heuristic)
 end
 
 
-# profile_method(exp_data, heuristic) 
+function benchmark_method_precomputed(data, heuristic)
+    bmark1 = @benchmark begin
+        ex = $data[1]
+        exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        o = heuristic(ex, cache)
+        enqueue!(open_list, root, only(o))
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+    end
+    bmark2 = @benchmark begin
+        ex = $data[1]
+        exp_cache = LRU(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        o = heuristic(ex, cache)
+        enqueue!(open_list, root, only(o))
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+    end
+    @show bmark1, bmark2
+end
+
+
+
+function making_faster_reward(data, heuristic)
+    bmark1 = @benchmark begin
+        ex = $data[1]
+        exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        # open_list = PriorityQueue{MyModule.Node, Float32}()
+        open_list = Tuple[]
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        push!(open_list, (root, 0))
+        # o = heuristic(ex, cache)
+        # enqueue!(open_list, root, only(o))
+        MyModule.build_tree_with_reward_function1!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+    end
+    bmark2 = @benchmark begin
+        ex = $data[1]
+        exp_cache = LRU(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        o = heuristic(ex, cache)
+        enqueue!(open_list, root, only(o))
+        MyModule.build_tree_with_reward_function!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1, -50)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+    end
+    @show bmark1, bmark2
+end

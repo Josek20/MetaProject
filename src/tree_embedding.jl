@@ -131,21 +131,22 @@ function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind
 end
 
 
-_short_aggregation(::SegmentedSum, x) = x
-_short_aggregation(::SegmentedSum, x, y) = x + y
-_short_aggregation(::SegmentedMean, x) = x
-_short_aggregation(::SegmentedMean, x, y) = (x + y) ./ 2
-_short_aggregation(::SegmentedMax, x) = x
-_short_aggregation(::SegmentedMax, x, y) = max.(x, y)
 const const_left = [1, 0]
 const const_right = [0, 1]
+const const_one = [0, 0]
+const const_both = [1 0; 0 1]
 
 
 function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
     l = length(args)
     my_tmp = [cached_inference!(a, cache, model, all_symbols, symbols_to_ind) for a in args]
     my_args = hcat(my_tmp...)
-    tmp = vcat(my_args, Flux.onehotbatch(1:l, 1:2))
+    if l == 2
+        tmp = vcat(my_args, const_both)
+    else
+        tmp = vcat(my_args, const_one)
+    end
+
     if isa(model, ExprModel)
         tmp = model.joint_model(tmp)
         a = model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
@@ -179,7 +180,11 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
         push!(my_tmp, pl)
     end
     my_args = hcat(my_tmp...)
-    tmp = vcat(my_args, Flux.onehotbatch(1:l, 1:2))
+    if l == 2
+        tmp = vcat(my_args, const_both)
+    else
+        tmp = vcat(my_args, const_one)
+    end
     if isa(model, ExprModel)
         tmp = model.joint_model(tmp)
         a = model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
@@ -188,77 +193,6 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
         a = model.expr_model.aggregation(tmp,  Mill.AlignedBags([1:l])) 
     end
     return a[:,1]
-end
-
-
-function ex2mill(ex::Expr, symbols_to_index, all_symbols, variable_names::Dict, cache, model)
-    if ex.head == :call
-        fun_name, args =  ex.args[1], ex.args[2:end]
-    elseif ex.head in all_symbols # Symbol("&&") || ex.head == Symbol("min")
-        fun_name = ex.head
-        args = ex.args
-    else
-        error("unknown head $(ex.head)")
-    end
-    n = length(symbols_to_index) + 1
-    encoding = zeros(Float32, n+13, 1)
-
-    encoding[symbols_to_index[fun_name]] = 1
-
-    # ds = ProductNode(; 
-    #     args=ProductNode((
-    #         head = ArrayNode(encoding),
-    #         args = args2mill(args, symbols_to_index, all_symbols, variable_names)
-    #     )),
-    #     position = ArrayNode(zeros(2,1))
-    # )
-    ds = ProductNode((
-        head = ArrayNode(encoding),
-        args = args2mill(args, symbols_to_index, all_symbols, variable_names, cache, model)
-    ))
-    # get!(cache, ex) do 
-    #     embed(model, ds)
-    # end
-    return(ds)
-end
-
-
-function ex2mill(ex::Symbol, symbols_to_index, all_symbols, variable_names, cache, model)
-    n = length(symbols_to_index) + 1
-    encoding = zeros(Float32, n+13, 1)
-    # encoding[n] = 1     # encoding = Flux.onehotbatch([n], 1:n)
-    encoding[variable_names[ex] + length(symbols_to_index)] = 1
-
-
-    ds = ProductNode((
-        head = ArrayNode(encoding),
-        args = BagNode(missing, [0:-1])
-        ))
-end
-
-
-function ex2mill(ex::Number, symbols_to_index, all_symbols, variable_names, cache, model)
-    n = length(symbols_to_index) + 1
-    encoding = zeros(Float32, n+13, 1)
-    # encoding[n] = 1     # encoding = Flux.onehotbatch([n], 1:n)
-    encoding[n + 13] = my_sigmoid(ex)
-    ds = ProductNode((
-        head = ArrayNode(encoding),
-        args = BagNode(missing, [0:-1])
-        ))
-end
-
-
-function args2mill(args::Vector, symbols_to_index, all_symbols, variable_names, cache, model)
-    isempty(args) && return(BagNode(missing, [0:-1]))
-    l = length(args)
-    BagNode(ProductNode((;
-        args = reduce(catobs, [ex2mill(a, symbols_to_index, all_symbols, variable_names, cache, model) for a in args]),
-        position = ArrayNode(Flux.onehotbatch(1:l, 1:2)),
-        )),
-        [1:l]
-        )
-
 end
 
 
@@ -364,10 +298,16 @@ function embed(m::ExprModel, ds::BagNode)
     tmp = embed(m, ds.data)
     m.aggregation(tmp, ds.bags)
 end
-# cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
 
-function (m::ExprModel)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+function (m::ExprModel)(ex::Union{Expr, Int}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
     ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
+    tmp = vcat(ds, zeros(Float32, 2))
+    m.heuristic(m.joint_model(tmp))
+end
+
+
+function (m::ExprModel)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ex, typeof(ex.ex), cache, m, all_symbols, symbols_to_index)
     tmp = vcat(ds, zeros(Float32, 2))
     m.heuristic(m.joint_model(tmp))
 end
@@ -380,20 +320,8 @@ function (m::ExprModel)(ex::Expr,::Type{Symbol}, cache, all_symbols=new_all_symb
 end
 
 
-# function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-#     ds = cached_inference!(ex, ex.ex, cache, m, all_symbols, symbols_to_index)
-#     tmp = vcat(ds, zeros(Float32, 2))
-#     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
-# end
-
-function (m::ExprModelSimpleChains)(ex::Expr, ::Type{Symbol}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    # By switching between this 
-    # println("computing expr_with_hash1")
-    tmp = cached_inference!(ExprWithHash(ex), typeof(ex), cache, m, all_symbols, symbols_to_index)
-    # and this
-    # ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
-    # @show ::Symbol
-    # println("Symbol")
+function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ex, typeof(ex.ex), cache, m, all_symbols, symbols_to_index)
     tmp = vcat(ds, zeros(Float32, 2))
     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
 end

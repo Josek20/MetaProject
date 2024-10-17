@@ -114,3 +114,19 @@ function generate_random_binary_tree(n, D, K)
     
     return tree
 end
+
+
+function generate_expr(initial_ex::Expr, theory::Vector, max_proof_length=10, min_rule_length=5, number_of_samples=10)
+    new_rules = [RewriteRule(i.right, i.left) for i in theory if !isa(i, DynamicRule)]
+    exp_cache = LRU{Expr, Vector}(maxsize=1000)
+    o = rand(min_rule_length:max_proof_length,number_of_samples)
+    for j in o
+        copy_initial = copy(initial_ex)
+        for i in 1:j
+            possible_exp = execute(copy_initial, new_rules, exp_cache)
+            new_ex = rand(possible_exp)
+            copy_initial = new_ex
+        end
+        @show copy_initial
+    end
+end

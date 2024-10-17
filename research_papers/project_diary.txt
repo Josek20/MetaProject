@@ -1,3 +1,9 @@
+16.10.2024
+- Trying to improve tree search 
+  1) trying to use RL reward function from neural rewriter:
+    h = exp(-lambad * x) / sum(exp(-lambad * i) for i in x_arr)  
+
+
 10.10.2024
 - Adding A* to the search 
   1) h(n)=α⋅h(n)+(1−α)⋅h(n) (alpha=1 at the start and than as we learn we make it less)
