@@ -333,18 +333,39 @@ function profile_method(data, heuristic)
     # pprof()
 end
 
-<<<<<<< HEAD
 function pevnaks_profile_method(data, heuristic)
-=======
-
-function profile_method(data, heuristic)
->>>>>>> f1c24c467519d706e70e4ab5fe32ca07daac9bf1
     df = map(enumerate(data[1:20])) do (ex_id, ex)
         cache = LRU(maxsize=100_000)
         exp_cache = LRU{Expr, Vector}(maxsize=20000)
         training_samples = Vector{TrainingSample}()
         stats = @timed train_heuristic!(heuristic1, [ex], training_samples, 1000, 60, new_all_symbols, theory, variable_names, cache, exp_cache, 1)  
         (;time = stats.time, ic_hits = cache.hits, ic_misses = cache.misses, exp_hits = exp_cache.hits, exp_misses = exp_cache.misses, gctime = stats.gctime)
+    end |> DataFrame
+    CSV.write("profile_results.csv", df)
+end
+
+function pevnaks_profile_method(exp_data, heuristic; max_steps = 1000, max_depth = 30)
+    df = map(enumerate(exp_data[1:20])) do (ex_id, ex)
+        exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        # open_list = PriorityQueue{MyModule.Node, Float32}()
+        open_list = Tuple[]
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        push!(open_list, (root, 0))
+        # o = heuristic(ex, cache)
+        # enqueue!(open_list, root, only(o))
+        MyModule.build_tree_with_reward_function1!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+        (; s₀ = MyModule.exp_size(ex), sₙ = MyModule.exp_size(smallest_node.ex))
     end |> DataFrame
     CSV.write("profile_results.csv", df)
 end

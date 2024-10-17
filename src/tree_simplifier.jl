@@ -400,14 +400,14 @@ function expand_node3!(parent::Node, soltree, heuristic, open_list, encodings_bu
     exprs = map(x->x.ex, filtered_new_nodes)
     
     if isempty(open_list)
-        o = Flux.softmax([exp_size(e, size_cache) * lambda for e in exprs])
+        o = Flux.softmax([exp_size(e) * lambda for e in exprs])
         for (v,n) in zip(o, filtered_new_nodes)
             push!(open_list, (n, v))
         end
     else
         # open_keys = keys(open_list)
-        new_nodes = [exp_size(e, size_cache) * lambda for e in exprs]
-        open_nodes = [exp_size(e[1].ex, size_cache) * lambda for e in open_list]
+        new_nodes = [exp_size(e) * lambda for e in exprs]
+        open_nodes = [exp_size(e[1].ex) * lambda for e in open_list]
         append!(open_nodes, new_nodes)
         o = Flux.softmax(open_nodes)
         # for (k, i) in zip(open_list,o)
@@ -477,7 +477,7 @@ function expand_multiple_node!(parents::Vector, soltree, heuristic, open_list, e
 end
 
 
-function build_tree_with_reward_function1!(soltree::Dict{UInt64, Node}, heuristic, open_list, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha, lambda=-100.4)
+function build_tree_with_reward_function1!(soltree::Dict{UInt64, Node}, heuristic, open_list, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha, lambda=-100.4, epsilon = 0.05)
     step = 0
     reached_goal = false
     epsilon = 0.05
@@ -487,8 +487,10 @@ function build_tree_with_reward_function1!(soltree::Dict{UInt64, Node}, heuristi
         if max_steps <= step
             break
         end
-        nodes, prob = argmin(x->x[2], open_list)
-        open_list = filter(x->x != (nodes, prob), open_list)
+        i = rand() < epsilon ? rand(1:length(open_list)) : argmin(i->open_list[i][2], 1:length(open_list))
+        nodes, prob = open_list[i]
+        open_list[i] = open_list[end]
+        pop!(open_list)
         step += 1
         reached_goal = expand_node3!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha, lambda)
         if reached_goal
