@@ -104,7 +104,7 @@ exp_size(ex::Float32) = 1f0
 
 
 function exp_size(ex::ExprWithHash, size_cache)
-    get!(size_cache, ex.hash) do
+    get!(size_cache, ex) do
         if isempty(ex.args)
             return 1f0
         end
@@ -123,7 +123,7 @@ function exp_size(ex::Union{Expr, Symbol, Int}, size_cache)
 end
 
 
-function my_rewriter!(position::Vector{Int}, ex::Expr, rule::AbstractRule)
+function my_rewriter!(position::Vector{Int}, ex::Expr, rule)
     if isempty(position)
         return rule(ex) 
     end
@@ -136,13 +136,13 @@ function my_rewriter!(position::Vector{Int}, ex::Expr, rule::AbstractRule)
 end
 
 
-function old_traverse_expr!(ex::ExprWithHash, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching)
+function old_traverse_expr!(ex::ExprWithHash, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching)
     if !isa(ex.ex, Expr)
         return
     end
-    if haskey(caching, ex.hash)
+    if haskey(caching, ex)
         b = copy(trav_indexs)
-        append!(tmp, [(b, i) for i in caching[ex.hash]])
+        append!(tmp, [(b, i) for i in caching[ex]])
         c = length(ex.ex.args)
         m = length(ex.args)
         for (ind, i) in enumerate(ex.args)
@@ -156,7 +156,7 @@ function old_traverse_expr!(ex::ExprWithHash, matchers::Vector{AbstractRule}, tr
             pop!(trav_indexs)
         end
     end
-    get!(caching, ex.hash) do
+    get!(caching, ex) do
         a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex.ex) for rt in matchers)))
         if !isempty(a)
             b = copy(trav_indexs)
@@ -181,7 +181,7 @@ function old_traverse_expr!(ex::ExprWithHash, matchers::Vector{AbstractRule}, tr
 end
 
 
-function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{AbstractRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
+function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
     if !isa(ex, Expr)
         return
     end
@@ -222,55 +222,53 @@ function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{Abst
 end
 
 
-function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{RewriteRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
-    if !isa(ex, Expr)
-        return
-    end
-    if haskey(caching, ex)
-        b = copy(trav_indexs)
-        append!(tmp, [(b, i) for i in caching[ex]])
-        for (ind, i) in enumerate(ex.args)
-            # Update the traversal index path with the current index
-            push!(trav_indexs, ind)
+# function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector{RewriteRule}, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
+#     if !isa(ex, Expr)
+#         return
+#     end
+#     if haskey(caching, ex)
+#         b = copy(trav_indexs)
+#         append!(tmp, [(b, i) for i in caching[ex]])
+#         for (ind, i) in enumerate(ex.args)
+#             # Update the traversal index path with the current index
+#             push!(trav_indexs, ind)
+# 
+#             # Recursively traverse the sub-expression
+#             old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
 
-            # Recursively traverse the sub-expression
-            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+#             # After recursion, pop the last index to backtrack to the correct level
+#             pop!(trav_indexs)
+#         end
+#     end
+#     get!(caching, ex) do
+#         a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex.ex) for rt in matchers)))
+#         if !isempty(a)
+#             b = copy(trav_indexs)
+#             append!(tmp, [(b, i[1]) for i in a])
+#         end
 
-            # After recursion, pop the last index to backtrack to the correct level
-            pop!(trav_indexs)
-        end
-    end
-    get!(caching, ex) do
-        a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex.ex) for rt in matchers)))
-        if !isempty(a)
-            b = copy(trav_indexs)
-            append!(tmp, [(b, i[1]) for i in a])
-        end
+#         # Traverse sub-expressions
+#         for (ind, i) in enumerate(ex.args)
+#             # Update the traversal index path with the current index
+#             push!(trav_indexs, ind)
 
-        # Traverse sub-expressions
-        for (ind, i) in enumerate(ex.args)
-            # Update the traversal index path with the current index
-            push!(trav_indexs, ind)
+#             # Recursively traverse the sub-expression
+#             old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
 
-            # Recursively traverse the sub-expression
-            old_traverse_expr!(i, matchers, tree_ind, trav_indexs, tmp, caching)
-
-            # After recursion, pop the last index to backtrack to the correct level
-            pop!(trav_indexs)
-        end
-        return isempty(a) ? [] : [i[1] for i in a]
-    end
-end
+#             # After recursion, pop the last index to backtrack to the correct level
+#             pop!(trav_indexs)
+#         end
+#         return isempty(a) ? [] : [i[1] for i in a]
+#     end
+# end
 
 
-function execute(ex::ExprWithHash, theory::Vector{AbstractRule}, caching)
+function execute(ex::ExprWithHash, theory::Vector, caching)
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
     old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
     for (pl, r) in tmp
         old_ex = copy(ex.ex)
-        # @show old_ex
-        # @show pl, r
         o = my_rewriter!(pl, old_ex, theory[r])
         if isnothing(o)
             push!(res, ((pl, r), old_ex))
@@ -282,7 +280,7 @@ function execute(ex::ExprWithHash, theory::Vector{AbstractRule}, caching)
 end
 
 
-function execute(ex::Union{Expr, Number}, theory::Vector{AbstractRule}, caching::LRU{Expr, Vector}) 
+function execute(ex::Union{Expr, Number}, theory::Vector, caching::LRU{Expr, Vector}) 
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
     old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
@@ -299,21 +297,27 @@ function execute(ex::Union{Expr, Number}, theory::Vector{AbstractRule}, caching:
 end
 
 
-function execute(ex::Union{Expr, Number}, theory, caching) 
+function batched_execute(vectored_ex::Vector, theory, caching)
     res = []
-    tmp = Tuple{Vector{Int}, Int}[]
-    old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
-    for (pl, r) in tmp
-        old_ex = copy(ex)
-        o = my_rewriter!(pl, old_ex, theory[r])
-        if isnothing(o)
-            push!(res, ((pl, r), old_ex))
-        else
-            push!(res, ((pl, r), o))
+    all_tmp = Dict()
+    for ex in vectored_ex
+        tmp = Tuple{Vector{Int}, Int}[]
+        old_traverse_expr!(ex, theory, 1, Int64[], tmp, caching) 
+        all_tmp[ex] = tmp
+    end
+    for (k,v) in all_tmp
+        for (pl, r) in v
+            old_ex = copy(k)
+            o = my_rewriter!(pl, old_ex, theory[r])
+            if isnothing(o)
+                push!(res, ((pl, r), old_ex))
+            else
+                push!(res, ((pl, r), o))
+            end
         end
     end
     return res
-end
+end 
 
 
 function push_to_tree!(soltree::Dict, new_node::Node)
@@ -393,21 +397,21 @@ end
 function expand_node3!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
     ex = parent.ex
     succesors = execute(ex, theory, exp_cache)
-    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, exp_cache), succesors)
    
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
     
     if isempty(open_list)
-        o = Flux.softmax([exp_size(e) * lambda for e in exprs])
+        o = Flux.softmax([exp_size(e, expr_cache) * lambda for e in exprs])
         for (v,n) in zip(o, filtered_new_nodes)
             push!(open_list, (n, v))
         end
     else
         # open_keys = keys(open_list)
-        new_nodes = [exp_size(e) * lambda for e in exprs]
-        open_nodes = [exp_size(e[1].ex) * lambda for e in open_list]
+        new_nodes = [exp_size(e, expr_cache) * lambda for e in exprs]
+        open_nodes = [exp_size(e[1].ex, expr_cache) * lambda for e in open_list]
         append!(open_nodes, new_nodes)
         o = Flux.softmax(open_nodes)
         # for (k, i) in zip(open_list,o)
@@ -441,8 +445,75 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
     o = map(x->alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
+    # o = zeros(length(filtered_new_nodes))
     for (v,n) in zip(o, filtered_new_nodes)
         enqueue!(open_list, n, v)
+    end
+    nodes_ids = map(x->x.node_id, filtered_new_nodes)
+    append!(parent.children, nodes_ids)
+    if in(:1, exprs)
+        return true
+    end
+    return false
+end
+
+
+function expand_node4!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
+    ex = parent.ex
+    succesors = execute(ex, theory, exp_cache)
+    if isa(ex, ExprWithHash)
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
+    else
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    end
+    filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    # @show length(filtered_new_nodes)
+    isempty(filtered_new_nodes) && return(false)
+    exprs = map(x->x.ex, filtered_new_nodes)
+    o = map(x->alpha * exp_cache(x.ex, size_cache) + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
+    for (v,n) in zip(o, filtered_new_nodes)
+        enqueue!(open_list, n, v)
+    end
+    nodes_ids = map(x->x.node_id, filtered_new_nodes)
+    append!(parent.children, nodes_ids)
+    if in(:1, exprs)
+        return true
+    end
+    return false
+end
+
+
+function expand_node_from_multiple!(parent::Node, soltree, heuristic, open_list, second_open_list, theory, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
+    ex = parent.ex
+    succesors = execute(ex, theory, exp_cache)
+    if isa(ex, ExprWithHash)
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
+    else
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    end
+    filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+    isempty(filtered_new_nodes) && return(false)
+    exprs = map(x->x.ex, filtered_new_nodes)
+    o1 = map(x->only(heuristic(x.ex, cache)), filtered_new_nodes)
+    for (v,n) in zip(o1, filtered_new_nodes)
+        enqueue!(open_list, n, v)
+    end
+    if isempty(second_open_list)
+        o = Flux.softmax([exp_size(e, expr_cache) * lambda for e in exprs])
+        for (v,n) in zip(o, filtered_new_nodes)
+            push!(second_open_list, (n, v))
+        end
+    else
+        new_nodes = [exp_size(e, expr_cache) * lambda for e in exprs]
+        open_nodes = [exp_size(e[1].ex, expr_cache) * lambda for e in second_open_list]
+        append!(open_nodes, new_nodes)
+        o = Flux.softmax(open_nodes)
+        for i in 1:length(second_open_list)
+            second_open_list[i] = (second_open_list[i][1], o[i])
+        end
+        for (v,n) in zip(o[end - length(new_nodes) + 1:end], filtered_new_nodes)
+            push!(second_open_list, (n, v))
+        end
     end
     nodes_ids = map(x->x.node_id, filtered_new_nodes)
     append!(parent.children, nodes_ids)
@@ -535,6 +606,29 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::Priority
         nodes, prob = dequeue_pair!(open_list)
         step += 1
         reached_goal = expand_node!(nodes, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
+        if reached_goal
+            return true 
+        end
+    end
+    return false
+end
+
+
+function build_tree_with_multiple_queues!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, second_open_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
+    step = 0
+    reached_goal = false
+    epsilon = 0.05
+    expand_n = 25
+    expanded_depth = []
+    while length(open_list) > 0
+        if max_steps <= step
+            break
+        end
+        nodes, prob = dequeue_pair!(open_list)
+        nodes, prob = dequeue_pair!(second_open_list)
+        
+        step += 1
+        reached_goal = expand_node_from_multiple!(nodes, soltree, heuristic, open_list, second_open_list, theory, cache, exp_cache, size_cache, expr_cache, alpha)
         if reached_goal
             return true 
         end

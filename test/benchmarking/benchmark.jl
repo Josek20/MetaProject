@@ -4,6 +4,7 @@ using MyModule.Mill
 using MyModule.DataStructures
 using MyModule.LRUCache
 using MyModule.Metatheory
+using MyModule.CSV
 using BenchmarkTools
 using Serialization
 using Profile
@@ -11,212 +12,6 @@ using PProf
 using DataFrames
 using ProfileCanvas
 using SimpleChains
-
-
-theory = @theory a b c d x y begin
-    a::Number + b::Number => a + b
-    a::Number - b::Number => a - b
-    a::Number * b::Number => a * b
-    # a::Number / b::Number => b != 0 ? a / b : :($a / $b)
-    # add.rc
-    a + b --> b + a
-    a + (b + c) --> (a + b) + c
-    (a + b) + c --> a + (b + c)
-    (a + b) - c --> a + (b - c)
-    a + (b - c) --> (a + b) - c
-    (a - b) - c --> a - (b + c) 
-    a - (b + c) --> (a - b) - c
-    (a - b) + c --> a - (b - c)
-    a - (b - c) --> (a - b) + c
-    # (a + b) - c --> a + (b - c)
-    # a + (b - c) --> (a + b) - c 
-    a + 0 --> a
-    a * (b + c) --> a*b + a*c
-    a*b + a*c --> a * (b + c)
-    (a / b) + c --> (a + (c * b)) / b
-    (a + (c * b)) / b --> (a / b) + c
-    x / 2 + x % 2 --> (x + 1) / 2
-    x * a + y * b --> ((a / b) * x + y) * b
-    
-    # and.rc
-    a && b --> b && a
-    a && (b && c) --> (a && b) && c
-    1 && a --> a
-    a && 1 --> a
-    a && a --> a
-    a && !a --> 0
-    !a && a --> 0
-
-    (a == c::Number) && (a == x::Number) => c != x ? 0 : :($a == $c)
-    !a::Number && b::Number => a != b ? 0 : :($a)
-    (a < y) && (a < b) --> a < min(y, b)
-    a < min(y, b) --> (a < y) && (a < b)
-    (a <= y) && (a <= b) --> a <= min(y, b)
-    a <= min(y, b) --> (a <= y) && (a <= b)
-    (a > y) && (a > b) --> x > max(y, b)
-    a > max(y, b) --> (a > y) && (a > b)
-    
-    (a >= y) && (a >= b) --> a >= max(y, b)
-    a >= max(y, b) --> (a >= y) && (a >= b)
-    
-    (a::Number > b) && (c::Number < b) => a < c ? 0 : :($a > $b) && :($c < $b)
-    (a::Number >= b) && (c::Number <= b) => a < c ? 0 : :($a >= $b) && :($c <= $b)
-    (a::Number >= b) && (c::Number < b) => a <= c ? 0 : :($a >= $b) && :($c < $b)
-    
-    a && (b || c) --> (a && b) || (a && c)
-    a || (b && c) --> (a || b) && (a || c)
-    b || (b && c) --> b
-
-    # div.rs
-    0 / a --> 0
-    a / a --> 1
-    (-1 * a) / b --> a / (-1 * b)
-    a / (-1 * b) --> (-1 * a) / b
-    -1 * (a / b) --> (-1 * a) / b
-    (-1 * a) / b --> -1 * (a / b)
-
-    (a * b) / c --> a / (c / b)
-    a / (c / b) --> (a * b) / c
-    (a / b) * c --> a / (b / c)
-    a / (b / c) --> (a / b) * c
-    # (a * b) / c --> a * (b / c) ?
-    (a + b) / c --> (a / c) + (b / c)
-    ((a * b) + c) / d --> ((a * b) / d) + (c / d)
-
-    # eq.rs
-    x == y --> y == x
-    x == y => y != 0 ? :(($x - $y) == 0) : :($x == $y)
-    x + y == a --> x == a - y
-    x == x --> 1
-    x*y == 0 --> (x == 0) || (y == 0)
-    max(x,y) == y --> x <= y
-    min(x,y) == y --> y <= x
-    y <= x --> min(x,y) == y
-
-    # ineq.rs
-    x != y --> !(x == y)
-
-    # lt.rs
-    x > y --> y < x
-    # x < y --> (-1 * y) < (-1 * x)
-    a < a --> 0
-    a <= a --> 1
-    a + b < c --> a < c - b
-
-    a - b < a --> 0 < b
-    0 < a::Number => 0 < a ? 1 : 0
-    a::Number < 0 => a < 0 ? 1 : 0
-    min(a , b) <= a --> b <= a
-    min(a, b) <= min(a , c) --> b <= min(a, c)
-    max(a, b) <= max(a , c) --> max(a ,b) <= c
-
-    # max.rs
-    # max(a, b) --> (-1 * min(-1 * a, -1 * b))
-    
-    # min.rs
-    min(a, b) --> min(b, a)
-    min(min(a, b), c) --> min(a, min(b, c))
-    min(a,a) --> a
-    min(max(a, b), a) --> a
-    min(max(a, b), max(a, c)) --> max(min(b, c), a)
-    min(max(min(a,b), c), b) --> min(max(a,c), b)
-    min(a + b, c) --> min(b, c - a) + a
-    min(a, b) + c --> min(a + c, b + c)
-    
-    min(a + c, b + c) --> min(a, b) + c
-    min(c + a, b + c) --> min(a, b) + c
-    min(a + c, b + c) --> min(a, b) + c
-    min(c + a, c + b) --> min(a, b) + c
-
-    min(a, a + b::Number) => b > 0 ? :($a) : :($a + $b)
-    min(a ,b) * c::Number => c > 0 ? :(min($a * $c, $b * $c)) : :(max($a * $c, $b * $c)) 
-    min(a * c::Number, b * c::Number) => c > 0 ? :(min($a ,$b) * $c) : :(max($a, $b) * $c)
-    min(a, b) / c::Number => c > 0 ? :(min($a / $c, $b / $c)) : :(max($a/$c,$b/$c))
-    min(a / c::Number, b / c::Number) => c>0 ? :(min($a, $b) / $c) : :(max($a,$b) / $c)
-    max(a , b) / c::Number => c < 0 ? :(max($a / $c , $b / $c)) : :(min($a / $c, $b / $c))
-    max(a / c::Number, b / c::Number) => c < 0 ? :(max($a, $b) / $c) : :(min($a, $b) / $c)
-    min(max(a,b::Number), c::Number) => c <= b ? :($c) : :(min(max($a,$b),$c))
-    # min((a / b::Number) * b::Number , a) => b > 0 ? :(($a / $b) * $b) : :($)
-    min(a % b::Number, c::Number) => c >= b - 1 ? :($a % $b) : :(min($a % $b, $c))
-    min(a % b::Number, c::Number) => c <= 1 - b ? :($c) : :(min($a % $b, $c))
-
-    min(max(a, b::Number), c::Number) => b <= c ? :(max(min($a, $c), $b)) : :(min(max($a, $b), $c))
-    max(min(a, c::Number), b::Number) => b <= c ? :(min(max($a, $b), $c)) : :(max(min($a, $c), $b))
-    min(a , b::Number) <= c::Number --> a <= c || b <= c
-    max(a , b::Number) <= c::Number --> a <= c && b <= c
-    c::Number <= max(a , b::Number) --> c <= a || c <= b
-    c::Number <= min(a , b::Number) --> c <= a && c <= b
-    min(a * b::Number, c::Number) => c != 0 && b % c == 0 && b > 0 ? :(min($a, $b / $c) * $c) : :(min($a * $b, $c))
-    min(a * b::Number, d * c::Number) => c != 0 && b % c == 0 && b > 0 ? :(min($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
-    min(a * b::Number, c::Number) => c != 0 && b % c == 0 && b < 0 ? :(max($a, $b / $c) * $c) : :(min($a * $b, $c))
-    min(a * b::Number, d * c::Number) => c != 0 && b % c == 0 && b < 0 ? :(max($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
-    max(a * c::Number, b * c::Number) => c < 0 ? :(min($a, $b) * $c) : :(max($a, $b) * $c)
-
-    # modulo.rs
-    a % 0 --> 0
-    a % a --> 0
-    a % 1 --> 0
-
-    # a % b::Number --> b > 0 ? :(($a + $b) % $b) : :($a % $b)
-    (a * -1) % b --> -1 * (a % b)
-    -1 * (a % b) --> (a * -1) % b
-    (a - b) % 2 --> (a + b) % 2
-
-    ((a * b::Number) + d) % c::Number => c != 0 && b % c == 0 ? :($b % $c) : :((($a * $b) + $d) % $c)
-    (b::Number * a) % c::Number => c != 0 && b % c == 0 ? 0 : :(($b * $a) % $c)
-    
-    # mul.rs
-    a * b --> b * a
-    # a * b::Number --> b * a
-    a * (b * c) --> (a * b) * c
-    a * 0 --> 0
-    0 * a --> 0
-    a * 1 --> a
-    1 * a --> a
-    # (a / b) * b --> (a - (a % b))
-    max(a,b) * min(a, b) --> a * b
-    min(a,b) * max(a, b) --> a * b
-    (a * b) / b --> a
-    (b * a) / b --> a
-
-    # not.rs
-    x <= y --> !(y < x)
-    !(y < x) --> x <= y
-    x >= y --> !(x < y)
-    !(x == y) --> x != y
-    !(!x) --> x
-
-    # or.rs
-    x || y --> !((!x) && (!y))
-    y || x --> x || y
-
-    # sub.rs
-    # a - b --> a + (-1 * b)
-    
-    # my rules
-    a || 1 --> 1
-    1 || a --> 1
-    a::Number <= b::Number => a<=b ? 1 : 0
-    a <= b - c --> a + c <= b
-    a + c <= b --> a <= b - c
-    #a <= b - c --> a - b <= -c
-    a <= b + c --> a - c <= b
-    a - c <= b --> a <= b + c
-    a <= b + c --> a - b <= c
-    a - b <= c --> a <= b + c
-    a - a --> 0
-    min(a::Number, b::Number) => a >= b ? b : a 
-    max(a::Number, b::Number) => a >= b ? a : b
-    # a + b::Number <= min(a + c::Number, d) =>
-    a <= min(b,c) --> a<=b && a<=c
-    min(b,c) <= a --> b<=a || c<=a
-    a <= max(b,c) --> a<=b || a<=c
-    max(b,c) <= a --> b<=a || c<=a
-    a<=b && c<=a --> c <= b
-    b<=a && a<=c --> b <= c
-    a + b - c --> a - c + b
-end
-
 
 
 
@@ -228,12 +23,6 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size,Flux.relu), Dense(hidden_size, 1))
     )
 
-# made_simple_chain(model::BagModel) = BagModel(made_simple_chain(model.im), model.a, made_simple_chain(model.bm))
-# made_simple_chain(model::ProductModel) = ProductModel(map(made_simple_chain, model.ms), made_simple_chain(model.m))
-# made_simple_chain(model::ArrayModel) = ArrayModel(made_simple_chain(model.m))
-# made_simple_chain(m::Flux.Chain) = SimpleChain....
-# made_simple_chain(m::Dense) = SimpleDense
-
 heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
     SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
     Mill.SegmentedSum(hidden_size),
@@ -241,7 +30,7 @@ heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
     SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
 ))
 
-exp_data = deserialize("benchmarking.bin")
+exp_data = deserialize("data/training_data/benchmarking.bin")
 
 
 function compare_two_methods(data, model, batched=64)
@@ -333,6 +122,7 @@ function profile_method(data, heuristic)
     # pprof()
 end
 
+
 function pevnaks_profile_method(data, heuristic)
     df = map(enumerate(data[1:20])) do (ex_id, ex)
         cache = LRU(maxsize=100_000)
@@ -343,6 +133,7 @@ function pevnaks_profile_method(data, heuristic)
     end |> DataFrame
     CSV.write("profile_results.csv", df)
 end
+
 
 function pevnaks_profile_method(exp_data, heuristic; max_steps = 1000, max_depth = 30)
     df = map(enumerate(exp_data[1:20])) do (ex_id, ex)
@@ -371,9 +162,10 @@ function pevnaks_profile_method(exp_data, heuristic; max_steps = 1000, max_depth
 end
 
 
-function benchmark_method_precomputed(data, heuristic)
+function benchmark_method_precomputed(data, heuristic, max_steps=1000, max_depth=10)
+    # bmark1 = ProfileCanvas.@profview begin
     bmark1 = @benchmark begin
-        ex = $data[1]
+        ex = data[1]
         exp_cache = LRU{Expr, Vector}(maxsize=100_000)
         cache = LRU(maxsize=1_000_000)
         size_cache = LRU(maxsize=100_000)
@@ -389,10 +181,12 @@ function benchmark_method_precomputed(data, heuristic)
         soltree[root.node_id] = root
         o = heuristic(ex, cache)
         enqueue!(open_list, root, only(o))
-        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        MyModule.build_tree!(soltree, heuristic1, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        @show length(soltree), exp_cache.hits, exp_cache.misses, cache.hits, cache.misses
     end
+    # bmark1 = ProfileCanvas.@profview begin
     bmark2 = @benchmark begin
-        ex = $data[1]
+        ex = data[1]
         exp_cache = LRU(maxsize=100_000)
         cache = LRU(maxsize=1_000_000)
         size_cache = LRU(maxsize=100_000)
@@ -409,6 +203,7 @@ function benchmark_method_precomputed(data, heuristic)
         o = heuristic(ex, cache)
         enqueue!(open_list, root, only(o))
         MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        @show length(soltree), exp_cache.hits, exp_cache.misses, cache.hits, cache.misses, length(cache)
     end
     @show bmark1, bmark2
 end
@@ -459,4 +254,110 @@ function making_faster_reward(data, heuristic)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
     end
     @show bmark1, bmark2
+end
+
+
+function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
+    data = data[1:100]
+    df = map(data) do ex
+        exp_cache = LRU(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, exp_cache)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = Tuple{MyModule.Node, Float32}[]
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        push!(open_list, (root, 0))
+        MyModule.build_tree_with_reward_function1!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1, -50)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+        (; s₀ = MyModule.exp_size(ex, expr_cache), sₙ = MyModule.exp_size(smallest_node.ex, expr_cache))
+    end |> DataFrame
+    CSV.write("profile_results_reward_function.csv", df)
+    df = map(data) do ex
+    # @benchmark begin
+        exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        o = heuristic(ex, cache)
+        enqueue!(open_list, root, only(o))
+        # function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
+
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, new_all_symbols, sym_enc, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+        (; s₀ = MyModule.exp_size(ex), sₙ = MyModule.exp_size(smallest_node.ex))
+    end |> DataFrame
+    CSV.write("profile_results_random_heuristic.csv", df)
+    df = map(data) do ex
+    # @benchmark begin
+        exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        o = heuristic(ex, cache)
+        enqueue!(open_list, root, only(o))
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.8)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+        (; s₀ = MyModule.exp_size(ex), sₙ = MyModule.exp_size(smallest_node.ex))
+    end |> DataFrame
+    CSV.write("profile_results_gatting_heuristic.csv", df)
+    df = map(data) do ex
+    # @benchmark begin
+        exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        o = heuristic(ex, cache)
+        enqueue!(open_list, root, only(o))
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+        (; s₀ = MyModule.exp_size(ex), sₙ = MyModule.exp_size(smallest_node.ex))
+    end |> DataFrame
+    CSV.write("profile_results_depth_as_heuristic.csv", df)
+end
+
+
+function plot_hist_comparison()
+    df1 = CSV.read("profile_results_depth_as_heuristic.csv", DataFrame)
+    df2 = CSV.read("profile_results_gatting_heuristic.csv", DataFrame)
+    df3 = CSV.read("profile_results_random_heuristic.csv", DataFrame)
+    df4 = CSV.read("profile_results_reward_function.csv", DataFrame)
+    av1 = mean(df1[!, 1] .- df1[!, 2])
+    av2 = mean(df2[!, 1] .- df2[!, 2])
+    av3 = mean(df3[!, 1] .- df3[!, 2])
+    av4 = mean(df4[!, 1] .- df4[!, 2])
+    bar(["DH", "GH", "RH", "RF"], [av1,av2,av3,av4])
 end

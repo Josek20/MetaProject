@@ -14,6 +14,9 @@ using Base.Threads
 using LRUCache
 using SimpleChains
 
+
+include("my_theory.jl")
+export theory
 include("small_data_loader.jl")
 export load_data, preprosses_data_to_expressions
 # Initialize model and example tree

@@ -1,30 +1,8 @@
 my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 
-# function cached_inference!(ex::ExprWithHash, cache, model, all_symbols, symbols_to_ind)
-#     get!(cache, ex) do
-#         if isa(ex.ex, Expr)
-#             cached_inference1!(ex, cache, model, all_symbols, symbols_to_ind)
-#         elseif isa(ex.ex, Number)
-#             cached_inference3!(ex, cache, model, all_symbols, symbols_to_ind)
-#         elseif isa(ex.ex, Symbol)
-#             cached_inference2!(ex, cache, model, all_symbols, symbols_to_ind)
-#         end
-#     end
-# end
-
-
 function cached_inference!(ex::ExprWithHash, ::Type{Expr}, cache, model, all_symbols, symbols_to_ind)
-    # @show ex.head
     get!(cache, ex) do
-        # if ex.head == :call
-        #     fun_name, args =  ex.head, ex.args
-        # elseif ex.head in all_symbols
-        #     fun_name = ex.head
-        #     args = ex.args
-        # else
-        #     error("unknown head $(ex.head)")
-        # end
         args = ex.args
         fun_name = ex.head
         encoding = zeros(Float32, length(all_symbols))
@@ -313,11 +291,11 @@ function (m::ExprModel)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, sy
 end
 
 
-function (m::ExprModel)(ex::Expr,::Type{Symbol}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    ds = cached_inference!(ExprWithHash(ex), typeof(ex), cache, m, all_symbols, symbols_to_index)
-    tmp = vcat(ds, zeros(Float32, 2))
-    m.heuristic(m.joint_model(tmp))
-end
+# function (m::ExprModel)(ex::Expr,::Type{Symbol}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+#     ds = cached_inference!(ExprWithHash(ex), typeof(ex), cache, m, all_symbols, symbols_to_index)
+#     tmp = vcat(ds, zeros(Float32, 2))
+#     m.heuristic(m.joint_model(tmp))
+# end
 
 
 function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
@@ -332,6 +310,13 @@ function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols
     tmp = vcat(ds, zeros(Float32, 2))
     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
 end
+
+
+# function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+#     ds = cached_inference!(ex, typeof(ex.ex), cache, m, all_symbols, symbols_to_index)
+#     tmp = vcat(ds, zeros(Float32, 2))
+#     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
+# end
 
 
 embed(m::ExprModel, ds::Missing) = missing
