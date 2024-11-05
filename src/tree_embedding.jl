@@ -318,6 +318,44 @@ end
 #     m.expr_model.heuristic(m.expr_model.joint_model(tmp, m.model_params.joint_model), m.model_params.heuristic)
 # end
 
+function simple_to_flux(m1::ExprModelSimpleChains, m2::ExprModel)
+    simple_weights = SimpleChains.weights(m1.expr_model.joint_model, m1.model_params.joint_model)
+    for i in 1:length(m2.joint_model.layers)
+        m2.joint_model.layers[i].weight .= simple_weights[i]
+    end
+    simple_weights = SimpleChains.weights(m1.expr_model.head_model, m1.model_params.head_model)
+    for i in 1:length(m2.head_model.layers)
+        m2.head_model.layers[i].weight .= simple_weights[i]
+    end
+    simple_weights = SimpleChains.weights(m1.expr_model.heuristic, m1.model_params.heuristic)
+    for i in 1:length(m2.heuristic.layers)
+        m2.heuristic.layers[i].weight .= simple_weights[i]
+    end
+    return m2
+end
+
+
+function flux_to_simple(m1::ExprModelSimpleChains, m2::ExprModel)
+    simple_weights = SimpleChains.weights(m1.expr_model.joint_model, m1.model_params.joint_model)
+    simple_biases = SimpleChains.biases(m1.expr_model.joint_model, m1.model_params.joint_model)
+    for i in 1:length(m2.joint_model.layers)
+        simple_weights[i] .= m2.joint_model.layers[i].weight
+        simple_biases[i] .= m2.joint_model.layers[i].bias 
+    end
+    simple_weights = SimpleChains.weights(m1.expr_model.head_model, m1.model_params.head_model)
+    simple_biases = SimpleChains.biases(m1.expr_model.head_model, m1.model_params.head_model)
+    for i in 1:length(m2.head_model.layers)
+        simple_weights[i] .= m2.head_model.layers[i].weight
+        simple_biases[i] .= m2.head_model.layers[i].bias 
+    end
+    simple_weights = SimpleChains.weights(m1.expr_model.heuristic, m1.model_params.heuristic)
+    simple_biases = SimpleChains.biases(m1.expr_model.heuristic, m1.model_params.heuristic)
+    for i in 1:length(m2.heuristic.layers)
+        simple_weights[i] .= m2.heuristic.layers[i].weight
+        simple_biases[i] .= m2.heuristic.layers[i].bias
+    end 
+    return m1
+end
 
 embed(m::ExprModel, ds::Missing) = missing
 
@@ -372,4 +410,47 @@ function loss(heuristic::ExprModel, params::InitExprModelDense, big_vector, hp, 
     # return sum(log.(1 .+ exp.(filtered_diff)))
     # return mean(softmax(filtered_diff))
     return sum(surrogate.(filtered_diff))
+end
+
+
+struct MySimpleChainsLoss{T,Y<:AbstractVector{T}}<:SimpleChains.AbstractLoss{T}
+    targets::Y
+end
+
+SimpleChains.target(loss::MySimpleChainsLoss) = loss.targets
+(loss::MySimpleChainsLoss)(x::AbstractArray) = MySimpleChainsLoss(x)
+
+function (loss::MySimpleChainsLoss)(prev_layer_out::AbstractArray{T}, p::Ptr, pu) where {T}
+    total_loss = loss(big_vector, hp, hn)
+    return total_loss, p, pu
+end
+
+function SimpleChains.layer_output_size(::Val{T}, sl::MySimpleChainsLoss, s::Tuple) where {T}
+    SimpleChains._layer_output_size_no_temp(Val{T}(), sl, s)
+end
+function SimpleChains.forward_layer_output_size(::Val{T}, sl::MySimpleChainsLoss, s) where {T}
+    SimpleChains._layer_output_size_no_temp(Val{T}(), sl, s)
+end
+
+# Todo: implement back prop for your model 
+function SimpleChains.chain_valgrad!(
+    __,
+    previous_layer_output::AbstractArray{T},
+    layers::Tuple{MySimpleChainsLoss},
+    _::Ptr,
+    pu::Ptr{UInt8},
+) where {T}
+    loss = getfield(layers, 1)
+    total_loss = calculate_loss(loss, previous_layer_output)
+    y = loss.targets
+
+    # Store the backpropagated gradient in the previous_layer_output array.
+    for i in eachindex(y)
+        sign_arg = 2 * y[i] - 1
+        # Get the value of the last logit
+        logit_i = previous_layer_output[i]
+        previous_layer_output[i] = -(sign_arg * inv(1 + exp(sign_arg * logit_i)))
+    end
+
+    return total_loss, previous_layer_output, pu
 end

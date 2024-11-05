@@ -7,7 +7,6 @@ using Metatheory
 using Statistics
 using Mill
 using CSV
-# using Metatheory.Rewriters
 using DataStructures
 using DataFrames
 using Base.Threads

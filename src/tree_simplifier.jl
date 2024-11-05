@@ -95,12 +95,12 @@ function Base.:(==)(e1::ExprWithHash, e2::ExprWithHash)
 end
 
 
-exp_size(node::Node) = exp_size(node.ex)
-exp_size(ex::Expr) = sum(exp_size(a) for a in ex.args)
-exp_size(ex::Symbol) = 1f0
-exp_size(ex::Int) = 1f0
-exp_size(ex::Float64) = 1f0
-exp_size(ex::Float32) = 1f0
+# exp_size(node::Node) = exp_size(node.ex)
+# exp_size(ex::Expr) = sum(exp_size(a) for a in ex.args)
+# exp_size(ex::Symbol) = 1f0
+# exp_size(ex::Int) = 1f0
+# exp_size(ex::Float64) = 1f0
+# exp_size(ex::Float32) = 1f0
 
 
 function exp_size(ex::ExprWithHash, size_cache)
@@ -108,7 +108,7 @@ function exp_size(ex::ExprWithHash, size_cache)
         if isempty(ex.args)
             return 1f0
         end
-        return sum(exp_size(a, size_cache) for a in ex.args)
+        return sum(exp_size(a, size_cache) for a in ex.args) + 1
     end
 end
 
@@ -118,7 +118,8 @@ function exp_size(ex::Union{Expr, Symbol, Int}, size_cache)
         if isa(ex, Symbol) || isa(ex, Number)
             return 1f0
         end
-        return sum(exp_size(a, size_cache) for a in ex.args)
+        res = sum(exp_size(a, size_cache) for a in ex.args)
+        return ex.head in [:&&, :||] ? res + 1 : res
     end
 end
 
@@ -444,7 +445,7 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
-    o = map(x->alpha * x.depth + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
+    o = map(x->alpha * exp_size(x.ex, size_cache) + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
     # o = zeros(length(filtered_new_nodes))
     for (v,n) in zip(o, filtered_new_nodes)
         enqueue!(open_list, n, v)
@@ -499,13 +500,13 @@ function expand_node_from_multiple!(parent::Node, soltree, heuristic, open_list,
         enqueue!(open_list, n, v)
     end
     if isempty(second_open_list)
-        o = Flux.softmax([exp_size(e, expr_cache) * lambda for e in exprs])
+        o = Flux.softmax([exp_size(e, size_cache) * lambda for e in exprs])
         for (v,n) in zip(o, filtered_new_nodes)
             push!(second_open_list, (n, v))
         end
     else
-        new_nodes = [exp_size(e, expr_cache) * lambda for e in exprs]
-        open_nodes = [exp_size(e[1].ex, expr_cache) * lambda for e in second_open_list]
+        new_nodes = [exp_size(e, size_cache) * lambda for e in exprs]
+        open_nodes = [exp_size(e[1].ex, size_cache) * lambda for e in second_open_list]
         append!(open_nodes, new_nodes)
         o = Flux.softmax(open_nodes)
         for i in 1:length(second_open_list)
@@ -558,7 +559,8 @@ function build_tree_with_reward_function1!(soltree::Dict{UInt64, Node}, heuristi
         if max_steps <= step
             break
         end
-        i = rand() < epsilon ? rand(1:length(open_list)) : argmin(i->open_list[i][2], 1:length(open_list))
+        # i = rand() < epsilon ? rand(1:length(open_list)) : argmin(i->open_list[i][2], 1:length(open_list))
+        i = argmin(i->open_list[i][2], 1:length(open_list))
         nodes, prob = open_list[i]
         open_list[i] = open_list[end]
         pop!(open_list)
@@ -614,7 +616,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::Priority
 end
 
 
-function build_tree_with_multiple_queues!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, second_open_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
+function build_tree_with_multiple_queues!(soltree::Dict{UInt64, Node}, heuristic, open_list, second_open_list, close_list, max_steps, theory, cache, exp_cache, size_cache, expr_cache, alpha)
     step = 0
     reached_goal = false
     epsilon = 0.05
@@ -623,11 +625,22 @@ function build_tree_with_multiple_queues!(soltree::Dict{UInt64, Node}, heuristic
     while length(open_list) > 0
         if max_steps <= step
             break
+        end 
+        if rand() < alpha
+            nodes, prob = dequeue_pair!(open_list)
+        else
+            i = argmin(i->second_open_list[i][2], 1:length(second_open_list))
+            nodes, prob = second_open_list[i]
+            second_open_list[i] = second_open_list[end]
+            pop!(second_open_list)
         end
-        nodes, prob = dequeue_pair!(open_list)
-        nodes, prob = dequeue_pair!(second_open_list)
-        
+        if !(nodes.node_id in close_list) 
+            push!(close_list, nodes.node_id)
+        else
+            continue
+        end
         step += 1
+        # @show step
         reached_goal = expand_node_from_multiple!(nodes, soltree, heuristic, open_list, second_open_list, theory, cache, exp_cache, size_cache, expr_cache, alpha)
         if reached_goal
             return true 
@@ -754,25 +767,33 @@ end
 function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
     soltree = Dict{UInt64, Node}()
     open_list = PriorityQueue{Node, Float32}()
+    second_open_list = Tuple[]
     close_list = Set{UInt64}()
-    expansion_history = Dict{UInt64, Vector}()
-    encodings_buffer = Dict{UInt64, ProductNode}()
+    # expansion_history = Dict{UInt64, Vector}()
+    # encodings_buffer = Dict{UInt64, ProductNode}()
     @show ex
     o = heuristic(ex, cache)
     # root = Node(ex, (0,0), nothing, 0, nothing)
     root = Node(ex, (0,0), nothing, 0, expr_cache)
     soltree[root.node_id] = root
     enqueue!(open_list, root, only(o))
-
-    reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
+    push!(second_open_list, (root, exp_size(root.ex, size_cache)))
+    # reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
+# function build_tree_with_multiple_queues!(soltree::Dict{UInt64, Node}, heuristic, open_list, second_open_list, max_steps, theory, cache, exp_cache, size_cache, expr_cache, alpha)
+    reached_goal = build_tree_with_multiple_queues!(soltree, heuristic, open_list, second_open_list, close_list, max_steps, theory, cache, exp_cache, size_cache, expr_cache, alpha)
     println("Have successfuly finished bulding simplification tree!")
     @show length(soltree)
     smallest_node = extract_smallest_terminal_node(soltree, close_list, size_cache)
     simplified_expression = smallest_node.ex
-    @show simplified_expression
+    if isa(simplified_expression, ExprWithHash)
+        @show simplified_expression
+    else
+        @show simplified_expression
+    end
     big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
     tmp = []
     @show proof_vector
+    @show length(soltree)
     return simplified_expression, [], big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector, tmp
 end
 
@@ -799,6 +820,19 @@ function isbetter(a::TrainingSample, b::TrainingSample)
 end
 
 
+function isbetter1(a::TrainingSample, b::TrainingSample, size_cache)
+    size_a = exp_size(a.expression, size_cache) 
+    size_b = exp_size(b.expression, size_cache)
+    if size_a > size_b
+        return true
+    elseif size_a == size_b && length(a.proof) > length(b.proof)
+        return true
+    else
+        return false
+    end
+end
+
+
 function train_heuristic!(heuristic, data, training_samples, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)  
     for (index, i) in enumerate(data)
         println("Index: $index")
@@ -809,7 +843,11 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         println("Saturated: $saturated")
         new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, i)
         if length(training_samples) >= index 
-            training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
+            if isa(training_samples[index].expression, ExprWithHash)
+                training_samples[index] = isbetter1(training_samples[index], new_sample, size_cache) ? new_sample : training_samples[index]
+            else
+                training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
+            end
         else
             push!(training_samples, new_sample)
         end

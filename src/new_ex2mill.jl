@@ -146,7 +146,11 @@ function handle_bags(bg, new_bg)
 end
 
 function no_reduce_multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
-    stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
+    if isa(expression_vector[1], ExprWithHash)
+        stats = map(x-> count_expr_stats(x.ex, sym_enc), expression_vector)
+    else
+        stats = map(x-> count_expr_stats(x, sym_enc), expression_vector)
+    end
     st, nm, ps, bg = stats[1]
     for (_,i) in enumerate(stats[2:end])
         min_length = min(length(st), length(i[1]))

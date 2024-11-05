@@ -16,7 +16,7 @@ using MyModule.Flux
 using MyModule.Mill
 using MyModule.DataFrames
 using MyModule.LRUCache
-# using MyModule.SimpleChains
+using MyModule.SimpleChains
 using StatsBase
 using CSV
 using BSON
@@ -33,12 +33,12 @@ train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
 
 hidden_size = 128
-# heuristic = MyModule.ExprModelSimpleChains(ExprModel(
-#     SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
-#     Mill.SegmentedSum(hidden_size),
-#     SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
-#     SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
-# ))
+simple_heuristic = MyModule.ExprModelSimpleChains(ExprModel(
+    SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
+    Mill.SegmentedSum(hidden_size),
+    SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
+    SimpleChain(static(hidden_size), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, 1)),
+))
 heuristic = ExprModel(
     Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.leakyrelu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSum(hidden_size),
@@ -62,12 +62,13 @@ myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
 df1 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
 df2 = DataFrame([[] for _ in 0:epochs], ["Epoch$i" for i in 0:epochs])
+heuristic = MyModule.simple_to_flux(simple_heuristic, heuristic)
 
 # @load "training_samplesk1000_v3.jld2" training_samples
 # x,y,r = MyModule.caviar_data_parser("data/caviar/288_dataset.json")
 # x,y,r = MyModule.caviar_data_parser("data/caviar/dataset-batch-2.json")
 # train_heuristic!(heuristic, train_data[1:], training_samples, max_steps, max_depth, all_symbols, theory, variable_names)
-@assert 0 == 1
+# @assert 0 == 1
 if isfile("../models/tre1e_search_heuristic.bson")
     # BSON.@load "../models/tree_search_heuristic.bson" heuristic
     tmp = []
@@ -89,7 +90,7 @@ else
     size_cache = LRU(maxsize=100000)
     expr_cache = LRU(maxsize=100000)
     # global some_alpha = 1
-    some_alpha = 0
+    some_alpha = 0.05
     
     for ep in 1:epochs 
         empty!(cache)
@@ -99,10 +100,12 @@ else
         println("Epoch $ep")
         println("Training===========================================")
         # global training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, some_alpha), collect(1:number_of_workers))
-        train_heuristic!(heuristic, test_data[5:5], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, some_alpha)
-        @assert 0 == 1
+        train_heuristic!(simple_heuristic, test_data[5:5], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, some_alpha)
+        
+        # @assert 0 == 1
+
         # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
-        # some_alpha -= 0.1
+        some_alpha += 0.1
         ltmp = []
         # @show training_samples
         # @assert 0 == 1
@@ -145,6 +148,7 @@ else
         push!(stats, [i.expression for i in cat_samples])
         push!(proof_stats, [i.proof for i in cat_samples])
         push!(loss_stats, ltmp)
+        simple_heuristic = MyModule.flux_to_simple(simple_heuristic, heuristic)
     end
     # BSON.@save "models/tree_search_heuristic.bson" heuristic
     # CSV.write("stats/data100.csv", df)
@@ -172,7 +176,7 @@ plot(1:epochs, transpose(hcat(loss_stats...)))
 savefig("stats/loss_new_theory$r.png")
 plot()
 for i in 1:size(df1)[1]
-    tmp = MyModule.exp_size.(Vector(df1[i, :]))
+    tmp = map(x->MyModule.exp_size(x, size_cache), Vector(df1[i, :]))
     plot!(0:size(df1)[2] - 1, tmp)
 end
 plot!()
