@@ -4,10 +4,24 @@ using Revise
 number_of_workers = nworkers()
 
 if number_of_workers > 1
-    using Pkg
-    Pkg.instantiate()
-    Pkg.add("Plots")
+    addprocs(number_of_workers)
+    # using Pkg
+    # Pkg.instantiate()
+    # Pkg.add("Plots")
     @everywhere using MyModule
+    #     using MyModule
+    #     using MyModule
+    #     using MyModule.Metatheory
+    #     using MyModule.Flux
+    #     using MyModule.Mill
+    #     using MyModule.DataFrames
+    #     using MyModule.LRUCache
+    #     using MyModule.SimpleChains
+    #     using StatsBase
+    #     using CSV
+    #     using BSON
+    #     using JLD2
+    # end
 end
 
 using MyModule
@@ -33,7 +47,7 @@ train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
 
 hidden_size = 128
-simple_heuristic = MyModule.ExprModelSimpleChains(ExprModel(
+simple_heuristic = ExprModelSimpleChains(ExprModel(
     SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
     Mill.SegmentedSum(hidden_size),
     SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
@@ -48,15 +62,15 @@ heuristic = ExprModel(
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 
 epochs = 10
-optimizer = ADAM()
-# global training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
-training_samples = Vector{TrainingSample}()
+optimizer = Adam()
+global training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
+# training_samples = Vector{TrainingSample}()
 max_steps = 1000
 max_depth = 60
 n = 1000
 
-myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
-myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
+# myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
+# myex = :((v0 + v1) + 119 <= min((v0 + v1) + 120, v2))
 # myex = :((v0*23 + v2) - (v2 + v0*23) <= 100) 
 # myex = :(121 - max(v0 * 59, 109) <= 1024)
 df = DataFrame([[], [], [], [], []], ["Epoch", "Id", "Simplified Expr", "Proof", "Length Reduced"])
@@ -85,13 +99,24 @@ else
     stp = div(n, number_of_workers)
     batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
     dt = 1
-    exp_cache = LRU(maxsize=100000)
-    cache = LRU(maxsize=1000000)
-    size_cache = LRU(maxsize=100000)
-    expr_cache = LRU(maxsize=100000)
+    exp_cache = LRU(maxsize=100_000)
+    cache = LRU(maxsize=1_000_000)
+    size_cache = LRU(maxsize=100_000)
+    expr_cache = LRU(maxsize=100_000)
     # global some_alpha = 1
     some_alpha = 0.05
-    
+    # @everywhere max_steps = $max_steps
+    # @everywhere max_depth = $max_depth
+    # @everywhere batched_train_data = $batched_train_data
+    # @everywhere exp_cache = $exp_cache
+    # @everywhere cache = $cache
+    # @everywhere size_cache = $size_cache
+    # @everywhere expr_cache = $expr_cache
+    # @everywhere training_samples = $training_samples
+    # @everywhere simple_heuristic = $simple_heuristic
+    # @everywhere some_alpha = $some_alpha
+    # results = RemoteChannel(() -> Channel{TrainingSample}(number_of_workers))
+    # results = SharedVector{Vector{TrainingSample}}(number_of_workers)
     for ep in 1:epochs 
         empty!(cache)
         
@@ -99,19 +124,20 @@ else
         # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
         println("Epoch $ep")
         println("Training===========================================")
-        # global training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, some_alpha), collect(1:number_of_workers))
-        train_heuristic!(simple_heuristic, test_data[5:5], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, some_alpha)
+        global training_samples = pmap(dt -> train_heuristic!(heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, ep - 1 + some_alpha), collect(1:number_of_workers))
+        # train_heuristic!(simple_heuristic, test_data[5:5], training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, some_alpha)
         
         # @assert 0 == 1
 
         # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)
-        some_alpha += 0.1
+        # some_alpha += 0.1
         ltmp = []
         # @show training_samples
         # @assert 0 == 1
         # MyModule.test_expr_embedding(heuristic, training_samples[1:n], theory, symbols_to_index, all_symbols, variable_names)
-
+        # training_samples = fetch(results)
         cat_samples = vcat(training_samples...)
+        cat_samples = filter(x->length(x.proof)>1, cat_samples)
         # for sample in training_samples
         for i in 1:100
             sample = StatsBase.sample(cat_samples)
@@ -168,7 +194,7 @@ for i in 1:length(proof_stats[1])
     end
     push!(df2, tmp)
 end
-r = "_manual_version1"
+r = "_dist_version9"
 CSV.write("stats/new_theory_epoch_exp_progress$r.csv", df1)
 CSV.write("stats/new_theory_epoch_proof_progress$r.csv", df2)
 using Plots

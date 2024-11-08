@@ -182,6 +182,39 @@ function old_traverse_expr!(ex::ExprWithHash, matchers::Vector, tree_ind::Int, t
 end
 
 
+function old_traverse_expr3!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
+    if !isa(ex, Expr)
+        return
+    end
+    get!(caching, ex) do
+        a = filter(em->!isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
+        if !isempty(a)
+            b = copy(trav_indexs)
+            append!(tmp, [(b, i[1]) for i in a])
+        end
+        tree_ind += 1
+        @show tree_ind
+        # Traverse sub-expressions
+        for (ind, i) in enumerate(ex.args)
+            # Update the traversal index path with the current index
+            push!(trav_indexs, ind)
+
+            # Recursively traverse the sub-expression
+            b = old_traverse_expr3!(i, matchers, tree_ind, trav_indexs, tmp, caching)
+
+            # After recursion, pop the last index to backtrack to the correct level
+            @show trav_indexs[tree_ind:end]
+            if !isnothing(b)
+                @show b[tree_ind:end]
+            end
+            pop!(trav_indexs)
+        end 
+        # return isempty(a) ? [] : [i[1] for i in a]
+        return trav_indexs
+    end
+end
+
+
 function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
     if !isa(ex, Expr)
         return
@@ -398,21 +431,21 @@ end
 function expand_node3!(parent::Node, soltree, heuristic, open_list, encodings_buffer, all_symbols, symbols_to_index, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
     ex = parent.ex
     succesors = execute(ex, theory, exp_cache)
-    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, exp_cache), succesors)
+    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
    
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
     
     if isempty(open_list)
-        o = Flux.softmax([exp_size(e, expr_cache) * lambda for e in exprs])
+        o = Flux.softmax([exp_size(e, size_cache) * lambda for e in exprs])
         for (v,n) in zip(o, filtered_new_nodes)
             push!(open_list, (n, v))
         end
     else
         # open_keys = keys(open_list)
-        new_nodes = [exp_size(e, expr_cache) * lambda for e in exprs]
-        open_nodes = [exp_size(e[1].ex, expr_cache) * lambda for e in open_list]
+        new_nodes = [exp_size(e, size_cache) * lambda for e in exprs]
+        open_nodes = [exp_size(e[1].ex, size_cache) * lambda for e in open_list]
         append!(open_nodes, new_nodes)
         o = Flux.softmax(open_nodes)
         # for (k, i) in zip(open_list,o)
@@ -555,12 +588,14 @@ function build_tree_with_reward_function1!(soltree::Dict{UInt64, Node}, heuristi
     epsilon = 0.05
     expand_n = 25
     expanded_depth = []
+    @show lambda
+    @show epsilon
     while length(open_list) > 0
         if max_steps <= step
             break
         end
-        # i = rand() < epsilon ? rand(1:length(open_list)) : argmin(i->open_list[i][2], 1:length(open_list))
-        i = argmin(i->open_list[i][2], 1:length(open_list))
+        i = rand() < epsilon ? rand(1:length(open_list)) : argmin(i->open_list[i][2], 1:length(open_list))
+        # i = argmin(i->open_list[i][2], 1:length(open_list))
         nodes, prob = open_list[i]
         open_list[i] = open_list[end]
         pop!(open_list)
@@ -742,11 +777,11 @@ function extract_smallest_terminal_node(soltree::Dict{UInt64, Node}, close_list:
             continue
         end
         
-        if isa(n.ex, ExprWithHash)
-            size_n = exp_size(n.ex, size_cache)
-        else
-            size_n = exp_size(n.ex)
-        end
+        # if isa(n.ex, ExprWithHash)
+        #     size_n = exp_size(n.ex, size_cache)
+        # else
+        size_n = exp_size(n.ex, size_cache)
+        # end
 
         if size_n < min_size
             min_node = n
@@ -843,11 +878,11 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
         println("Saturated: $saturated")
         new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, i)
         if length(training_samples) >= index 
-            if isa(training_samples[index].expression, ExprWithHash)
-                training_samples[index] = isbetter1(training_samples[index], new_sample, size_cache) ? new_sample : training_samples[index]
-            else
-                training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
-            end
+            # if isa(training_samples[index].expression, ExprWithHash)
+            training_samples[index] = isbetter1(training_samples[index], new_sample, size_cache) ? new_sample : training_samples[index]
+            # else
+                # training_samples[index] = isbetter(training_samples[index], new_sample) ? new_sample : training_samples[index]
+            # end
         else
             push!(training_samples, new_sample)
         end

@@ -1,4 +1,3 @@
-
 theory = @theory a b c d x y begin
     a::Number + b::Number => a + b
     a::Number - b::Number => a - b

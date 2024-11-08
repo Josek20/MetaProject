@@ -12,6 +12,7 @@ using PProf
 using DataFrames
 using ProfileCanvas
 using SimpleChains
+using Plots
 
 
 
@@ -35,6 +36,13 @@ heuristic = MyModule.simple_to_flux(heuristic1, heuristic)
 
 exp_data = deserialize("data/training_data/benchmarking.bin")
 
+test_data_path = "./data/neural_rewrter/test.json"
+test_data = load_data(test_data_path)[1:1000]
+test_data = preprosses_data_to_expressions(test_data)
+
+data  = vcat(exp_data[1], test_data[5], test_data[25:100])
+max_steps = 1000
+max_depth = 10
 
 function compare_two_methods(data, model, batched=64)
     cache = LRU(maxsize=50000)
@@ -261,13 +269,13 @@ end
 
 
 function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
-    data = data[1:10]
+    data = data[1:50]
     df = map(data) do ex
-        exp_cache = LRU(maxsize=100_000)
-        cache = LRU(maxsize=1_000_000)
-        size_cache = LRU(maxsize=100_000)
-        expr_cache = LRU(maxsize=100_000)
-        root = MyModule.Node(ex, (0,0), nothing, 0, exp_cache)
+        exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
+        cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
+        size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
+        expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
 
         soltree = Dict{UInt64, MyModule.Node}()
         open_list = Tuple{MyModule.Node, Float32}[]
@@ -277,18 +285,19 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
         println("Initial expression: $ex")
         soltree[root.node_id] = root
         push!(open_list, (root, 0))
-        MyModule.build_tree_with_reward_function1!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1, -50)
+        MyModule.build_tree_with_reward_function1!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1, 1)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
-        (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache))
+        (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache), se = smallest_node.ex.ex)
     end |> DataFrame
+    # mean(df[!,1] .- df[!,2])
     CSV.write("profile_results_reward_function.csv", df)
     df = map(data) do ex
     # @benchmark begin
-        exp_cache = LRU(maxsize=100_000)
-        cache = LRU(maxsize=1_000_000)
-        size_cache = LRU(maxsize=100_000)
-        expr_cache = LRU(maxsize=100_000)
-        root = MyModule.Node(ex, (0,0), nothing, 0, exp_cache)
+        exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
+        cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
+        size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
+        expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
 
         soltree = Dict{UInt64, MyModule.Node}()
         open_list = PriorityQueue{MyModule.Node, Float32}()
@@ -297,9 +306,8 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
         encodings_buffer = Dict{UInt64, ProductNode}()
         println("Initial expression: $ex")
         soltree[root.node_id] = root
-        o = heuristic(ex, cache)
+        o = heuristic(root.ex, cache)
         enqueue!(open_list, root, only(o))
-        # function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
 
         MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, new_all_symbols, sym_enc, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
@@ -308,11 +316,11 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
     CSV.write("profile_results_random_heuristic.csv", df)
     df = map(data) do ex
     # @benchmark begin
-        exp_cache = LRU(maxsize=100_000)
-        cache = LRU(maxsize=1_000_000)
-        size_cache = LRU(maxsize=100_000)
-        expr_cache = LRU(maxsize=100_000)
-        root = MyModule.Node(ex, (0,0), nothing, 0, exp_cache)
+        exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
+        cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
+        size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
+        expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
 
         soltree = Dict{UInt64, MyModule.Node}()
         open_list = PriorityQueue{MyModule.Node, Float32}()
@@ -321,7 +329,7 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
         encodings_buffer = Dict{UInt64, ProductNode}()
         println("Initial expression: $ex")
         soltree[root.node_id] = root
-        o = heuristic(ex, cache)
+        o = heuristic(root.ex, cache)
         enqueue!(open_list, root, only(o))
         MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.8)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
@@ -330,11 +338,11 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
     CSV.write("profile_results_gatting_heuristic.csv", df)
     df = map(data) do ex
     # @benchmark begin
-        exp_cache = LRU(maxsize=100_000)
-        cache = LRU(maxsize=1_000_000) 
-        size_cache = LRU(maxsize=100_000)
-        expr_cache = LRU(maxsize=100_000)
-        root = MyModule.Node(ex, (0,0), nothing, 0, exp_cache)
+        exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
+        cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
+        size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
+        expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
 
         soltree = Dict{UInt64, MyModule.Node}()
         open_list = PriorityQueue{MyModule.Node, Float32}()
@@ -343,7 +351,7 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
         encodings_buffer = Dict{UInt64, ProductNode}()
         println("Initial expression: $ex")
         soltree[root.node_id] = root
-        o = heuristic(ex, cache)
+        o = heuristic(root.ex, cache)
         enqueue!(open_list, root, only(o))
         MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
@@ -364,3 +372,6 @@ function plot_hist_comparison()
     av4 = mean(df4[!, 1] .- df4[!, 2])
     bar(["Size Heuristic", "Gated Heuristic", "Random Heuristic", "Reward Function"], [av1,av2,av3,av4], color=[:red, :green, :blue, :orange], legend=false, ylabel="Average expression length reduction")
 end
+
+# test_different_searches(heuristic1, data)
+# plot_hist_comparison()
