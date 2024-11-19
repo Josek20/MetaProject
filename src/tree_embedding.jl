@@ -145,14 +145,14 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
         if isa(i.head, Symbol) && symbols_to_ind[i.head] <= 18
             # @show i.head
             # println("new expr symbol")
-            pl = cached_inference!(i, typeof(:(a-b)), cache, model, all_symbols, symbols_to_ind)
+            pl = cached_inference!(i, Expr, cache, model, all_symbols, symbols_to_ind)
         else
             if isa(i.head, Symbol)
                 # println("new expr symbol")
-                pl = cached_inference!(i, typeof(:v0), cache, model, all_symbols, symbols_to_ind)
+                pl = cached_inference!(i, Symbol, cache, model, all_symbols, symbols_to_ind)
             else
                 # println("new expr number")
-                pl = cached_inference!(i, typeof(:0), cache, model, all_symbols, symbols_to_ind)
+                pl = cached_inference!(i, Int, cache, model, all_symbols, symbols_to_ind)
             end
         end
         push!(my_tmp, pl)
@@ -361,6 +361,7 @@ embed(m::ExprModel, ds::Missing) = missing
 
 
 logistic(x) = log(1 + exp(x))
+# logistic(x) = x < 0 ? 1 / (1 + exp(-x)) : exp(-x) / (1 + exp(-x))
 hinge(x) = max(0, 1 - x)
 loss01(x) = x > 0
 
@@ -371,6 +372,7 @@ function loss(heuristic, big_vector, hp=nothing, hn=nothing, surrogate::Function
 
     diff = p - o[1, :] .* hn
     filtered_diff = filter(!=(0), diff)
+    filtered_diff = Float64.(filtered_diff)
     # return sum(log.(1 .+ exp.(filtered_diff)))
     # return mean(softmax(filtered_diff))
     return sum(surrogate.(filtered_diff))

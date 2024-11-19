@@ -6,3 +6,5 @@ https://ar5iv.labs.arxiv.org/html/1810.00337
 https://inst.eecs.berkeley.edu/~cs294-260/sp24/papers/verifying-halide-trs.pdf
 
 https://people.csail.mit.edu/tzumao/tmp/learning_halide/algorithm_examples.html
+
+https://github.com/MilesCranmer/SymbolicRegression.jl/blob/master/examples/template_expression.jl

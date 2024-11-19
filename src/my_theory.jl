@@ -70,7 +70,7 @@ theory = @theory a b c d x y begin
 
     # eq.rs
     x == y --> y == x
-    x == y => y != 0 ? :(($x - $y) == 0) : :($x == $y)
+    x == y => y != 0 && x != 0 ? :(($x - $y) == 0) : :($x == $y)
     x + y == a --> x == a - y
     x == x --> 1
     x*y == 0 --> (x == 0) || (y == 0)

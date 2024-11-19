@@ -41,6 +41,7 @@ include("policy_tree_simplifier.jl")
 export ExprModelSimpleChains
 export ex2mill, heuristic_loss, ExprModel, all_symbols, symbols_to_index, TrainingSample, train_heuristic!, build_tree, execute, policy_loss_func, test_policy, tree_sample_to_policy_sample, PolicyTrainingSample, variable_names, new_all_symbols, sym_enc, cache_hits, cache_misses 
 include("tests.jl")
+include("utils.jl")
 export test_training_samples, test_heuristic 
 
 end

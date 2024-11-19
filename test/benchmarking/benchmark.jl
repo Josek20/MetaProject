@@ -34,6 +34,40 @@ heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
 
 heuristic = MyModule.simple_to_flux(heuristic1, heuristic)
 
+
+training_samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
+training_samples = vcat(training_samples...)
+training_samples = sort(training_samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=1000)))
+training_samples = vcat(training_samples[1:50], training_samples[400:449], training_samples[800:end])
+pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])    
+for (ind,sample) in enumerate(training_samples)
+    bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+    @show ind
+    for _ in 1:10
+        sa, grad = Flux.Zygote.withgradient(pc) do
+            # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
+            # MyModule.loss(heuristic, big_vector, hp, hn)
+            MyModule.loss(heuristic, bd, hp, hn)
+            # MyModule.loss(heuristic, j[3], j[4], j[5])
+        end
+        # @show grad
+        @show sa
+        if any(g->any(isinf, g) || any(isnan, g), grad)
+            println("Gradient is Inf/NaN")
+            # BSON.@save "models/inf_grad_heuristic1.bson" heuristic
+            # JLD2.@save "data/training_data/training_samples_inf_grad1.jld2" training_samples
+            @assert 0 == 1
+        end
+        Flux.update!(optimizer, pc, grad)
+    end
+end
+
+# heuristic = MyModule.train_heuristic_on_data(heuristic, training_samples)
+heuristic1 = MyModule.flux_to_simple(heuristic1, heuristic)
+
+
+
+
 exp_data = deserialize("data/training_data/benchmarking.bin")
 
 test_data_path = "./data/neural_rewrter/test.json"
@@ -42,7 +76,7 @@ test_data = preprosses_data_to_expressions(test_data)
 
 data  = vcat(exp_data[1], test_data[5], test_data[25:100])
 max_steps = 1000
-max_depth = 10
+max_depth = 50
 
 function compare_two_methods(data, model, batched=64)
     cache = LRU(maxsize=50000)
@@ -173,9 +207,9 @@ function pevnaks_profile_method(exp_data, heuristic; max_steps = 1000, max_depth
 end
 
 
-function benchmark_method_precomputed(data, heuristic, max_steps=1000, max_depth=10)
-    # bmark1 = ProfileCanvas.@profview begin
-    bmark1 = @benchmark begin
+function benchmark_method_precomputed(data, heuristic, max_steps=1000, max_depth=50)
+    bmark1 = ProfileCanvas.@profview begin
+    # bmark1 = @benchmark begin
         ex = data[1]
         exp_cache = LRU{Expr, Vector}(maxsize=100_000)
         cache = LRU(maxsize=1_000_000)
@@ -190,14 +224,15 @@ function benchmark_method_precomputed(data, heuristic, max_steps=1000, max_depth
         encodings_buffer = Dict{UInt64, ProductNode}()
         println("Initial expression: $ex")
         soltree[root.node_id] = root
-        o = heuristic(ex, cache)
+        o = heuristic1(ex, cache)
         enqueue!(open_list, root, only(o))
         MyModule.build_tree!(soltree, heuristic1, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
         @show length(soltree), exp_cache.hits, exp_cache.misses, cache.hits, cache.misses
     end
     # bmark1 = ProfileCanvas.@profview begin
     bmark2 = @benchmark begin
-        ex = data[1]
+        ex = data[4]
+        # ex = ex = :((v0 - 10) - 7 <= select(384 < v2, (min(((max(((v2 + 127) / 128) * 128, 4) + 22) / 524) * 524, max(((v2 + 127) / 128) * 128, 4) + 23) + (min(((v2 + 127) / 128) * 128, 4) + v3)) - 17, (min(((v2 + 127) / 128) * 128, 4) + v3) - 25) + (((v1 - (((v2 + 127) / 128) * 128 + v3)) + 30) / 8) * 8)
         exp_cache = LRU(maxsize=100_000)
         cache = LRU(maxsize=1_000_000)
         size_cache = LRU(maxsize=100_000)
@@ -211,24 +246,27 @@ function benchmark_method_precomputed(data, heuristic, max_steps=1000, max_depth
         encodings_buffer = Dict{UInt64, ProductNode}()
         println("Initial expression: $ex")
         soltree[root.node_id] = root
-        o = heuristic(ex, cache)
+        o = heuristic1(root.ex, cache)
         enqueue!(open_list, root, only(o))
-        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        MyModule.build_tree!(soltree, heuristic1, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
         @show length(soltree), exp_cache.hits, exp_cache.misses, cache.hits, cache.misses, length(cache)
     end
     @show bmark1, bmark2
 end
+# (ind, pl, r) = (11, [3, 2, 2, 2], 4)
 
 
 
 function making_faster_reward(data, heuristic)
     bmark1 = @benchmark begin
-        ex = $data[1]
-        exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        ex = data[1]
+        # exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        exp_cache = LRU(maxsize=100_000)
         cache = LRU(maxsize=1_000_000)
         size_cache = LRU(maxsize=100_000)
         expr_cache = LRU(maxsize=100_000)
-        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+        root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
 
         soltree = Dict{UInt64, MyModule.Node}()
         # open_list = PriorityQueue{MyModule.Node, Float32}()
@@ -259,7 +297,7 @@ function making_faster_reward(data, heuristic)
         encodings_buffer = Dict{UInt64, ProductNode}()
         println("Initial expression: $ex")
         soltree[root.node_id] = root
-        o = heuristic(ex, cache)
+        o = heuristic(root.ex, cache)
         enqueue!(open_list, root, only(o))
         MyModule.build_tree_with_reward_function!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1, -50)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
@@ -268,7 +306,7 @@ function making_faster_reward(data, heuristic)
 end
 
 
-function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
+function test_different_searches(heuristic, data, max_steps=1000,max_depth=50)
     data = data[1:50]
     df = map(data) do ex
         exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
@@ -331,13 +369,13 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
         soltree[root.node_id] = root
         o = heuristic(root.ex, cache)
         enqueue!(open_list, root, only(o))
-        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.8)
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.5)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
         (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache))
     end |> DataFrame
     CSV.write("profile_results_gatting_heuristic.csv", df)
     df = map(data) do ex
-    # @benchmark begin
+        # @benchmark begin
         exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
         cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
         size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
@@ -346,6 +384,7 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
 
         soltree = Dict{UInt64, MyModule.Node}()
         open_list = PriorityQueue{MyModule.Node, Float32}()
+        second_open_list = PriorityQueue{MyModule.Node, Float32}()
         close_list = Set{UInt64}()
         expansion_history = Dict{UInt64, Vector}()
         encodings_buffer = Dict{UInt64, ProductNode}()
@@ -354,10 +393,35 @@ function test_different_searches(heuristic, data, max_steps=1000,max_depth=10)
         o = heuristic(root.ex, cache)
         enqueue!(open_list, root, only(o))
         MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        # reached_goal = MyModule.build_tree_with_multiple_queues!(soltree, heuristic, open_list, second_open_list, close_list, max_steps, theory, cache, exp_cache, size_cache, expr_cache, 1)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
         (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache), se = MyModule.reconstruct(smallest_node.ex, new_all_symbols, LRU(maxsize=1000)))
     end |> DataFrame
     CSV.write("profile_results_depth_as_heuristic.csv", df)
+    # df = map(data) do ex
+    # # @benchmark begin
+    #     exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
+    #     cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
+    #     size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
+    #     expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+    #     root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
+
+    #     soltree = Dict{UInt64, MyModule.Node}()
+    #     open_list = PriorityQueue{MyModule.Node, Float32}()
+    #     second_open_list = PriorityQueue{MyModule.Node, Float32}()
+    #     close_list = Set{UInt64}()
+    #     expansion_history = Dict{UInt64, Vector}()
+    #     encodings_buffer = Dict{UInt64, ProductNode}()
+    #     println("Initial expression: $ex")
+    #     soltree[root.node_id] = root
+    #     o = heuristic(root.ex, cache)
+    #     enqueue!(open_list, root, only(o))
+    #     # MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+    #     reached_goal = MyModule.build_tree_with_multiple_queues!(soltree, heuristic, open_list, second_open_list, close_list, max_steps, theory, cache, exp_cache, size_cache, expr_cache, 0.5)
+    #     smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+    #     (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache), se = MyModule.reconstruct(smallest_node.ex, new_all_symbols, LRU(maxsize=1000)))
+    # end |> DataFrame
+    # CSV.write("profile_results_multiple_queues_as_heuristic.csv", df)
 end
 
 
@@ -366,12 +430,16 @@ function plot_hist_comparison()
     df2 = CSV.read("profile_results_gatting_heuristic.csv", DataFrame)
     df3 = CSV.read("profile_results_random_heuristic.csv", DataFrame)
     df4 = CSV.read("profile_results_reward_function.csv", DataFrame)
+    # df5 = CSV.read("profile_results_multiple_queues_as_heuristic.csv", DataFrame)
     av1 = mean(df1[!, 1] .- df1[!, 2])
     av2 = mean(df2[!, 1] .- df2[!, 2])
     av3 = mean(df3[!, 1] .- df3[!, 2])
     av4 = mean(df4[!, 1] .- df4[!, 2])
-    bar(["Size Heuristic", "Gated Heuristic", "Random Heuristic", "Reward Function"], [av1,av2,av3,av4], color=[:red, :green, :blue, :orange], legend=false, ylabel="Average expression length reduction")
+    # av5 = mean(df5[!, 1] .- df5[!, 2])
+    # bar(["Size Heuristic", "Gated Heuristic", "Trained Heuristic", "Reward Function", "Multiple Queues"], [av1,av2,av3,av4, av5], color=[:red, :green, :blue, :orange, :yellow], legend=false, ylabel="Average expression length reduction")
+    bar(["Size Heuristic", "Gated Heuristic", "Trained Heuristic", "Reward Function"], [av1,av2,av3,av4], color=[:red, :green, :blue, :orange], legend=false, ylabel="Average expression length reduction")
 end
 
-# test_different_searches(heuristic1, data)
-# plot_hist_comparison()
+test_different_searches(heuristic1, data)
+plot_hist_comparison()
+savefig("my_search_test_data_trained_heuristic.png")
