@@ -113,6 +113,7 @@ const const_left = [1, 0]
 const const_right = [0, 1]
 const const_one = [0, 0]
 const const_both = [1 0; 0 1]
+const const_nth = [1 0 0; 0 1 0; 0 0 1]
 
 
 function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
@@ -121,6 +122,8 @@ function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_i
     my_args = hcat(my_tmp...)
     if l == 2
         tmp = vcat(my_args, const_both)
+    elseif l == 3
+        tmp = vcat(my_args, const_nth)
     else
         tmp = vcat(my_args, const_one)
     end
@@ -138,20 +141,14 @@ end
 
 function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, all_symbols, symbols_to_ind)
     l = length(args)
-    # my_tmp = [cached_inference!(a, i, cache, model, all_symbols, symbols_to_ind) for (a,i) in zip(args, my_args)]
     my_tmp = []
     for i in args
-        # @show i
         if isa(i.head, Symbol) && symbols_to_ind[i.head] <= 18
-            # @show i.head
-            # println("new expr symbol")
             pl = cached_inference!(i, Expr, cache, model, all_symbols, symbols_to_ind)
         else
             if isa(i.head, Symbol)
-                # println("new expr symbol")
                 pl = cached_inference!(i, Symbol, cache, model, all_symbols, symbols_to_ind)
             else
-                # println("new expr number")
                 pl = cached_inference!(i, Int, cache, model, all_symbols, symbols_to_ind)
             end
         end
@@ -160,6 +157,8 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
     my_args = hcat(my_tmp...)
     if l == 2
         tmp = vcat(my_args, const_both)
+    elseif l == 3
+        tmp = vcat(my_args, const_nth)
     else
         tmp = vcat(my_args, const_one)
     end
@@ -361,20 +360,38 @@ embed(m::ExprModel, ds::Missing) = missing
 
 
 logistic(x) = log(1 + exp(x))
-# logistic(x) = x < 0 ? 1 / (1 + exp(-x)) : exp(-x) / (1 + exp(-x))
-hinge(x) = max(0, 1 - x)
+hinge(x) = max(0, x)
 loss01(x) = x > 0
 
 
-function loss(heuristic, big_vector, hp=nothing, hn=nothing, surrogate::Function = logistic)
+function batched_loss(heuristic, big_vector, hp, hn, bags_of_batches, surrogate::Function = hinge)
+    o = heuristic(big_vector)
+    p = (o * hp) .* hn
+
+    diff = p - o[1, :] .* hn
+    diff = map(bg->filter(!=(0), diff[bg]), bags_of_batches)
+    filtered_diff = filter(!=(0), diff)
+    return sum(surrogate.(filtered_diff))
+end
+
+
+function loss(heuristic, big_vector::Vector, hp=nothing, hn=nothing, surrogate::Function = softplus, cache = LRU(maxsize=10000))
+    o = map(x->only(heuristic(x, cache)), big_vector)
+    # @show size(o)
+    p = (transpose(o) * hp) .* hn
+
+    diff = p - o .* hn
+    filtered_diff = filter(!=(0), diff)
+    return sum(surrogate.(filtered_diff))
+end
+
+
+function loss(heuristic, big_vector::ProductNode, hp=nothing, hn=nothing, surrogate::Function = softplus)
     o = heuristic(big_vector)
     p = (o * hp) .* hn
 
     diff = p - o[1, :] .* hn
     filtered_diff = filter(!=(0), diff)
-    filtered_diff = Float64.(filtered_diff)
-    # return sum(log.(1 .+ exp.(filtered_diff)))
-    # return mean(softmax(filtered_diff))
     return sum(surrogate.(filtered_diff))
 end
 

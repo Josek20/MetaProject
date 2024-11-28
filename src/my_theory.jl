@@ -76,7 +76,7 @@ theory = @theory a b c d x y begin
     x*y == 0 --> (x == 0) || (y == 0)
     max(x,y) == y --> x <= y
     min(x,y) == y --> y <= x
-    y <= x --> min(x,y) == y
+    y <= x --> min(x,y) == y # creates huge number of expand nodes
 
     # ineq.rs
     x != y --> !(x == y)

@@ -43,14 +43,14 @@ train_data_path = "./data/neural_rewrter/train.json"
 test_data_path = "./data/neural_rewrter/test.json"
 
 
-train_data = isfile(train_data_path) ? load_data(train_data_path)[10_001:70_000] : load_data(test_data_path)[1:1000]
+train_data = isfile(train_data_path) ? load_data(train_data_path)[10_001:20_000] : load_data(test_data_path)[1:1000]
 test_data = load_data(test_data_path)[1:1000]
 train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
 
 
-@everywhere hidden_size = 128
-@everywhere simple_heuristic = ExprModelSimpleChains(ExprModel(
+hidden_size = 128
+simple_heuristic = ExprModelSimpleChains(ExprModel(
     SimpleChain(static(length(new_all_symbols)), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
     Mill.SegmentedSum(hidden_size),
     SimpleChain(static(2 * hidden_size + 2), TurboDense{true}(SimpleChains.relu, hidden_size),TurboDense{true}(identity, hidden_size)),
@@ -66,8 +66,8 @@ pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_m
 
 epochs = 1
 optimizer = Adam()
-global training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
-# training_samples = Vector{TrainingSample}()
+# global training_samples = [Vector{TrainingSample}() for _ in 1:number_of_workers]
+training_samples = Vector{TrainingSample}()
 max_steps = 1000
 max_depth = 60
 n = 100
@@ -109,28 +109,17 @@ some_alpha = 0.05
 @everywhere cache = LRU(maxsize=1_000_000)
 @everywhere size_cache = LRU(maxsize=100_000)
 @everywhere expr_cache = LRU(maxsize=100_000)
-# @everywhere training_samples = $training_samples
-# @everywhere simple_heuristic = $simple_heuristic
-# @everywhere some_alpha = $some_alpha
-# results = RemoteChannel(() -> Channel{TrainingSample}(number_of_workers))
-# results = SharedVector{Vector{TrainingSample}}(number_of_workers)
-for ep in 1:epochs 
-    empty!(cache)
-    
-    # batched_train_data = [sorted_train_data[ep][i:i + stp - 1] for i in 1:stp:n]
-    
-    # train_heuristic!(heuristic, train_data, training_samples, max_steps, max_depth)
+for ep in 1:epochs     
     println("Epoch $ep")
     println("Training===========================================")
-    # global training_samples = pmap(dt -> train_heuristic!(simple_heuristic, batched_train_data[dt], training_samples[dt], max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1 - (ep - 1) * 0.1), collect(1:number_of_workers))
     train_heuristic!(simple_heuristic, train_data, training_samples, max_steps, max_depth, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, some_alpha)
-    # cat_samples = vcat(training_samples...)
-    # batched_train_data = [i.expression.ex for i in cat_samples]
-    # batched_train_data = [batched_train_data[i:i + stp - 1] for i in 1:stp:n]
-    # push!(stats, [i.expression.ex for i in cat_samples])
-    # push!(proof_stats, [i.proof for i in cat_samples])
-    # serialize("data/training_data/size_heuristic_training_samples.bin", training_samples)
-    # continue
+    cat_samples = vcat(training_samples...)
+    batched_train_data = [i.expression.ex for i in cat_samples]
+    batched_train_data = [batched_train_data[i:i + stp - 1] for i in 1:stp:n]
+    push!(stats, [i.expression.ex for i in cat_samples])
+    push!(proof_stats, [i.proof for i in cat_samples])
+    serialize("data/training_data/size_heuristic_training_samples.bin", training_samples)
+    continue
     # @assert 0 == 1
 
     # simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = MyModule.initialize_tree_search(heuristic, myex, max_steps, max_depth, all_symbols, theory, variable_names, cache, exp_cache)

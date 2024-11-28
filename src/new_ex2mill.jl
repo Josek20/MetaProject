@@ -107,6 +107,8 @@ function unfold_allocation(stats::Vector, depth::Int, numbers::Vector, position:
     sz1 = length(stats[depth])
     ne,nb = sz1, sz1
     am = unfold_allocation(stats::Vector, depth + 1, numbers::Vector, position::Vector, exbags::Vector, encoding_length)
+    # @show depth
+    # @show position[depth]
     pos = ArrayNode(Flux.onehotbatch(position[depth], 1:2))
     arr_data = zeros(Float32, encoding_length, ne)
     cols = collect(1:ne)

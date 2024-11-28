@@ -1,3 +1,12 @@
+28.11.2024
+1) To imrove performance, will add threading to build trees simultaneously
+
+
+26.11.2024
+1) TermInterface node_cound much faster than MyModule.exp_size
+*(when tested on a single example, when tested inside a pipeline exp_size is faster) 
+
+
 30.10.2024 - 04.11.2024
 1) Learning RL from DeepMind 
 2) Trying to reimplement the Neural Rewriter to Julia
@@ -6,6 +15,7 @@
 5) Trying to improve matching (by doing execute in batches)
 Done --> 6) Have updated Metatheory from v2.0.2 to v3.0.0 in MyModule package
 7) Trying to reimplement loss function using SimpleChains
+
 
 29.10.2024
 1) write to the NR about research tree
