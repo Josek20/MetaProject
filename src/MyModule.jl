@@ -12,6 +12,7 @@ using DataFrames
 using Base.Threads
 using LRUCache
 using SimpleChains
+using SparseArrays
 using Metatheory.TermInterface
 
 
@@ -43,6 +44,7 @@ mutable struct SearchTreePipelineConfig{TD, H, BTF}
     matching_expr_cache::LRU
     hash_expr_cache::LRU
     heuristic_cache::LRU
+    exp_args_cache::LRU
     alpha::Float32
 end
 
@@ -52,9 +54,10 @@ function SearchTreePipelineConfig(training_data, heuristic, build_tree_function:
     inference_cache = LRU(maxsize=1_000_000)
     size_cache = LRU(maxsize=100_000)
     hash_expr_cache = LRU(maxsize=100_000)
+    exp_args_cache = LRU(maxsize=100_000)
     return SearchTreePipelineConfig(
         training_data, heuristic, build_tree_function, max_steps, max_depth, theory, 
-        inference_cache, size_cache, matching_expr_cache, hash_expr_cache, inference_cache, alpha
+        inference_cache, size_cache, matching_expr_cache, hash_expr_cache, inference_cache, exp_args_cache, alpha
     )
 end
 

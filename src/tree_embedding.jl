@@ -5,9 +5,9 @@ function cached_inference!(ex::ExprWithHash, ::Type{Expr}, cache, model, all_sym
     get!(cache, ex) do
         args = ex.args
         fun_name = ex.head
+        args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_index[fun_name]] = 1
-        args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
         if isa(model, ExprModel)
             tmp = model.head_model(encoding)
         else
@@ -25,7 +25,7 @@ function cached_inference!(ex::ExprWithHash, ::Type{Symbol}, cache, model, all_s
 
         if isa(model, ExprModel)
             tmp = model.head_model(encoding)
-            a = vcat(tmp, model.aggregation.:ψ)
+            a = vcat(tmp, model.aggregation.:ψ) 
         else
             tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
             a = vcat(tmp, model.expr_model.aggregation.:ψ)
@@ -62,9 +62,9 @@ function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
         else
             error("unknown head $(ex.head)")
         end
+        args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_index[fun_name]] = 1
-        args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
         if isa(model, ExprModel)
             tmp = model.head_model(encoding)
         else
@@ -112,8 +112,9 @@ end
 const const_left = [1, 0]
 const const_right = [0, 1]
 const const_one = [0, 0]
+const const_third = [1, 1]
 const const_both = [1 0; 0 1]
-const const_nth = [1 0 0; 0 1 0; 0 0 1]
+const const_nth = [1 0 1; 0 1 1]
 
 
 function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
@@ -125,7 +126,7 @@ function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_i
     elseif l == 3
         tmp = vcat(my_args, const_nth)
     else
-        tmp = vcat(my_args, const_one)
+        tmp = vcat(my_args, const_left)
     end
 
     if isa(model, ExprModel)
@@ -158,7 +159,7 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
     if l == 2
         tmp = vcat(my_args, const_both)
     elseif l == 3
-        tmp = vcat(my_args, const_nth)
+        tmp = vcat(my_args, const_left)
     else
         tmp = vcat(my_args, const_one)
     end
@@ -171,6 +172,165 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
     end
     return a[:,1]
 end
+
+
+function not_int_cache(ex::Vector, cache)
+    in_cache = []
+    not_in_cache = []
+    in_cache_order = []
+    not_in_cache_order = []
+    for (ind,i) in enumerate(ex)
+        if haskey(cache, i)
+            push!(in_cache, cache[i])
+            push!(in_cache_order, ind)
+        else
+            push!(not_in_cache, i)
+            push!(not_in_cache_order, ind)
+        end
+    end
+    return in_cache, not_in_cache, in_cache_order, not_in_cache_order
+end
+
+
+# function not_int_cache(ex::Vector, cache)
+#     in_cache_order = [ind for (ind, i) in enumerate(ex) if haskey(cache, i)]
+#     not_in_cache_order = [ind for (ind, i) in enumerate(ex) if !haskey(cache, i)]
+
+#     in_cache = [cache[ex[i]] for i in in_cache_order]
+#     not_in_cache = [ex[i] for i in not_in_cache_order]
+
+#     return in_cache, not_in_cache, in_cache_order, not_in_cache_order
+# end
+
+
+function batched_cached_inference!(exs::Vector,::Type{Expr}, cache, model, all_symbols, symbols_to_ind)
+    in_cache, not_in_cache, in_cache_order, not_in_cache_order = not_int_cache(exs, cache)
+    fun_indeces = []
+    # exs_args = Vector[]
+    args_bags = []
+    sym_args = Union{Symbol, Int, ExprWithHash}[]
+    expr_args = Expr[]
+    sym_bag_ids = Int[]
+    expr_bag_ids = Int[]
+    for (ind1,ex) in enumerate(not_in_cache)
+        if ex.head == :call
+            fun_name, args =  ex.args[1], ex.args[2:end]
+        elseif ex.head in all_symbols
+            fun_name = ex.head
+            args = ex.args
+        else
+            error("unknown head $(ex.head)")
+        end
+        push!(fun_indeces, (ind1, symbols_to_ind[fun_name]))
+        for (ind2,i) in enumerate(args)
+            if !isa(i, Expr)
+                push!(sym_args, i)
+                push!(sym_bag_ids, ind1)
+            else
+                push!(expr_args, i)
+                push!(expr_bag_ids, ind1)
+            end
+        end
+    end
+    args = batched_cached_inference!(sym_args, expr_args, cache, model, all_symbols, symbols_to_ind, vcat(sym_bag_ids, expr_bag_ids))
+    # @show args
+    encoding = sparse([i[2] for i in fun_indeces], [i[1] for i in fun_indeces], ones(Float32, length(fun_indeces)), length(all_symbols), length(exs))
+    if isa(model, ExprModel)
+        tmp = model.head_model(encoding)
+    else
+        tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+    end
+
+    a = vcat(tmp, args)
+    for (ind, i) in enumerate(not_in_cache_order)
+        cache[exs[i]] = a[:, i]
+    end
+    for (cached,i) in zip(in_cache, in_cache_order)
+        a[:, i] = cached
+    end
+    a
+end
+
+
+function batched_cached_inference!(args::Vector, ::Type{Symbol}, cache, model, all_symbols, symbols_to_ind)
+    in_cache, not_in_cache, in_cache_order, not_in_cache_order = not_int_cache(args, cache)
+    sym_indices = []
+    values = Float32[]
+    for (ind,i) in enumerate(not_in_cache)
+        if isa(i, Number)
+            push!(values, my_sigmoid(i))
+        else
+            push!(values, 1)
+        end
+        push!(sym_indices, (ind, isa(i, Symbol) ? symbols_to_ind[i] : symbols_to_ind[:Number]))
+    end
+    encoding = sparse([i[2] for i in sym_indices], [i[1] for i in sym_indices], values, length(all_symbols), length(args))
+    if isa(model, ExprModel)
+        tmp = model.head_model(encoding)
+        # a = vcat(tmp, model.aggregation.:ψ)
+        a = vcat(tmp, zeros(Float32, length(model.aggregation.:ψ), length(args)))
+    else
+        tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+        # a = vcat(tmp, model.expr_model.aggregation.:ψ)
+        a = vcat(tmp, zeros(Float32, length(model.aggregation.:ψ), length(args)))
+    end
+    for (ind, i) in enumerate(not_in_cache_order)
+        cache[args[i]] = a[:, i]
+    end
+    for (cached,i) in zip(in_cache, in_cache_order)
+        a[:, i] = cached
+    end
+    return a
+end
+
+
+function batched_cached_inference!(sym_args::Vector, expr_args::Vector, cache, model, all_symbols, symbols_to_ind, args_bags)
+    # l = length(args)
+
+    expr_my_tmp = []
+    sym_my_tmp = []
+    if !isempty(sym_args)
+        sym_my_tmp = batched_cached_inference!(sym_args, Symbol, cache, model, all_symbols, symbols_to_ind)
+    end
+    if !isempty(expr_args)
+        expr_my_tmp = batched_cached_inference!(expr_args, Expr, cache, model, all_symbols, symbols_to_ind)
+    end
+    if isempty(expr_my_tmp)
+        my_args = sym_my_tmp
+    elseif isempty(sym_my_tmp)
+        my_args = expr_my_tmp
+    else
+        my_args = hcat(sym_my_tmp, expr_my_tmp)
+    end
+    # my_bags = vcat(sym_bag_ids, expr_bag_ids)
+
+
+    tmp = vcat(my_args, zeros(2, size(my_args)[2]))
+    bag_check = Dict()
+    for (ind,bg) in enumerate(args_bags)
+        if haskey(bag_check, bg)
+            bag_check[bg] += 1
+        else
+            bag_check[bg] = 1
+        end
+        if bag_check[bg] == 1
+            tmp[end-1:end,ind] = const_left
+        elseif bag_check[bg] == 2
+            tmp[end-1:end,ind] = const_right
+        else
+            tmp[end-1:end,ind] = const_third
+        end
+    end
+    if isa(model, ExprModel)
+        tmp = model.joint_model(tmp)
+        a = model.aggregation(tmp,  Mill.ScatteredBags(args_bags)) 
+    else
+        tmp = model.expr_model.joint_model(tmp, model.model_params.joint_model)
+        a = model.expr_model.aggregation(tmp,  Mill.ScatteredBags(args_bags)) 
+    end
+    return a
+end
+
 
 
 struct ExprModel{HM,A,JM,H}
@@ -289,6 +449,19 @@ function (m::ExprModel)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, sy
     m.heuristic(m.joint_model(tmp))
 end
 
+
+function (m::ExprModel)(ex::Vector, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = batched_cached_inference!(ex, Expr, cache, m, all_symbols, symbols_to_index)
+    tmp = vcat(ds, zeros(Float32, 2, length(ex)))
+    m.heuristic(m.joint_model(tmp))
+end
+
+
+function (m::ExprModel)(ex::Vector{ExprWithHash}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = batched_cached_inference!(ex, Expr, cache, m, all_symbols, symbols_to_index)
+    tmp = vcat(ds, zeros(Float32, 2, length(ex)))
+    m.heuristic(m.joint_model(tmp))
+end
 
 # function (m::ExprModel)(ex::Expr,::Type{Symbol}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
 #     ds = cached_inference!(ExprWithHash(ex), typeof(ex), cache, m, all_symbols, symbols_to_index)

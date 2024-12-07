@@ -24,30 +24,80 @@ function get_training_data_from_proof(proof::Vector, initial_expression::Expr)
 end
 
 
-function train_heuristic_on_data(heuristic, training_samples, optimizer=Adam())
+function train_heuristic_on_data_overfit(heuristic, training_samples, pipeline_config, optimizer=Adam())
     pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])    
+    loss_stats = [[]]
+    ireducible_stats = []
     for (ind,sample) in enumerate(training_samples)
         bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
-        # @show size(hp)
+        @show ind
         for _ in 1:10
             sa, grad = Flux.Zygote.withgradient(pc) do
-                # heuristic_loss(heuristic, sample.training_data, sample.hp, sample.hn)
-                # MyModule.loss(heuristic, big_vector, hp, hn)
                 MyModule.loss(heuristic, bd, hp, hn)
-                # MyModule.loss(heuristic, j[3], j[4], j[5])
             end
-            # @show grad
             @show sa
             if any(g->any(isinf, g) || any(isnan, g), grad)
                 println("Gradient is Inf/NaN")
-                # BSON.@save "models/inf_grad_heuristic1.bson" heuristic
-                # JLD2.@save "data/training_data/training_samples_inf_grad1.jld2" training_samples
+                serialize("models/trainied_heuristic_inf.bin", heuristic)
+                serialize("data/training_data/training_sample_inf_grad.bin", sample)
                 @assert 0 == 1
             end
             Flux.update!(optimizer, pc, grad)
         end
+        # if mod(ind, 100) == 0
+        #     pipeline_config.heuristic = heuristic
+        #     empty!(pipeline_config.inference_cache)
+        #     empty!(pipeline_config.heuristic_cache)
+        #     number_of_irreducible, number_of_improved = MyModule.train_heuristic!(pipeline_config)
+        #     push!(ireducible_stats, number_of_irreducible)
+        #     for (ind,sample) in enumerate(training_samples)
+        #         bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+        #         sa = MyModule.loss(heuristic, bd, hp, hn)
+        #         push!(loss_stats[end], sa)
+        #     end
+        #     push!(loss_stats, [])
+        # end
     end
-    return heuristic
+    return heuristic, ireducible_stats, loss_stats
+end
+
+
+function train_heuristic_on_data_epochs(heuristic, training_samples, pipeline_config, optimizer=Adam(), epochs=10)
+    pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])    
+    loss_stats = [[]]
+    ireducible_stats = []
+    for ep in 1:epochs
+        @show ep
+        # for (ind,sample) in enumerate(training_samples)
+        for ind in 1:length(training_samples)
+            sample = Statistics.sampe(training_samples)
+            bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+            @show ind
+            sa, grad = Flux.Zygote.withgradient(pc) do
+                MyModule.loss(heuristic, bd, hp, hn)
+            end
+            @show sa
+            if any(g->any(isinf, g) || any(isnan, g), grad)
+                println("Gradient is Inf/NaN")
+                serialize("models/trainied_heuristic_inf.bin", heuristic)
+                serialize("data/training_data/training_sample_inf_grad.bin", sample)
+                @assert 0 == 1
+            end
+            Flux.update!(optimizer, pc, grad)
+        end
+        # pipeline_config.heuristic = heuristic
+        # empty!(pipeline_config.inference_cache)
+        # empty!(pipeline_config.heuristic_cache)
+        # number_of_irreducible, number_of_improved = MyModule.train_heuristic!(pipeline_config)
+        # push!(ireducible_stats, number_of_irreducible)
+        # for (ind,sample) in enumerate(training_samples)
+        #     bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+        #     sa = MyModule.loss(heuristic, bd, hp, hn)
+        #     push!(loss_stats[end], sa)
+        # end
+        # push!(loss_stats, [])
+    end
+    return heuristic, ireducible_stats, loss_stats
 end
 
 

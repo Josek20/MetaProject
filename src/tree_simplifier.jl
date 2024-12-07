@@ -536,9 +536,10 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
     # o = map(x->alpha * exp_size(x.ex, size_cache) + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
-    o = map(x->exp_size(x.ex, size_cache), filtered_new_nodes)
+    # o = map(x->exp_size(x.ex, size_cache), filtered_new_nodes)
     # o = map(x->node_count(x.ex.ex), filtered_new_nodes)
     # o = map(x->only(heuristic(x.ex, cache)), filtered_new_nodes)
+    o - heuristic(exprs, cache)
     for (v,n) in zip(o, filtered_new_nodes)
         enqueue!(open_list, n, v)
     end
@@ -1056,12 +1057,36 @@ function train_heuristic!(heuristic, data, training_samples, max_steps, max_dept
     return training_samples
 end
 
+function get_expression_arguments(ex, exp_args_cache)
+    if !isa(ex, Expr)
+        return ex
+    end
+    get!(exp_args_cache, ex) do
+        tmp = Any[]
+        exp_args = ex.head == :call ? ex.args[2:end] : ex.args
+        for a in exp_args
+            v = get_expression_arguments(a, exp_args_cache)
+            if isa(v, Vector)
+                append!(tmp, v)
+            else
+                push!(tmp, v)
+            end
+            # @show v
+        end
+        tmp
+    end
+end
 
-function is_reducible(ex::Union{Expr, ExprWithHash})
-    if isa(ex.ex, Int)
+
+function is_reducible(ex::ExprWithHash, exp_args_cache)
+    is_reducible(ex.ex, exp_args_cache)
+end
+
+
+function is_reducible(ex::Union{Expr, Int, Symbol}, exp_args_cache)
+    if !isa(ex, Expr)
         return false
     end
-    # add check for different variables and no numbers
     reducible = @theory a b c begin
         a::Number <= b * c::Number --> a <= b * c
         a::Number <= c::Number * b --> a <= c * b
@@ -1071,13 +1096,17 @@ function is_reducible(ex::Union{Expr, ExprWithHash})
     if any(r->!isnothing(r(ex)), reducible)
         return false
     end
+    all_args = get_expression_arguments(ex, exp_args_cache)
+    if length(all_args) == length(Set(all_args))
+        return false
+    end
     return true
 end
 
 
 function train_heuristic!(pipeline_config::SearchTreePipelineConfig)  
     data = pipeline_config.training_data
-    number_of_reducible = length(data)
+    number_of_irreducible = 0
     number_of_improved = 0
     for (index, sample) in enumerate(data)
         println("Index: $index")
@@ -1086,16 +1115,17 @@ function train_heuristic!(pipeline_config::SearchTreePipelineConfig)
         @time simplified_expression, depth_dict, big_vector, saturated, hp, hn, root, proof_vector, m_nodes = initialize_and_build_tree(ex, pipeline_config)
         new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, sample.initial_expr)
         if isbetter(pipeline_config.training_data[index], new_sample, pipeline_config.size_cache)
-            pipeline_config.training_data[index].training_data = big_vector
-            pipeline_config.training_data[index].expression = new_sample.expression
-            pipeline_config.training_data[index].proof = new_sample.proof
-            pipeline_config.training_data[index].hp = new_sample.hp
-            pipeline_config.training_data[index].hn = new_sample.hn
+            pipeline_config.training_data[index] = new_sample
+        #     pipeline_config.training_data[index].training_data = big_vector
+        #     pipeline_config.training_data[index].expression = new_sample.expression
+        #     pipeline_config.training_data[index].proof = new_sample.proof
+        #     pipeline_config.training_data[index].hp = new_sample.hp
+        #     pipeline_config.training_data[index].hn = new_sample.hn
             number_of_improved += 1
         end
-        if !is_reducible(simplified_expression)
-            number_of_reducible -= 1
+        if !is_reducible(pipeline_config.training_data[index].expression, pipeline_config.exp_args_cache)
+            number_of_irreducible += 1
         end 
     end
-    return number_of_reducible, number_of_improved
+    return number_of_irreducible, number_of_improved
 end

@@ -35,8 +35,6 @@ using MyModule.SimpleChains
 using Serialization
 using StatsBase
 using CSV
-using BSON
-using JLD2
 
 
 train_data_path = "./data/neural_rewrter/train.json"
@@ -47,7 +45,8 @@ train_data = isfile(train_data_path) ? load_data(train_data_path)[10_001:70_000]
 test_data = load_data(test_data_path)[1:1000]
 train_data = preprosses_data_to_expressions(train_data)
 test_data = preprosses_data_to_expressions(test_data)
-
+size_cache = LRU(maxsize=10000)
+sorted_train_data = sort(train_data, by=x->MyModule.exp_size(x,size_cache))
 
 hidden_size = 128
 simple_heuristic = ExprModelSimpleChains(ExprModel(
@@ -69,7 +68,7 @@ optimizer = Adam()
 max_steps = 1000
 max_depth = 60
 n = 100
-if "trainied_heuristic1000samples.bin" in readdir("models/") 
+if "trainied_heuristic1000samples1341234.bin" in readdir("models/") 
     heuristic = deserialize("models/trainied_heuristic1000samples.bin")
     simple_heuristic = MyModule.flux_to_simple(simple_heuristic, heuristic)
 else
@@ -77,7 +76,7 @@ else
 end
 pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])
 
-# @assert 0 == 1
+@assert 0 == 1
 stats = []
 loss_stats = []
 proof_stats = []
@@ -99,7 +98,7 @@ if number_of_workers > 1
 else
     stp_config = MyModule.SearchTreePipelineConfig(training_samples, MyModule.exp_size, MyModule.build_tree!)
 end
-# @assert 1 == 0
+@assert 1 == 0
 improve_samples_stats = []
 reducible_samples_stats = []
 # push!(improve_samples_stats, zeros(length(training_samples)))

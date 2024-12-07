@@ -2,7 +2,7 @@
 
 julia_version = "1.10.4"
 manifest_format = "2.0"
-project_hash = "a2c54cac1878cdfd6c279e72ce172e7c416d4374"
+project_hash = "a3df3806570603479a1f0fa5fb6e83e4bfb8ac78"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -711,6 +711,11 @@ git-tree-sha1 = "630b497eafcc20001bba38a4651b327dcfc491d2"
 uuid = "92d709cd-6900-40b7-9082-c6be49f344b6"
 version = "0.2.2"
 
+[[deps.IterTools]]
+git-tree-sha1 = "42d5f897009e7ff2cf88db414a389e5ed1bdd023"
+uuid = "c8e1da08-722c-5040-9ed9-7db0dc04731e"
+version = "1.10.0"
+
 [[deps.IteratorInterfaceExtensions]]
 git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
 uuid = "82899510-4779-5014-852e-03e436cf321d"
@@ -1063,7 +1068,7 @@ uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 version = "2023.1.10"
 
 [[deps.MyModule]]
-deps = ["CSV", "DataFrames", "DataStructures", "FileIO", "Flux", "JSON", "LRUCache", "Metatheory", "Mill", "Revise", "SimpleChains", "Statistics", "StatsBase", "TermInterface"]
+deps = ["CSV", "DataFrames", "DataStructures", "FileIO", "Flux", "JSON", "LRUCache", "Metatheory", "Mill", "Revise", "SimpleChains", "SparseArrays", "Statistics", "StatsBase", "TermInterface"]
 path = ".."
 uuid = "98749e58-590c-4da3-a9b4-40346e7e69f8"
 version = "0.1.0"
