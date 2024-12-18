@@ -38,8 +38,8 @@ heuristic = MyModule.simple_to_flux(heuristic1, heuristic)
 
 # heuristic = deserialize("models/trainied_heuristic_inf.bin")
 name = "not_overfit"
-@assert 1 == 0
-training_samples = deserialize("data/training_data/size_heuristic_training_samples0_10000.bin")
+# @assert 1 == 0
+training_samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
 training_samples = vcat(training_samples...)
 training_samples = sort(training_samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
 training_samples = last(training_samples, 1000)
@@ -47,11 +47,13 @@ optimizer = Adam()
 stp_config = MyModule.SearchTreePipelineConfig(training_samples, heuristic, MyModule.build_tree!)
 # heuristic, ireducible_stats, loss_stats = MyModule.train_heuristic_on_data_overfit(heuristic, training_samples, stp_config)
 
-heuristic, ireducible_stats, loss_stats = MyModule.train_heuristic_on_data_epochs(heuristic, training_samples, stp_config)
+heuristic, ireducible_stats, loss_stats, matched_stats = MyModule.train_heuristic_on_data_epochs(heuristic, training_samples, stp_config)
+plot(matched_stats, legend=false)
+savefig("matched_stats_$(name).png")
 # loss_df = DataFrame(loss_stats[1:end-1],:auto)
 # CSV.write("track_loss_over_training_for_each_sample_softplus_$(name).csv", loss_df)
 serialize("models/trainied_heuristic1000sorted_samples_softplus_$(name).bin", heuristic)
-# @assert 0 == 1
+@assert 0 == 1
 # heuristic = deserialize("models/trainied_heuristic1000sorted_samples3.bin")
 heuristic1 = MyModule.flux_to_simple(heuristic1, heuristic)
 
@@ -380,15 +382,19 @@ function plot_hist_comparison(name)
     df1 = CSV.read("profile_results_exp_size_as_heuristic.csv", DataFrame)
     # df2 = CSV.read("profile_results_gatting_heuristic.csv", DataFrame)
     # df3 = CSV.read("profile_results_random_heuristic.csv", DataFrame)
-    df3 = CSV.read("profile_results_trained_heuristic_$(name).csv", DataFrame)
-    df4 = CSV.read("profile_results_reward_function.csv", DataFrame)
-    df5 = CSV.read("profile_results_multiple_queues_as_heuristic_$(name).csv", DataFrame)
+    # df3 = CSV.read("profile_results_trained_heuristic_$(name).csv", DataFrame)
+    # df4 = CSV.read("profile_results_reward_function.csv", DataFrame)
+    # df5 = CSV.read("profile_results_multiple_queues_as_heuristic_$(name).csv", DataFrame)
+    
+    df1 = CSV.read("profile_results_trained_heuristic_not_overfit_128_hidden_size_1000.csv", DataFrame)
+    df3 = CSV.read("profile_results_trained_heuristic_overfit_128_hidden_size_1000.csv", DataFrame)
+    df4 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_1000.csv", DataFrame)
     # df6 = CSV.read("profile_results_trained_heuristic_beam_search.csv", DataFrame)
     av1 = mean(df1[!, 1] .- df1[!, 2])
     av2 = 0
     av3 = mean(df3[!, 1] .- df3[!, 2])
     av4 = mean(df4[!, 1] .- df4[!, 2])
-    av5 = mean(df5[!, 1] .- df5[!, 2])
+    av5 = 0
     # av6 = mean(df6[!, 1] .- df6[!, 2])
     bar(["Size Heuristic", "Gated Heuristic", "Trained Heuristic", "Reward Function", "Multiple Queues"], [av1,av2,av3,av4, av5], color=[:red, :green, :blue, :orange, :yellow], legend=false, ylabel="Average expression length reduction")
     # bar(["Size Heuristic", "Multiple Queue Heuristic", "Trained Heuristic", "Reward Function", "Beam Search"], [av1,av5,av3,av4, av6], color=[:red, :green, :blue, :orange, :yellow], legend=false, ylabel="Average expression length reduction")
@@ -421,20 +427,51 @@ end
 
 function plot_grouped_difference(name)
     df1 = CSV.read("profile_results_exp_size_as_heuristic.csv", DataFrame)
-    df2 = CSV.read("profile_results_trained_heuristic_not_overfitted.csv", DataFrame)
-    df3 = CSV.read("profile_results_trained_heuristic_overfitted.csv", DataFrame)
+    df2 = CSV.read("profile_results_trained_heuristic_not_overfit2.csv", DataFrame)
+    df3 = CSV.read("profile_results_trained_heuristic_overfit2.csv", DataFrame)
+    df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_10000.csv", DataFrame)
     big_df = DataFrame()
-    big_df[!, :s0] = df1[!, 1]
-    big_df[!, :s1] = df1[!, 1] .- df1[!,2]
-    big_df[!, :s2] = df2[!, 1] .- df2[!,2]
+    big_df[!, :s0] = df2[!, 1]
+    big_df[!, :s2] = df1[!, 1] .- df1[!,2]
+    big_df[!, :s1] = df2[!, 1] .- df2[!,2]
     big_df[!, :s3] = df3[!, 1] .- df3[!,2]
     combined_df = combine(groupby(big_df, :s0),              
            [:s1, :s2, :s3] .=> mean .=> [:size_heuristic, :not_overfited_heuristic, :overfitted_heuristic])
     plot_data = stack(combined_df, Not(:s0))
     rename!(plot_data, :variable => :method, :value => :performance)
     bar(plot_data.:s0, plot_data.performance, group=plot_data.method,
-        xlabel="Expressions size", ylabel="Average Expression Reduction", legend=:topleft)
+        xlabel="Expressions size", ylabel="Average Expression Reduction", legend=:topleft, title="1k samples")
 end
+
+
+function plot_exp_size_distribution(name)
+    df1 = CSV.read("profile_results_trained_heuristic_not_overfit2.csv", DataFrame)
+    df2 = CSV.read("profile_results_trained_heuristic_overfit_1000.csv", DataFrame)
+    freq1 = countmap(df1[!, 1])
+    freq2 = countmap(df2[!, 1])
+    k = []
+    v = []
+    for (i,j) in freq1
+        push!(k, i)
+        push!(v, j)
+    end
+    bar(k, v, xlabel="Expression Size", ylabel="Number of Expressions", title="Expression Size Distribution", label="10k samples D1", color=:blue, legend=:topright)
+    k = []
+    v = []
+    for (i,j) in freq2
+        push!(k, i)
+        push!(v, j)
+    end
+    bar!(k, v, xlabel="Expression Size", ylabel="Number of Expressions", title="Expression Size Distribution", label="1k samples D2", color=:red,legend=:topright)
+    # values = keys(freq)
+    # counts = collect(values .=> x -> freq[x] for x in values)
+end
+
+
+function test_have_learned_the_proof()
+    
+end
+
 test_different_searches(heuristic1, data, experiment_name="overfit")
 plot_hist_comparison()
 savefig("my_search_not_overfit.png")

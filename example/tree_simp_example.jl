@@ -94,7 +94,7 @@ proof_stats = []
 stp = div(n, number_of_workers)
 # sorted_train_data = create_batches_varying_length(train_data, epochs)
 # batched_train_data = [sorted_train_data[1][i:i + stp - 1] for i in 1:stp:n]
-batched_train_data = [train_data[i:i + stp - 1] for i in 1:stp:n]
+batched_train_data = [train_data[i:min(i + stp - 1, n)] for i in 1:stp:n]
 dt = 1
 # exp_cache = LRU(maxsize=100_000)
 # cache = LRU(maxsize=1_000_000)

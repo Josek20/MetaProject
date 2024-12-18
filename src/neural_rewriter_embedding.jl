@@ -1,7 +1,7 @@
 # Embedding any subtree vcat(root node embedding, subtree embedding) 
 
 input_dim = 512
-hidden_dim = 512 * 2
+hidden_dim = 256
 max_steps = 50
 value_model = Chain(
     Dense(input_dim, hidden_dim, leakyrelu), Dense(hidden_dim, hidden_dim, leakyrelu), Dense(hidden_dim, 1)
@@ -11,8 +11,10 @@ value_model = Chain(
 #     Dense(input_dim, hidden_dim, leakyrelu), Dense(hidden_dim, hidden_dim, leakyrelu), Dense(hidden_dim, length(theory)), Dense(length(theory), 1)
 # )
 
+rules_groups = length(theory)
+rules_groups = 10
 policy_model = Chain(
-    Dense(input_dim, hidden_dim, leakyrelu), Dense(hidden_dim, hidden_dim, leakyrelu), Dense(hidden_dim, length(theory))
+    Dense(input_dim, hidden_dim, leakyrelu), Dense(hidden_dim, hidden_dim, leakyrelu), Dense(hidden_dim, rules_groups)
 )
 
 # myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
@@ -79,7 +81,14 @@ function forward(policy_model, value_model, embedding_heuristic, ex, max_steps=m
         # @show collect(all_subtrees)[subtree_to_change[2]]
         # @show rule_to_apply
         subtree, subtree_path = collect(all_subtrees)[subtree_to_change[2]]
-        MyModule.my_rewriter!(subtree_path, ex, theory[rule_to_apply])
+        # old_ex = copy(ex)
+        for i in theory[(rule_to_apply - 1) * rules_groups + 1: rule_to_apply * rules_groups]
+            o = MyModule.my_rewriter!(subtree_path, ex, i)
+            if !(o isa Nothing)
+                ex = o
+                break
+            end
+        end
     end
     return tree_traces, rule_probs_traces, region_values_traces, rules_applied, subtree_embeddings_traces
 end
@@ -146,12 +155,8 @@ function loss(policy_model, value_model, input_values, rules_applied, rewards; g
         tmp2 = 0
         for i in j:max_steps
             reward = rewards[i]
-            # @show reward
-            # @show input_values, rules_applied
             k = policy_model(input_values[i])
-            # @show rules_applied
             k = k[rules_applied[i]]
-            # @show k
             tmp1 += gamma^(i - j) * reward - k
             tmp2 += gamma^(i - j) * reward - only(value_model(input_values[i]))
         end
@@ -183,18 +188,20 @@ end
 
 ps = Flux.params(policy_model, value_model)
 optimizer = Adam()
-for ep in 1:100
-    size_cache = LRU(maxsize=1000)
-    tree_traces, rule_probs_traces, region_values_traces, rules_applied, subtree_embeddings_traces = forward(policy_model, value_model, heuristic, myex)
-    rewards = []
-    for i in 1:length(tree_traces) - 1
-        rew = MyModule.exp_size(tree_traces[i], size_cache) - MyModule.exp_size(tree_traces[i+1], size_cache)
-        push!(rewards, rew)
+size_cache = LRU(maxsize=100_000)
+for ep in 1:10
+    for ex in sorted_train_data[1:100]
+        tree_traces, rule_probs_traces, region_values_traces, rules_applied, subtree_embeddings_traces = forward(policy_model, value_model, heuristic, ex)
+        rewards = []
+        for i in 1:length(tree_traces) - 1
+            rew = MyModule.exp_size(tree_traces[i], size_cache) - MyModule.exp_size(tree_traces[i+1], size_cache)
+            push!(rewards, rew)
+        end
+        sa, grad = Flux.Zygote.withgradient(ps) do
+            loss(policy_model, value_model, subtree_embeddings_traces, rules_applied, rewards)
+        end
+        @show tree_traces
+        @show sa
+        Flux.update!(optimizer, ps, grad)
     end
-    sa, grad = Flux.Zygote.withgradient(ps) do
-        loss(policy_model, value_model, subtree_embeddings_traces, rules_applied, rewards)
-    end
-    @show tree_traces
-    @show sa
-    Flux.update!(optimizer, ps, grad)
 end

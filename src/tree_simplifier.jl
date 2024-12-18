@@ -13,10 +13,26 @@ mutable struct ExprWithHash
     ex::Union{Expr, Symbol, Number}
 	head::Union{Symbol, Number}
 	args::Vector
+    # left::ExprWithHash
+    # right::ExprWithHash
 	hash::UInt
 end
 
+# ExprWithHash(ex::Union{Integer, Number}) = ExprWithHash(ex, ex, nothing, nothing, hash(ex)) 
+# ExprWithHash(ex::Symbol) = ExprWithHash(ex, ex, nothing, nothing, hash(ex))
 
+# function ExprWithHash(ex::Expr)
+#     if ex.head == :call
+#         head = ex.head
+#         left = ExprWithHash(ex.args[2])
+#         right = ExprWithHash(ex.args[3])
+#     else
+#         head = ex.args[1]
+#         left = ex.args[1]
+#         right = ex.args[1]
+#     end
+#     ExprWithHash(ex, head, left, right, hash(head, hash(hash(left), hash(right))))
+# end
 function ExprWithHash(ex::Expr, expr_cache)
     hashed_ex = hash(ex)
     get!(expr_cache, hashed_ex) do
@@ -56,7 +72,7 @@ function ExprWithHash(ex::Number, expr_cache)
         head = ex
         h = hash(ex)
         ExprWithHash(ex, head, args, h)
-    end 
+    end
 end
 
 
@@ -538,8 +554,8 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, encodings_buf
     # o = map(x->alpha * exp_size(x.ex, size_cache) + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
     # o = map(x->exp_size(x.ex, size_cache), filtered_new_nodes)
     # o = map(x->node_count(x.ex.ex), filtered_new_nodes)
-    # o = map(x->only(heuristic(x.ex, cache)), filtered_new_nodes)
-    o - heuristic(exprs, cache)
+    o = map(x->only(heuristic(x.ex, cache)), filtered_new_nodes)
+    # o = heuristic(exprs, cache)
     for (v,n) in zip(o, filtered_new_nodes)
         enqueue!(open_list, n, v)
     end
@@ -822,12 +838,12 @@ function extract_smallest_node_proof(node::Node, soltree::Dict{UInt64, Node}, ru
 end
 
 
-function extract_training_data(node, soltree)
+function extract_training_data_old(node, soltree, sym_enc=sym_enc)
     training_exp=[]
     hp=Vector[Int16[]]
     hn=Vector[Int16[]]
     proof_vector=[]
-    extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
+    extract_training_data_old!(node, soltree, training_exp, hp, hn, proof_vector)
     tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_exp, sym_enc)
     max_length = maximum(length, hn)
     padded_vectors = [vcat(vec, fill(0, max_length - length(vec))) for vec in hn]
@@ -846,7 +862,7 @@ function extract_training_data(node, soltree)
 end
 
 
-function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
+function extract_training_data_old!(node, soltree, training_exp, hp, hn, proof_vector)
     # if node.parent == node.node_id
     if isnothing(node.parent)
         return
@@ -866,6 +882,50 @@ function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vecto
         end
         push!(training_exp, soltree[i].ex)
     end
+    extract_training_data_old!(soltree[node.parent], soltree, training_exp, hp, hn, proof_vector)
+end
+
+
+function extract_training_data(node, soltree, sym_enc=sym_enc)
+    training_exp=[]
+    hp=Vector[]
+    hn=Vector[]
+    proof_vector=[]
+    extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
+    hp = vcat(hp...)
+    hn = vcat(hn...)
+    tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_exp, sym_enc)
+    return tdata, hp, hn, reverse(proof_vector)
+end
+
+
+function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
+    if isnothing(node.parent)
+        n = length(hn)
+        a = sum(x->length(x), hn)
+        hp[1] = fill(only(hp[1]), a)
+        for i in 2:n
+            a = sum(x->length(x), hn[i:n])
+            hp[i] = fill(only(hp[i]), a)
+            append!(hn, hn[i:n])
+        end
+        return
+    end
+    push!(proof_vector, node.rule_index)
+    children_list = soltree[node.parent].children
+    l = length(training_exp)
+    pos_index = 0
+    push!(hn, [])
+    push!(hp, [])
+    for (ind,i) in enumerate(children_list)
+        if node.node_id == i
+            pos_index = ind + l
+        else
+            push!(hn[end], ind + l)
+        end
+        push!(training_exp, soltree[i].ex)
+    end
+    push!(hp[end], pos_index)
     extract_training_data!(soltree[node.parent], soltree, training_exp, hp, hn, proof_vector)
 end
 

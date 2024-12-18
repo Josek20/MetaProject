@@ -2,7 +2,7 @@
 
 julia_version = "1.10.4"
 manifest_format = "2.0"
-project_hash = "2ee1d174299ee4caac88b3cfc3b318e752139ce5"
+project_hash = "05a60af613369461d8140d6ca594dff7c26409d0"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -258,6 +258,16 @@ git-tree-sha1 = "08c8b6831dc00bfea825826be0bc8336fc369860"
 uuid = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
 version = "1.0.2"
 
+[[deps.CommonEq]]
+git-tree-sha1 = "6b0f0354b8eb954cdba708fb262ef00ee7274468"
+uuid = "3709ef60-1bee-4518-9f2f-acd86f176c50"
+version = "0.2.1"
+
+[[deps.CommonSolve]]
+git-tree-sha1 = "0eee5eb66b1cf62cd6ad1b460238e60e4b09400c"
+uuid = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
+version = "0.2.4"
+
 [[deps.CommonSubexpressions]]
 deps = ["MacroTools"]
 git-tree-sha1 = "cda2cfaebb4be89c9084adaca7dd7333369715c5"
@@ -298,6 +308,12 @@ deps = ["Serialization", "Sockets"]
 git-tree-sha1 = "ea32b83ca4fefa1768dc84e504cc0a94fb1ab8d1"
 uuid = "f0e56b4a-5159-44fe-b623-3e5288b988bb"
 version = "2.4.2"
+
+[[deps.Conda]]
+deps = ["Downloads", "JSON", "VersionParsing"]
+git-tree-sha1 = "b19db3927f0db4151cb86d073689f2428e524576"
+uuid = "8f4d0f93-b110-5947-807f-2305c1781a2d"
+version = "1.10.2"
 
 [[deps.ConstructionBase]]
 git-tree-sha1 = "76219f1ed5771adbb096743bff43fb5fdd4c1157"
@@ -1100,7 +1116,7 @@ uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 version = "2023.1.10"
 
 [[deps.MyModule]]
-deps = ["CSV", "DataFrames", "DataStructures", "FileIO", "Flux", "JSON", "LRUCache", "Metatheory", "Mill", "Revise", "SimpleChains", "Statistics", "StatsBase", "TermInterface"]
+deps = ["CSV", "DataFrames", "DataStructures", "FileIO", "Flux", "JSON", "LRUCache", "Metatheory", "Mill", "Revise", "SimpleChains", "SparseArrays", "Statistics", "StatsBase", "TermInterface"]
 path = "../.."
 uuid = "98749e58-590c-4da3-a9b4-40346e7e69f8"
 version = "0.1.0"
@@ -1352,6 +1368,12 @@ deps = ["BufferedStreams", "Dates", "EnumX", "TOML"]
 git-tree-sha1 = "a94945b7faff91d6feba4b6e0fc95e5c44eb5a67"
 uuid = "3349acd9-ac6a-5e09-bcdb-63829b23a429"
 version = "1.0.16"
+
+[[deps.PyCall]]
+deps = ["Conda", "Dates", "Libdl", "LinearAlgebra", "MacroTools", "Serialization", "VersionParsing"]
+git-tree-sha1 = "9816a3826b0ebf49ab4926e2b18842ad8b5c8f04"
+uuid = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+version = "1.96.4"
 
 [[deps.Qt6Base_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Fontconfig_jll", "Glib_jll", "JLLWrappers", "Libdl", "Libglvnd_jll", "OpenSSL_jll", "Vulkan_Loader_jll", "Xorg_libSM_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Xorg_libxcb_jll", "Xorg_xcb_util_cursor_jll", "Xorg_xcb_util_image_jll", "Xorg_xcb_util_keysyms_jll", "Xorg_xcb_util_renderutil_jll", "Xorg_xcb_util_wm_jll", "Zlib_jll", "libinput_jll", "xkbcommon_jll"]
@@ -1622,6 +1644,24 @@ deps = ["Artifacts", "Libdl", "libblastrampoline_jll"]
 uuid = "bea87d4a-7f5b-5778-9afe-8cc45184846c"
 version = "7.2.1+1"
 
+[[deps.SymPy]]
+deps = ["CommonEq", "CommonSolve", "LinearAlgebra", "PyCall", "SpecialFunctions", "SymPyCore"]
+git-tree-sha1 = "36a25ab577e780f1b0861b326e90e362095e4494"
+uuid = "24249f21-da20-56a4-8eb1-6a02cf4ae2e6"
+version = "2.1.1"
+
+[[deps.SymPyCore]]
+deps = ["CommonEq", "CommonSolve", "Latexify", "LinearAlgebra", "Markdown", "RecipesBase", "SpecialFunctions"]
+git-tree-sha1 = "c8ff4f91ffa394aea95980fff2853d245307eb80"
+uuid = "458b697b-88f0-4a86-b56b-78b75cfb3531"
+version = "0.2.3"
+
+    [deps.SymPyCore.extensions]
+    SymPyCoreSymbolicUtilsExt = "SymbolicUtils"
+
+    [deps.SymPyCore.weakdeps]
+    SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
+
 [[deps.TOML]]
 deps = ["Dates"]
 uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
@@ -1769,6 +1809,11 @@ weakdeps = ["Requires", "StaticArraysCore"]
 
     [deps.VectorizedRNG.extensions]
     VectorizedRNGStaticArraysExt = ["StaticArraysCore"]
+
+[[deps.VersionParsing]]
+git-tree-sha1 = "58d6e80b4ee071f5efd07fda82cb9fbe17200868"
+uuid = "81def892-9a0e-5fdd-b105-ffc91e053289"
+version = "1.3.0"
 
 [[deps.Vulkan_Loader_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Wayland_jll", "Xorg_libX11_jll", "Xorg_libXrandr_jll", "xkbcommon_jll"]

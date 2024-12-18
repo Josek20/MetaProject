@@ -159,7 +159,7 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
     if l == 2
         tmp = vcat(my_args, const_both)
     elseif l == 3
-        tmp = vcat(my_args, const_left)
+        tmp = vcat(my_args, const_nth)
     else
         tmp = vcat(my_args, const_one)
     end
@@ -206,7 +206,6 @@ end
 function batched_cached_inference!(exs::Vector,::Type{Expr}, cache, model, all_symbols, symbols_to_ind)
     in_cache, not_in_cache, in_cache_order, not_in_cache_order = not_int_cache(exs, cache)
     fun_indeces = []
-    # exs_args = Vector[]
     args_bags = []
     sym_args = Union{Symbol, Int, ExprWithHash}[]
     expr_args = Expr[]
@@ -233,7 +232,6 @@ function batched_cached_inference!(exs::Vector,::Type{Expr}, cache, model, all_s
         end
     end
     args = batched_cached_inference!(sym_args, expr_args, cache, model, all_symbols, symbols_to_ind, vcat(sym_bag_ids, expr_bag_ids))
-    # @show args
     encoding = sparse([i[2] for i in fun_indeces], [i[1] for i in fun_indeces], ones(Float32, length(fun_indeces)), length(all_symbols), length(exs))
     if isa(model, ExprModel)
         tmp = model.head_model(encoding)
@@ -285,8 +283,6 @@ end
 
 
 function batched_cached_inference!(sym_args::Vector, expr_args::Vector, cache, model, all_symbols, symbols_to_ind, args_bags)
-    # l = length(args)
-
     expr_my_tmp = []
     sym_my_tmp = []
     if !isempty(sym_args)
@@ -559,14 +555,22 @@ function loss(heuristic, big_vector::Vector, hp=nothing, hn=nothing, surrogate::
 end
 
 
-function loss(heuristic, big_vector::ProductNode, hp=nothing, hn=nothing, surrogate::Function = softplus)
+function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = softplus)
     o = heuristic(big_vector)
-    p = (o * hp) .* hn
-
-    diff = p - o[1, :] .* hn
-    filtered_diff = filter(!=(0), diff)
-    return sum(surrogate.(filtered_diff))
+    diff = o[hp] .- o[hn]
+    # return sum(surrogate.(diff))
+    return sum(filter(x->x>=0, diff))
 end
+
+
+# function loss(heuristic, big_vector::ProductNode, hp::Matrix, hn::Matrix, surrogate::Function = softplus)
+#     o = heuristic(big_vector)
+#     p = (o * hp) .* hn
+
+#     diff = p - o[1, :] .* hn
+#     filtered_diff = filter(!=(0), diff)
+#     return sum(surrogate.(filtered_diff))
+# end
 
 
 function heuristic_loss(heuristic, data, in_solution, not_in_solution)

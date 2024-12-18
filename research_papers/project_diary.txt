@@ -1,3 +1,9 @@
+10.12.2024
+1) Karel run sympy on the dataset
+2) Re did the training samples extraction, works a bit faster, outputs vectors instead of matrix (hp, hn)
+3) Trying to implement batched cached inference (have it working but produces incorrect results)
+
+
 28.11.2024
 1) To imrove performance, will add threading to build trees simultaneously
 

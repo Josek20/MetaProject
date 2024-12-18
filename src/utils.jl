@@ -20,7 +20,7 @@ function get_training_data_from_proof(proof::Vector, initial_expression::Expr)
         # ex = smallest_node.ex.ex
     end
     big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
-    return big_vector, hp, hn 
+    return big_vector, hp, hn
 end
 
 
@@ -28,6 +28,7 @@ function train_heuristic_on_data_overfit(heuristic, training_samples, pipeline_c
     pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])    
     loss_stats = [[]]
     ireducible_stats = []
+    matched_stats = []
     for (ind,sample) in enumerate(training_samples)
         bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
         @show ind
@@ -44,7 +45,9 @@ function train_heuristic_on_data_overfit(heuristic, training_samples, pipeline_c
             end
             Flux.update!(optimizer, pc, grad)
         end
-        # if mod(ind, 100) == 0
+        if mod(ind, 100) == 0
+            matched_count = heuristic_sanity_check(heuristic, training_samples, [])
+            push!(matched_stats, matched_count)
         #     pipeline_config.heuristic = heuristic
         #     empty!(pipeline_config.inference_cache)
         #     empty!(pipeline_config.heuristic_cache)
@@ -56,9 +59,9 @@ function train_heuristic_on_data_overfit(heuristic, training_samples, pipeline_c
         #         push!(loss_stats[end], sa)
         #     end
         #     push!(loss_stats, [])
-        # end
+        end
     end
-    return heuristic, ireducible_stats, loss_stats
+    return heuristic, ireducible_stats, loss_stats, matched_stats
 end
 
 
@@ -66,11 +69,12 @@ function train_heuristic_on_data_epochs(heuristic, training_samples, pipeline_co
     pc = Flux.params([heuristic.head_model, heuristic.aggregation, heuristic.joint_model, heuristic.heuristic])    
     loss_stats = [[]]
     ireducible_stats = []
+    matched_stats = []
     for ep in 1:epochs
         @show ep
-        # for (ind,sample) in enumerate(training_samples)
-        for ind in 1:length(training_samples)
-            sample = Statistics.sampe(training_samples)
+        for (ind,sample) in enumerate(training_samples)
+        # for ind in 1:length(training_samples)
+            # sample = Statistics.sample(training_samples)
             bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
             @show ind
             sa, grad = Flux.Zygote.withgradient(pc) do
@@ -85,6 +89,8 @@ function train_heuristic_on_data_epochs(heuristic, training_samples, pipeline_co
             end
             Flux.update!(optimizer, pc, grad)
         end
+        matched_count = heuristic_sanity_check(heuristic, training_samples, [])
+        push!(matched_stats, matched_count)
         # pipeline_config.heuristic = heuristic
         # empty!(pipeline_config.inference_cache)
         # empty!(pipeline_config.heuristic_cache)
@@ -97,7 +103,7 @@ function train_heuristic_on_data_epochs(heuristic, training_samples, pipeline_co
         # end
         # push!(loss_stats, [])
     end
-    return heuristic, ireducible_stats, loss_stats
+    return heuristic, ireducible_stats, loss_stats, matched_stats
 end
 
 
