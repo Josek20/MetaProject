@@ -336,6 +336,8 @@ struct ExprModel{HM,A,JM,H}
     heuristic::H
 end
 
+Flux.@layer ExprModel
+
 
 struct InitExprModelDense{HM, JM, H}
     head_model::HM
@@ -544,33 +546,29 @@ function batched_loss(heuristic, big_vector, hp, hn, bags_of_batches, surrogate:
 end
 
 
-function loss(heuristic, big_vector::Vector, hp=nothing, hn=nothing, surrogate::Function = softplus, cache = LRU(maxsize=10000))
-    o = map(x->only(heuristic(x, cache)), big_vector)
-    # @show size(o)
-    p = (transpose(o) * hp) .* hn
+# function loss(heuristic, big_vector::Vector, hp=nothing, hn=nothing, surrogate::Function = softplus, cache = LRU(maxsize=10000))
+#     o = map(x->only(heuristic(x, cache)), big_vector)
+#     # @show size(o)
+#     p = (transpose(o) * hp) .* hn
 
-    diff = p - o .* hn
-    filtered_diff = filter(!=(0), diff)
-    return sum(surrogate.(filtered_diff))
-end
-
-
-function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = softplus)
-    o = heuristic(big_vector)
-    diff = o[hp] .- o[hn]
-    # return sum(surrogate.(diff))
-    return sum(filter(x->x>=0, diff))
-end
-
-
-# function loss(heuristic, big_vector::ProductNode, hp::Matrix, hn::Matrix, surrogate::Function = softplus)
-#     o = heuristic(big_vector)
-#     p = (o * hp) .* hn
-
-#     diff = p - o[1, :] .* hn
+#     diff = p - o .* hn
 #     filtered_diff = filter(!=(0), diff)
 #     return sum(surrogate.(filtered_diff))
 # end
+
+
+# function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = softplus)
+#     o = vec(heuristic(big_vector))
+#     diff = o[hp] - o[hn]
+#     # return sum(surrogate.(diff))
+#     return sum(filter(x->x>=0, diff))
+# end
+
+
+function loss(heuristic, big_vector::ProductNode, hp, hn, surrogate::Function = softplus, agg::Function = mean)
+    o = vec(heuristic(big_vector))
+    return agg(surrogate.(o[hp] - o[hn]))
+end
 
 
 function heuristic_loss(heuristic, data, in_solution, not_in_solution)
@@ -597,16 +595,16 @@ function check_loss(heuristics, data, hp, hn)
 end
 
 
-function loss(heuristic::ExprModel, params::InitExprModelDense, big_vector, hp, hn, surrogate::Function = logistic)
-    o = heuristic(big_vector, params)
-    p = (o * hp) .* hn
+# function loss(heuristic::ExprModel, params::InitExprModelDense, big_vector, hp, hn, surrogate::Function = logistic)
+#     o = heuristic(big_vector, params)
+#     p = (o * hp) .* hn
 
-    diff = p - o[1, :] .* hn
-    filtered_diff = filter(!=(0), diff)
-    # return sum(log.(1 .+ exp.(filtered_diff)))
-    # return mean(softmax(filtered_diff))
-    return sum(surrogate.(filtered_diff))
-end
+#     diff = p - o[1, :] .* hn
+#     filtered_diff = filter(!=(0), diff)
+#     # return sum(log.(1 .+ exp.(filtered_diff)))
+#     # return mean(softmax(filtered_diff))
+#     return sum(surrogate.(filtered_diff))
+# end
 
 
 struct MySimpleChainsLoss{T,Y<:AbstractVector{T}}<:SimpleChains.AbstractLoss{T}

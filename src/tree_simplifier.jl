@@ -892,8 +892,8 @@ function extract_training_data(node, soltree, sym_enc=sym_enc)
     hn=Vector[]
     proof_vector=[]
     extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
-    hp = vcat(hp...)
-    hn = vcat(hn...)
+    hp = reduce(vcat, hp)
+    hn = reduce(vcat, hn)
     tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_exp, sym_enc)
     return tdata, hp, hn, reverse(proof_vector)
 end
@@ -995,19 +995,19 @@ function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_s
     # push!(second_open_list, (root, exp_size(root.ex, size_cache)))
     reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
     # reached_goal = build_tree_with_multiple_queues!(soltree, heuristic, open_list, second_open_list, close_list, max_steps, theory, cache, exp_cache, size_cache, expr_cache, alpha)
-    println("Have successfuly finished bulding simplification tree!")
-    @show length(soltree)
+    # println("Have successfuly finished bulding simplification tree!")
+    # @show length(soltree)
     smallest_node = extract_smallest_terminal_node(soltree, close_list, size_cache)
     simplified_expression = smallest_node.ex
-    if isa(simplified_expression, ExprWithHash)
-        @show simplified_expression.ex
-    else
-        @show simplified_expression
-    end
+    # if isa(simplified_expression, ExprWithHash)
+    #     @show simplified_expression.ex
+    # else
+    #     @show simplified_expression
+    # end
     big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
     tmp = []
-    @show proof_vector
-    @show length(soltree)
+    # @show proof_vector
+    # @show length(soltree)
     return simplified_expression, [], big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector, tmp
 end
 

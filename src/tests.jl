@@ -31,10 +31,10 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
         # end
         # res = heuristic_forward_pass(heuristic, ex, length(proof) + 1, length(proof) + 1)
         # res = heuristic_forward_pass(heuristic, ex, 1000, 10)
-        @show ex
+        # @show ex
         simplified_expression, _, _, _, _, _, _, proof_vector, _ = MyModule.initialize_tree_search(heuristic, ex, length(proof)*2, 10, new_all_symbols, theory, [], cache, exp_cache, size_cache, expr_cache, 0.5)
-        @show sample.expression.ex, simplified_expression.ex
-        @show proof_vector, proof
+        # @show sample.expression.ex, simplified_expression.ex
+        # @show proof_vector, proof
         if length(proof) > 1
             count_all += 1
             count_matched += proof_vector == proof
