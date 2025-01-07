@@ -531,8 +531,8 @@ embed(m::ExprModel, ds::Missing) = missing
 
 
 logistic(x) = log(1 + exp(x))
-hinge(x) = max(0, x)
-loss01(x) = x > 0
+hinge(x) = min(0, max(1, x + 1))
+# loss01(x) = x + 1 > 0 ? x + 1 : 0
 
 
 function batched_loss(heuristic, big_vector, hp, hn, bags_of_batches, surrogate::Function = hinge)
@@ -555,6 +555,25 @@ end
 #     filtered_diff = filter(!=(0), diff)
 #     return sum(surrogate.(filtered_diff))
 # end
+
+
+function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = hinge)
+    o = heuristic(big_vector)
+    diff = o[hp] .- o[hn]
+    # return sum(surrogate.(diff))
+    # return sum(filter(x->x>=0, diff))
+    return sum(count(>(0), diff))
+end
+
+
+function loss(heuristic, big_vector::ProductNode, hp::Matrix, hn::Matrix, surrogate::Function = softplus)
+    o = heuristic(big_vector)
+    p = (o * hp) .* hn
+
+    diff = p - o[1, :] .* hn
+    filtered_diff = filter(!=(0), diff)
+    return sum(surrogate.(filtered_diff))
+end
 
 
 # function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = softplus)

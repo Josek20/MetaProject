@@ -987,8 +987,8 @@ function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_s
     expansion_history = Dict{UInt64, Vector}()
     encodings_buffer = Dict{UInt64, ProductNode}()
     root = Node(ex, (0,0), nothing, 0, expr_cache)
-    # o = heuristic(root.ex, cache)
-    o = exp_size(root.ex, size_cache)
+    o = heuristic(root.ex, cache)
+    # o = exp_size(root.ex, size_cache)
     # root = Node(ex, (0,0), nothing, 0, nothing)
     soltree[root.node_id] = root
     enqueue!(open_list, root, only(o))

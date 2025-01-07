@@ -70,21 +70,44 @@ function train_heuristic_on_data_epochs(heuristic, training_samples, pipeline_co
     loss_stats = [[]]
     ireducible_stats = []
     matched_stats = []
+    length_diff_stats = []
     samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
     for ep in 1:epochs
+        @show ep
+        total_ep_loss = 0
+        for (ind,sample) in enumerate(training_samples)
         sum_loss = 0.0
         hard_loss = 0
         for (ind,sample) in enumerate(samples)
         # for ind in 1:length(training_samples)
             # sample = Statistics.sample(training_samples)
+            bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+            # bd = sample.training_data
+            # hp = sample.hp
+            # hn = sample.hn
+            @show ind
+            sa, grad = Flux.Zygote.withgradient(pc) do
+                MyModule.loss(heuristic, bd, hp, hn)
             sa, grad = Flux.Zygote.withgradient(heuristic) do hfun
                 MyModule.loss(hfun, sample...)
             end
+            @show sa
+            total_ep_loss += sa
+            if any(g->any(isinf, g) || any(isnan, g), grad)
+                println("Gradient is Inf/NaN")
+                serialize("models/trainied_heuristic_inf.bin", heuristic)
+                serialize("data/training_data/training_sample_inf_grad.bin", sample)
+                @assert 0 == 1
+            end
+            Flux.update!(optimizer, pc, grad)
             sum_loss += sa
             Optimisers.update!(opt_state, heuristic, grad[1])
         end
+        matched_count, length_diff = heuristic_sanity_check(heuristic, training_samples, [])
         matched_count = MyModule.heuristic_sanity_check(heuristic, training_samples, [])
         push!(matched_stats, matched_count)
+        push!(length_diff_stats, length_diff)
+        push!(loss_stats, total_ep_loss)
         println(ep, ": ", sum_loss/length(training_samples), " matched_count: ", matched_count)
         # pipeline_config.heuristic = heuristic
         # empty!(pipeline_config.inference_cache)
@@ -98,7 +121,7 @@ function train_heuristic_on_data_epochs(heuristic, training_samples, pipeline_co
         # end
         # push!(loss_stats, [])
     end
-    return heuristic, ireducible_stats, loss_stats, matched_stats
+    return heuristic, ireducible_stats, loss_stats, matched_stats, length_diff_stats
 end
 
 

@@ -2,7 +2,7 @@ theory = @theory a b c d x y begin
     a::Number + b::Number => a + b
     a::Number - b::Number => a - b
     a::Number * b::Number => a * b
-    # a::Number / b::Number => b != 0 ? a / b : :($a / $b)
+    # a::Number / b::Number => b != 0 ? a / b : nothing
     # add.rc
     a + b --> b + a
     a + (b + c) --> (a + b) + c
@@ -28,12 +28,12 @@ theory = @theory a b c d x y begin
     a && (b && c) --> (a && b) && c
     1 && a --> a
     a && 1 --> a
-    a && a --> a
+    a && a --> 1
     a && !a --> 0
     !a && a --> 0
 
-    (a == c::Number) && (a == x::Number) => c != x ? 0 : :($a == $c)
-    !a::Number && b::Number => a != b ? 0 : :($a)
+    (a == c::Number) && (a == x::Number) => c != x ? 0 : :($a == $x)
+    a::Number && b::Number => a != b ? 0 : 1
     (a < y) && (a < b) --> a < min(y, b)
     a < min(y, b) --> (a < y) && (a < b)
     (a <= y) && (a <= b) --> a <= min(y, b)
@@ -44,9 +44,9 @@ theory = @theory a b c d x y begin
     (a >= y) && (a >= b) --> a >= max(y, b)
     a >= max(y, b) --> (a >= y) && (a >= b)
     
-    (a::Number > b) && (c::Number < b) => a < c ? 0 : :($a > $b) && :($c < $b)
-    (a::Number >= b) && (c::Number <= b) => a < c ? 0 : :($a >= $b) && :($c <= $b)
-    (a::Number >= b) && (c::Number < b) => a <= c ? 0 : :($a >= $b) && :($c < $b)
+    (a::Number > b) && (c::Number < b) => a < c ? 0 : nothing
+    (a::Number >= b) && (c::Number <= b) => a < c ? 0 : nothing
+    (a::Number >= b) && (c::Number < b) => a <= c ? 0 : nothing
     
     a && (b || c) --> (a && b) || (a && c)
     a || (b && c) --> (a || b) && (a || c)
@@ -70,7 +70,7 @@ theory = @theory a b c d x y begin
 
     # eq.rs
     x == y --> y == x
-    x == y => y != 0 && x != 0 ? :(($x - $y) == 0) : :($x == $y)
+    x == y => y != 0 && x != 0 ? :(($x - $y) == 0) : nothing
     x + y == a --> x == a - y
     x == x --> 1
     x*y == 0 --> (x == 0) || (y == 0)
@@ -113,42 +113,42 @@ theory = @theory a b c d x y begin
     min(a + c, b + c) --> min(a, b) + c
     min(c + a, c + b) --> min(a, b) + c
 
-    min(a, a + b::Number) => b > 0 ? :($a) : :($a + $b)
-    min(a ,b) * c::Number => c > 0 ? :(min($a * $c, $b * $c)) : :(max($a * $c, $b * $c)) 
-    min(a * c::Number, b * c::Number) => c > 0 ? :(min($a ,$b) * $c) : :(max($a, $b) * $c)
-    min(a, b) / c::Number => c > 0 ? :(min($a / $c, $b / $c)) : :(max($a/$c,$b/$c))
-    min(a / c::Number, b / c::Number) => c>0 ? :(min($a, $b) / $c) : :(max($a,$b) / $c)
-    max(a , b) / c::Number => c < 0 ? :(max($a / $c , $b / $c)) : :(min($a / $c, $b / $c))
-    max(a / c::Number, b / c::Number) => c < 0 ? :(max($a, $b) / $c) : :(min($a, $b) / $c)
-    min(max(a,b::Number), c::Number) => c <= b ? :($c) : :(min(max($a,$b),$c))
-    # min((a / b::Number) * b::Number , a) => b > 0 ? :(($a / $b) * $b) : :($)
-    min(a % b::Number, c::Number) => c >= b - 1 ? :($a % $b) : :(min($a % $b, $c))
-    min(a % b::Number, c::Number) => c <= 1 - b ? :($c) : :(min($a % $b, $c))
+    min(a, a + b::Number) => b > 0 ? :($a) : nothing
+    min(a ,b) * c::Number => c > 0 ? :(min($a * $c, $b * $c)) : nothing
+    min(a * c::Number, b * c::Number) => c > 0 ? :(min($a ,$b) * $c) : nothing
+    min(a, b) / c::Number => c > 0 ? :(min($a / $c, $b / $c)) : nothing
+    min(a / c::Number, b / c::Number) => c>0 ? :(min($a, $b) / $c) : nothing
+    max(a , b) / c::Number => c < 0 ? :(max($a / $c , $b / $c)) : nothing
+    max(a / c::Number, b / c::Number) => c < 0 ? :(max($a, $b) / $c) : nothing
+    min(max(a,b::Number), c::Number) => c <= b ? :($c) : nothing
+    # min((a / b::Number) * b::Number , a) => b > 0 ? :(($a / $b) * $b) : nothing
+    min(a % b::Number, c::Number) => c >= b - 1 ? :($a % $b) : nothing
+    min(a % b::Number, c::Number) => c <= 1 - b ? :($c) : nothing
 
-    min(max(a, b::Number), c::Number) => b <= c ? :(max(min($a, $c), $b)) : :(min(max($a, $b), $c))
-    max(min(a, c::Number), b::Number) => b <= c ? :(min(max($a, $b), $c)) : :(max(min($a, $c), $b))
+    min(max(a, b::Number), c::Number) => b <= c ? :(max(min($a, $c), $b)) : nothing
+    max(min(a, c::Number), b::Number) => b <= c ? :(min(max($a, $b), $c)) : nothing
     min(a , b::Number) <= c::Number --> a <= c || b <= c
     max(a , b::Number) <= c::Number --> a <= c && b <= c
     c::Number <= max(a , b::Number) --> c <= a || c <= b
     c::Number <= min(a , b::Number) --> c <= a && c <= b
-    min(a * b::Number, c::Number) => c != 0 && b % c == 0 && b > 0 ? :(min($a, $b / $c) * $c) : :(min($a * $b, $c))
-    min(a * b::Number, d * c::Number) => c != 0 && b % c == 0 && b > 0 ? :(min($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
-    min(a * b::Number, c::Number) => c != 0 && b % c == 0 && b < 0 ? :(max($a, $b / $c) * $c) : :(min($a * $b, $c))
-    min(a * b::Number, d * c::Number) => c != 0 && b % c == 0 && b < 0 ? :(max($a, $d * ($c/$b))*$b) : :(min($a * $b, $d * $c))
-    max(a * c::Number, b * c::Number) => c < 0 ? :(min($a, $b) * $c) : :(max($a, $b) * $c)
+    min(a * b::Number, c::Number) => c != 0 && b % c == 0 && b > 0 ? :(min($a, $b / $c) * $c) : nothing
+    min(a * b::Number, d * c::Number) => c != 0 && b % c == 0 && b > 0 ? :(min($a, $d * ($c/$b))*$b) : nothing
+    min(a * b::Number, c::Number) => c != 0 && b % c == 0 && b < 0 ? :(max($a, $b / $c) * $c) : nothing
+    min(a * b::Number, d * c::Number) => c != 0 && b % c == 0 && b < 0 ? :(max($a, $d * ($c/$b))*$b) : nothing
+    max(a * c::Number, b * c::Number) => c < 0 ? :(min($a, $b) * $c) : nothing
 
     # modulo.rs
     a % 0 --> 0
     a % a --> 0
     a % 1 --> 0
 
-    # a % b::Number --> b > 0 ? :(($a + $b) % $b) : :($a % $b)
+    # a % b::Number --> b > 0 ? :(($a + $b) % $b) : nothing
     (a * -1) % b --> -1 * (a % b)
     -1 * (a % b) --> (a * -1) % b
     (a - b) % 2 --> (a + b) % 2
 
-    ((a * b::Number) + d) % c::Number => c != 0 && b % c == 0 ? :($b % $c) : :((($a * $b) + $d) % $c)
-    (b::Number * a) % c::Number => c != 0 && b % c == 0 ? 0 : :(($b * $a) % $c)
+    ((a * b::Number) + d) % c::Number => c != 0 && b % c == 0 ? :($b % $c) : nothing
+    (b::Number * a) % c::Number => c != 0 && b % c == 0 ? 0 : nothing
     
     # mul.rs
     a * b --> b * a

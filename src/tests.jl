@@ -14,9 +14,11 @@ function test_heuristic(heuristic, data, max_steps, max_depth, variable_names, t
     return result, result_proof, simp_expressions
 end
 
+
 function heuristic_sanity_check(heuristic, training_samples, training_data)
     count_matched = 0
     count_all = 0
+    length_diff = 0
     exp_cache = LRU(maxsize=100_000)
     cache = LRU(maxsize=1_000_000)
     size_cache = LRU(maxsize=100_000)
@@ -38,6 +40,7 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
         if length(proof) > 1
             count_all += 1
             count_matched += proof_vector == proof
+            length_diff += MyModule.exp_size(sample.expression.ex,size_cache) - MyModule.exp_size(simplified_expression,size_cache)
         end
         # learned_proof = res[end]
         # println("Training proof $proof: learned proof $learned_proof")
@@ -51,7 +54,7 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
     # println("====>Test results all matched samples: $count_matched")
     not_matched = count_all - count_matched
     # println("====>Test results all not matched samples: $not_matched")
-    return count_matched
+    return count_matched, length_diff
 end
 
 

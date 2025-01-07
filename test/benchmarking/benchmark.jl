@@ -14,12 +14,12 @@ using DataFrames
 
  
 
-hidden_size = 128
+hidden_size = 32
 heuristic = ExprModel(
-    Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.relu), Dense(hidden_size,hidden_size)),
+    Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.leakyrelu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSum(hidden_size),
-    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,Flux.relu), Dense(hidden_size, hidden_size)),
-    Flux.Chain(Dense(hidden_size, hidden_size,Flux.relu), Dense(hidden_size, 1))
+    Flux.Chain(Dense(2*hidden_size + 2, hidden_size,Flux.leakyrelu), Dense(hidden_size, hidden_size)),
+    Flux.Chain(Dense(hidden_size, hidden_size,Flux.leakyrelu), Dense(hidden_size, 1))
     )
 
 heuristic1 = MyModule.ExprModelSimpleChains(ExprModel(
@@ -39,17 +39,20 @@ name = "not_overfit"
 training_samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
 training_samples = vcat(training_samples...)
 training_samples = sort(training_samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
-training_samples = last(training_samples, 1000)
+filtered_samples = filter(x->length(x.proof)>1, training_samples)
+training_samples = last(filtered_samples, 1)
+# training_samples = filtered_samples[end]
 optimizer = Adam()
 stp_config = MyModule.SearchTreePipelineConfig(training_samples, heuristic, MyModule.build_tree!)
 # heuristic, ireducible_stats, loss_stats = MyModule.train_heuristic_on_data_overfit(heuristic, training_samples, stp_config)
 
-heuristic, ireducible_stats, loss_stats, matched_stats = MyModule.train_heuristic_on_data_epochs(heuristic, training_samples, stp_config)
+heuristic, ireducible_stats, loss_stats, matched_stats, length_diff_stats = MyModule.train_heuristic_on_data_epochs(heuristic, training_samples, stp_config)
+@assert 0 == 1
 plot(matched_stats, legend=false)
 savefig("matched_stats_$(name).png")
 # loss_df = DataFrame(loss_stats[1:end-1],:auto)
 # CSV.write("track_loss_over_training_for_each_sample_softplus_$(name).csv", loss_df)
-serialize("models/trainied_heuristic1000sorted_samples_softplus_$(name).bin", heuristic)
+# serialize("models/trainied_heuristic1000sorted_samples_softplus_$(name).bin", heuristic)
 @assert 0 == 1
 # heuristic = deserialize("models/trainied_heuristic1000sorted_samples3.bin")
 heuristic1 = MyModule.flux_to_simple(heuristic1, heuristic)
@@ -65,6 +68,18 @@ data  = vcat(exp_data[1], test_data[5], test_data[25:100])
 max_steps = 1000
 max_depth = 50
 # @assert 1 == 0
+function quick_traverse(ex, theory, tmp)
+    !(ex isa Expr) && return
+    self = [r(ex) for r in theory]
+    self = filter(!isnothing, self)
+    @show length(self)
+    append!(tmp, self)
+    for i in ex.args
+    quick_traverse(i, theory, tmp)
+    end
+end
+
+
 function small_testing()
     exs = [:(v0 - v1), :(v2 + v3), :(v4 + v5 + v6)]
     cache = LRU{Expr,Vector}(maxsize=1000)
