@@ -566,14 +566,14 @@ function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrog
 end
 
 
-function loss(heuristic, big_vector::ProductNode, hp::Matrix, hn::Matrix, surrogate::Function = softplus)
-    o = heuristic(big_vector)
-    p = (o * hp) .* hn
+# function loss(heuristic, big_vector::ProductNode, hp::Matrix, hn::Matrix, surrogate::Function = softplus)
+#     o = heuristic(big_vector)
+#     p = (o * hp) .* hn
 
-    diff = p - o[1, :] .* hn
-    filtered_diff = filter(!=(0), diff)
-    return sum(surrogate.(filtered_diff))
-end
+#     diff = p - o[1, :] .* hn
+#     filtered_diff = filter(!=(0), diff)
+#     return sum(surrogate.(filtered_diff))
+# end
 
 
 # function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = softplus)

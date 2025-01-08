@@ -1,3 +1,32 @@
+function get_training_data_from_proof_with_soltree(proof::Vector, initial_expression::Expr)
+    soltree = Dict{UInt64, Node}()
+    exp_cache = LRU(maxsize=10_000)
+    expr_cache = LRU(maxsize=10_000)
+    open_list = PriorityQueue{Node, Float32}()
+    root = Node(initial_expression, (0,0), nothing, 0, expr_cache)
+    soltree[root.node_id] = root
+    ex = initial_expression
+    smallest_node = root
+    for (ind, i) in enumerate(proof)
+        # reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
+        # @show i
+        succesors = execute(smallest_node.ex, theory, exp_cache)
+        new_nodes = map(x-> Node(x[2], x[1], smallest_node.node_id, smallest_node.depth + 1, expr_cache), succesors)
+        filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
+        nodes_ids = map(x->x.node_id, filtered_new_nodes)
+        append!(smallest_node.children, nodes_ids)
+        # @show filtered_new_nodes[1].rule_index
+        # @show [j.rule_index for j in filtered_new_nodes]
+        smallest_node = only(filter(x->x.rule_index == i, filtered_new_nodes))
+        # ex = smallest_node.ex.ex
+    end
+    # function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
+    build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, new_all_symbols, sym_enc, 1000, 50, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.5)
+    big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
+    return big_vector, hp, hn
+end
+
+
 function get_training_data_from_proof(proof::Vector, initial_expression::Expr)
     soltree = Dict{UInt64, Node}()
     exp_cache = LRU(maxsize=10_000)
@@ -75,21 +104,16 @@ function train_heuristic_on_data_epochs(heuristic, training_samples, pipeline_co
     for ep in 1:epochs
         @show ep
         total_ep_loss = 0
-        for (ind,sample) in enumerate(training_samples)
-        sum_loss = 0.0
-        hard_loss = 0
         for (ind,sample) in enumerate(samples)
         # for ind in 1:length(training_samples)
             # sample = Statistics.sample(training_samples)
-            bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+            # bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
             # bd = sample.training_data
             # hp = sample.hp
             # hn = sample.hn
             @show ind
             sa, grad = Flux.Zygote.withgradient(pc) do
                 MyModule.loss(heuristic, bd, hp, hn)
-            sa, grad = Flux.Zygote.withgradient(heuristic) do hfun
-                MyModule.loss(hfun, sample...)
             end
             @show sa
             total_ep_loss += sa
@@ -100,15 +124,87 @@ function train_heuristic_on_data_epochs(heuristic, training_samples, pipeline_co
                 @assert 0 == 1
             end
             Flux.update!(optimizer, pc, grad)
-            sum_loss += sa
-            Optimisers.update!(opt_state, heuristic, grad[1])
         end
         matched_count, length_diff = heuristic_sanity_check(heuristic, training_samples, [])
-        matched_count = MyModule.heuristic_sanity_check(heuristic, training_samples, [])
         push!(matched_stats, matched_count)
         push!(length_diff_stats, length_diff)
         push!(loss_stats, total_ep_loss)
-        println(ep, ": ", sum_loss/length(training_samples), " matched_count: ", matched_count)
+        # pipeline_config.heuristic = heuristic
+        # empty!(pipeline_config.inference_cache)
+        # empty!(pipeline_config.heuristic_cache)
+        # number_of_irreducible, number_of_improved = MyModule.train_heuristic!(pipeline_config)
+        # push!(ireducible_stats, number_of_irreducible)
+        # for (ind,sample) in enumerate(training_samples)
+        #     bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+        #     sa = MyModule.loss(heuristic, bd, hp, hn)
+        #     push!(loss_stats[end], sa)
+        # end
+        # push!(loss_stats, [])
+    end
+    return heuristic, ireducible_stats, loss_stats, matched_stats, length_diff_stats
+end
+
+
+
+function train_heuristic_on_data_epochs_batched(heuristic, training_samples, pipeline_config; optimizer=Adam(), epochs=10, batch_size=10)
+    # opt_state = Flux.setup(optimizer, heuristic)
+    loss_stats = [[]]
+    ireducible_stats = []
+    matched_stats = []
+    length_diff_stats = []
+    samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
+    batched_samples = []
+    for i in 1:batch_size:length(samples)-1
+        pds = reduce(catobs, [j[1] for j in samples[i:batch_size - 1 + i]])
+        hps = []
+        hns = []
+        for (ind, (bd, hp, hn)) in enumerate(samples[i:batch_size - 1 + i])
+            # hps = reduce(vcat, [j[2] for j in samples[batch_size*(i - 1) + 1:batch_size*i]])
+            # hns = reduce(vcat, [j[3] for j in samples[batch_size*(i - 1) + 1:batch_size*i]])
+            # hp .+= (ind - 1) * (length(hps))
+            # hn .+= (ind - 1) * (length(hns))
+            hp .+= size(bd.data.head)[2]
+            hn .+= size(bd.data.head)[2]
+            append!(hps, hp) 
+            append!(hns, hn) 
+        end
+        # for (pn, hp, hn) in samples[batch_size*(i - 1) + 1:batch_size*i]
+        #     push!()
+        # end
+        push!(batched_samples, (pds, hps, hns))
+    end
+    for ep in 1:epochs
+        @show ep
+        total_ep_loss = 0
+        for (ind,(bd, hp, hn)) in enumerate(batched_samples)
+        # for ind in 1:length(training_samples)
+            # sample = Statistics.sample(training_samples)
+            # bd, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+            # bd = sample.training_data
+            # hp = sample.hp
+            # hn = sample.hn
+            @show ind
+            # sa, grad = Flux.Zygote.withgradient(heuristic) do hfun
+            #     MyModule.loss(hfun, bd, hp, hn)
+            # end
+            sa, grad = Flux.Zygote.withgradient(pc) do
+                MyModule.loss(heuristic, bd, hp, hn)
+            end
+            @show sa
+            total_ep_loss += sa
+            if any(g->any(isinf, g) || any(isnan, g), grad)
+                println("Gradient is Inf/NaN")
+                serialize("models/trainied_heuristic_inf.bin", heuristic)
+                serialize("data/training_data/training_sample_inf_grad.bin", sample)
+                @assert 0 == 1
+            end
+            Flux.update!(optimizer, pc, grad)
+            # Optimisers.update!(opt_state, heuristic, grad[1])
+        end
+        matched_count, length_diff = heuristic_sanity_check(heuristic, training_samples, [])
+        push!(matched_stats, matched_count)
+        push!(length_diff_stats, length_diff)
+        push!(loss_stats, total_ep_loss)
         # pipeline_config.heuristic = heuristic
         # empty!(pipeline_config.inference_cache)
         # empty!(pipeline_config.heuristic_cache)

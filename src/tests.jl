@@ -23,6 +23,10 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
     cache = LRU(maxsize=1_000_000)
     size_cache = LRU(maxsize=100_000)
     expr_cache = LRU(maxsize=100_000)
+    count_improved = 0
+    count_new_proof = 0
+    not_matched = 0
+    training_samples = filter(x->length(x.proof) > 1, training_samples)
     # for (ex, sample) in zip(training_data, training_samples)
     for sample in training_samples
         proof = sample.proof
@@ -37,10 +41,16 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
         simplified_expression, _, _, _, _, _, _, proof_vector, _ = MyModule.initialize_tree_search(heuristic, ex, length(proof)*2, 10, new_all_symbols, theory, [], cache, exp_cache, size_cache, expr_cache, 0.5)
         # @show sample.expression.ex, simplified_expression.ex
         # @show proof_vector, proof
-        if length(proof) > 1
-            count_all += 1
-            count_matched += proof_vector == proof
-            length_diff += MyModule.exp_size(sample.expression.ex,size_cache) - MyModule.exp_size(simplified_expression,size_cache)
+        same_proof = proof_vector == proof
+        expr_diff = MyModule.exp_size(sample.expression.ex,size_cache) - MyModule.exp_size(simplified_expression,size_cache)
+        if expr_diff > 0
+            count_improved += 1
+        elseif expr_diff == 0 && length(proof_vector) <= length(proof) && same_proof == 0
+            count_new_proof += 1
+        elseif same_proof == 1
+            count_matched += 1
+        else
+            not_matched += 1
         end
         # learned_proof = res[end]
         # println("Training proof $proof: learned proof $learned_proof")
@@ -49,12 +59,12 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
         #     count_matched += 1
         # end
     end
-    # not_matched = length(training_samples) - count_matched
+    # not_matched = length(training_samples) - count_matched - count_improved - count_new_proof
     # println("====>Test results all checked samples: $count_all")
     # println("====>Test results all matched samples: $count_matched")
-    not_matched = count_all - count_matched
+    # not_matched = count_all - count_matched
     # println("====>Test results all not matched samples: $not_matched")
-    return count_matched, length_diff
+    return count_matched, count_improved, count_new_proof, not_matched
 end
 
 

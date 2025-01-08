@@ -35,7 +35,7 @@ heuristic = MyModule.simple_to_flux(heuristic1, heuristic)
 
 # heuristic = deserialize("models/trainied_heuristic_inf.bin")
 name = "not_overfit"
-# @assert 1 == 0
+@assert 1 == 0
 training_samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
 training_samples = vcat(training_samples...)
 training_samples = sort(training_samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
@@ -248,6 +248,7 @@ function making_faster_reward(data, heuristic)
         cache = LRU(maxsize=1_000_000)
         size_cache = LRU(maxsize=100_000)
         expr_cache = LRU(maxsize=100_000)
+        ex = intern!(ex)
         root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
 
         soltree = Dict{UInt64, MyModule.Node}()
@@ -314,52 +315,53 @@ function test_different_searches(heuristic, data; max_steps=1000,max_depth=50,ex
     end |> DataFrame
     CSV.write("profile_results_trained_heuristic_$(experiment_name).csv", df)
     # df = map(data) do ex
-    # # @benchmark begin
-    #     exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
-    #     cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
-    #     size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
-    #     expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
-    #     root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
+    @benchmark begin
+        ex = training_samples[end].initial_expr
+        exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
+        cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
+        size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
+        expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
 
-    #     soltree = Dict{UInt64, MyModule.Node}()
-    #     open_list = PriorityQueue{MyModule.Node, Float32}()
-    #     close_list = Set{UInt64}()
-    #     expansion_history = Dict{UInt64, Vector}()
-    #     encodings_buffer = Dict{UInt64, ProductNode}()
-    #     println("Initial expression: $ex")
-    #     soltree[root.node_id] = root
-    #     o = heuristic(root.ex, cache)
-    #     enqueue!(open_list, root, only(o))
-    #     MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.5)
-    #     smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
-    #     (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache))
-    # end |> DataFrame
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        o = heuristic(root.ex, cache)
+        enqueue!(open_list, root, only(o))
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.5)
+        # smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+        # (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache))
+    end |> DataFrame
     # CSV.write("profile_results_gatting_heuristic.csv", df)
     # df = map(data) do ex
-    # @benchmark begin
-    #     exp_cache = LRU(maxsize=100_000)
-    #     cache = LRU(maxsize=1_000_000)
-    #     size_cache = LRU(maxsize=100_000)
-    #     expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
-    #     root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
+    @benchmark begin
+        exp_cache = LRU(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
 
-    #     soltree = Dict{UInt64, MyModule.Node}()
-    #     open_list = PriorityQueue{MyModule.Node, Float32}()
-    #     second_open_list = PriorityQueue{MyModule.Node, Float32}()
-    #     close_list = Set{UInt64}()
-    #     expansion_history = Dict{UInt64, Vector}()
-    #     encodings_buffer = Dict{UInt64, ProductNode}()
-    #     println("Initial expression: $ex")
-    #     soltree[root.node_id] = root
-    #     o = MyModule.exp_size(root.ex, size_cache)
-    #     # o = node_count(root.ex.ex)
-    #     enqueue!(open_list, root, only(o))
-    #     MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
-    #     # reached_goal = MyModule.build_tree_with_multiple_queues!(soltree, heuristic, open_list, second_open_list, close_list, max_steps, theory, cache, exp_cache, size_cache, expr_cache, 1)
-    #     smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
-    #     tdata, hp, hn, proof = MyModule.extract_training_data(smallest_node, soltree)
-    #     (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache), se = MyModule.reconstruct(smallest_node.ex, new_all_symbols, LRU(maxsize=1000)), pr = proof)
-    # end |> DataFrame
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        second_open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        println("Initial expression: $ex")
+        soltree[root.node_id] = root
+        o = MyModule.exp_size(root.ex, size_cache)
+        # o = node_count(root.ex.ex)
+        enqueue!(open_list, root, only(o))
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 1)
+        # reached_goal = MyModule.build_tree!(soltree, heuristic, open_list, second_open_list, close_list, max_steps, theory, cache, exp_cache, size_cache, expr_cache, 1)
+        # smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+        # tdata, hp, hn, proof = MyModule.extract_training_data(smallest_node, soltree)
+        # (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache), se = MyModule.reconstruct(smallest_node.ex, new_all_symbols, LRU(maxsize=1000)), pr = proof)
+    end |> DataFrame
     # CSV.write("profile_results_exp_size_as_heuristic.csv", df)
     df = map(data) do ex
     # @benchmark begin
@@ -438,17 +440,20 @@ end
 
 
 function plot_grouped_difference(name)
-    df1 = CSV.read("profile_results_exp_size_as_heuristic.csv", DataFrame)
-    df2 = CSV.read("profile_results_trained_heuristic_not_overfit2.csv", DataFrame)
-    df3 = CSV.read("profile_results_trained_heuristic_overfit2.csv", DataFrame)
-    df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_10000.csv", DataFrame)
+    # df1 = CSV.read("profile_results_exp_size_as_heuristic.csv", DataFrame)
+    # df2 = CSV.read("profile_results_trained_heuristic_not_overfit2.csv", DataFrame)
+    # df3 = CSV.read("profile_results_trained_heuristic_overfit2.csv", DataFrame)
+    # df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_1000.csv", DataFrame)
+    df4 = CSV.read("profile_results_trained_heuristic_not_overfit_ep10_hidsize64_1000.csv", DataFrame)
     big_df = DataFrame()
-    big_df[!, :s0] = df2[!, 1]
-    big_df[!, :s2] = df1[!, 1] .- df1[!,2]
-    big_df[!, :s1] = df2[!, 1] .- df2[!,2]
-    big_df[!, :s3] = df3[!, 1] .- df3[!,2]
+    big_df[!, :s0] = df4[!, 1]
+    # big_df[!, :s2] = df1[!, 1] .- df1[!,2]
+    # big_df[!, :s1] = df2[!, 1] .- df2[!,2]
+    # big_df[!, :s3] = df3[!, 1] .- df3[!,2]
+    big_df[!, :s4] = df4[!, 1] .- df4[!,2]ěěě
     combined_df = combine(groupby(big_df, :s0),              
-           [:s1, :s2, :s3] .=> mean .=> [:size_heuristic, :not_overfited_heuristic, :overfitted_heuristic])
+        #    [:s1, :s2, :s3, :s4] .=> mean .=> [:size_heuristic, :not_overfited_heuristic, :overfitted_heuristic, :new_not_overfited])
+           [:s3, :s4] .=> mean .=> [:size_heuristic, :new_not_overfited])
     plot_data = stack(combined_df, Not(:s0))
     rename!(plot_data, :variable => :method, :value => :performance)
     bar(plot_data.:s0, plot_data.performance, group=plot_data.method,
