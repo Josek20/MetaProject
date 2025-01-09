@@ -106,7 +106,7 @@ Node(ex::Int, rule_index, parent, depth, ee::Nothing) = Node(ex, rule_index, UIn
 # Node(ex, rule_index, parent, depth, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
 Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::Union{ProductNode, Nothing}) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-function Node(ex, rule_index, parent, depth, expr_cache)
+function Node(ex::Expr, rule_index, parent, depth, expr_cache)
     ex_hash = ExprWithHash(ex, expr_cache)
     Node(ex_hash, rule_index, UInt64[],  parent, depth, ex_hash.hash, nothing)
 end

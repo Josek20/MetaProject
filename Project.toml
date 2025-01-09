@@ -9,6 +9,7 @@ DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+InternedExpr = "523338a4-1799-415c-b9e7-d00d95b268cb"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 LRUCache = "8ac3fa9e-de4c-5943-b1dc-09c6b5f20637"
 Metatheory = "e9d8d322-4543-424a-9be4-0cc815abe26c"
@@ -22,6 +23,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 TermInterface = "8ea1fca8-c5ef-4a55-8b96-4e9afe9c9a3c"
 
 [compat]
+Metatheory = "2.0.2"
 Optimisers = "0.3.4"
 
 [compt]

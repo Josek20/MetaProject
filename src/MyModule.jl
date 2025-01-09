@@ -14,7 +14,9 @@ using LRUCache
 using SimpleChains
 using SparseArrays
 using Metatheory.TermInterface
-
+using Metatheory: @theory, @rule
+using InternedExpr
+include("interned_pipeline.jl")
 
 include("my_theory.jl")
 export theory
