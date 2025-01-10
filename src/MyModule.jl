@@ -14,10 +14,11 @@ using LRUCache
 using SimpleChains
 using SparseArrays
 using Metatheory.TermInterface
-using Metatheory: @theory, @rule
-using InternedExpr
-include("interned_pipeline.jl")
-
+# using Metatheory: @theory, @rule
+# using InternedExpr
+include("onlynode.jl")
+include("onlynodes_rules.jl")
+include("scoping.jl")
 include("my_theory.jl")
 export theory
 include("small_data_loader.jl")
@@ -64,6 +65,8 @@ function SearchTreePipelineConfig(training_data, heuristic, build_tree_function:
 end
 
 include("tree_simplifier.jl")
+include("interned_expr.jl")
+
 include("tree_embedding.jl")
 include("new_ex2mill.jl")
 include("policy_tree_simplifier.jl")
