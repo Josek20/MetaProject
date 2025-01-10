@@ -65,7 +65,7 @@ function SearchTreePipelineConfig(training_data, heuristic, build_tree_function:
 end
 
 include("tree_simplifier.jl")
-include("interned_expr.jl")
+include("interned_pipeline.jl")
 
 include("tree_embedding.jl")
 include("new_ex2mill.jl")

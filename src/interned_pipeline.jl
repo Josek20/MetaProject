@@ -18,6 +18,7 @@ function all_expand(node_id::NodeID, theory, expr_cache)
     !(node.iscall) && return(NodeID[])
     get!(expr_cache, node_id) do
         self = [r(node_id) for r in theory]
+        self = [isa(x, Int) ? intern!(x) : x for x in self]
         self = convert(Vector{NodeID}, filter(!isnothing, self))
         # self = filter(x->x!=InternedExpr.nullnode, self)
         lefts = all_expand(node.left, theory, expr_cache)
