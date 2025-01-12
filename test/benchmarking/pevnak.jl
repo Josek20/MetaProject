@@ -2,6 +2,7 @@ using MyModule
 using MyModule.Flux
 using MyModule.Mill
 using MyModule.LRUCache
+using MyModule.DataStructures
 using Serialization
 using DataFrames
 using Optimisers
@@ -11,8 +12,8 @@ using CSV
 function prepare_dataset(n=typemax(Int))
     samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
-    # samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
-    samples = sort(samples, by=x->length(x.proof))
+    samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
+    # samples = sort(samples, by=x->length(x.proof))
     last(samples, min(length(samples), n))
 end
 
@@ -68,7 +69,7 @@ function train(heuristic, training_samples, surrogate::Function, agg::Function, 
 end
 
 
-hidden_size = 128
+hidden_size = 64
 heuristic = ExprModel(
     Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)),
     Mill.SegmentedSum(hidden_size),
@@ -83,7 +84,7 @@ heuristic = ExprModel(
 #     Flux.Chain(Dense(hidden_size, 1)),
 #     );
     
-training_samples = prepare_dataset(10);
+training_samples = prepare_dataset();
 epochs = 1000
 
 surrogate = softplus

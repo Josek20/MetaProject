@@ -53,7 +53,7 @@ end
 
 
 function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+    # get!(cache, ex) do
         if ex.head == :call
             fun_name, args =  ex.args[1], ex.args[2:end]
         elseif ex.head in all_symbols
@@ -71,12 +71,12 @@ function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
             tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
         end
         tmp = vcat(tmp, args)
-    end
+    # end
 end
 
 
 function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+    # get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex]] = 1
 
@@ -88,12 +88,12 @@ function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind
             a = vcat(tmp, model.expr_model.aggregation.:ψ)
         end
         return a
-    end
+    # end
 end
 
 
 function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+    # get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
 
@@ -105,7 +105,7 @@ function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind
             a = vcat(tmp, model.expr_model.aggregation.:ψ)
         end
         return a
-    end
+    # end
 end
 
 
@@ -441,6 +441,13 @@ function (m::ExprModel)(ex::Union{Expr, Int}, cache, all_symbols=new_all_symbols
 end
 
 
+# function (m::ExprModel)(ex::Union{Expr, Int}, cache=Dict(), all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+#     ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
+#     tmp = vcat(ds, zeros(Float32, 2))
+#     m.heuristic(m.joint_model(tmp))
+# end
+
+
 function (m::ExprModel)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
     ds = cached_inference!(ex, typeof(ex.ex), cache, m, all_symbols, symbols_to_index)
     tmp = vcat(ds, zeros(Float32, 2))
@@ -565,6 +572,20 @@ function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrog
     return sum(count(>(0), diff))
 end
 
+
+function new_loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, new_dict::Dict, surrogate::Function = softplus)
+    o = embed(heuristic, big_vector)
+    new_o = vec(heuristic.heuristic(o))
+    # @show size(new_o)
+    for (ind1,inds2) in new_dict
+        tmp = vcat(o[:, inds2], repeat(o[:,ind1], outer=(1,length(inds2))), zeros(2, length(inds2)))
+        tmp_o = vec(heuristic.heuristic(heuristic.joint_model(tmp)))
+        # @show size(tmp_o)
+        new_o[inds2] .= tmp_o
+    end
+    diff = new_o[hp] - new_o[hn]
+    return sum(surrogate.(diff))
+end
 
 # function loss(heuristic, big_vector::ProductNode, hp::Matrix, hn::Matrix, surrogate::Function = softplus)
 #     o = heuristic(big_vector)

@@ -208,3 +208,23 @@ function test_stats_proofs(initial_expr, proofs)
         # MyModule.single_fast_ex2mill(initial_expr)
     end
 end
+
+
+function check_soltree_consistancy(soltree::Dict)
+    counter = 0
+    all_different_children = []
+    parent_has_not_child = 0
+    for (id, node) in soltree
+        append!(all_different_children, soltree[id].children)
+        if isnothing(node.parent)
+            continue
+        end
+        parent_has_not_child += !(id in soltree[node.parent].children)
+        if node.depth <= soltree[node.parent].depth
+            counter += 1
+        end
+    end
+    @assert counter == 0
+    @assert length(all_different_children) == length(unique(all_different_children)) == length(soltree) - 1
+    @assert parent_has_not_child == 0
+end

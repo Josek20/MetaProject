@@ -103,10 +103,10 @@ end
 
 
 Node(ex::Int, rule_index, parent, depth, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-# Node(ex, rule_index, parent, depth, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::Union{ProductNode, Nothing}) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
-function Node(ex, rule_index, parent, depth, expr_cache)
+Node(ex::Expr, rule_index, parent, depth, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+# Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int, ee::Nothing) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+Node(ex::Expr, rule_index::Tuple, parent::UInt64, depth::Int64, ee::ProductNode) = Node(ex, rule_index, UInt64[],  parent, depth, hash(ex), ee)
+function Node(ex, rule_index, parent, depth, expr_cache::LRU)
     ex_hash = ExprWithHash(ex, expr_cache)
     Node(ex_hash, rule_index, UInt64[],  parent, depth, ex_hash.hash, nothing)
 end
@@ -279,7 +279,7 @@ function old_traverse_expr!(ex::ExprWithHash, matchers::Vector, tree_ind::Int, t
 end
 
 
-function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::Dict{Expr, Vector})
+function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
     if !isa(ex, Expr)
         return
     end
@@ -441,11 +441,27 @@ function push_to_tree!(soltree::Dict, new_node::Node)
     if haskey(soltree, node_id)
         old_node = soltree[node_id]
         if new_node.depth < old_node.depth
+            # @show new_node, old_node
+            # @show soltree[new_node.parent].children
             soltree[node_id].depth = new_node.depth
+            # tmp_new = length(soltree[new_node.parent].children)
             push!(soltree[new_node.parent].children, new_node.node_id)
+            # tmp_new = length(soltree[new_node.parent].children)
+            # @show soltree[new_node.parent].children
+            # @assert tmp_new + 1 == length(soltree[new_node.parent].children)
+            # tmp_old = length(soltree[old_node.parent].children)
+            # @show old_node.node_id
+            # @show soltree[old_node.parent].children
             filter!(x->x!=old_node.node_id, soltree[old_node.parent].children) 
-        else
-            soltree[node_id] = old_node
+            soltree[node_id].parent = new_node.parent
+            
+            # @show tmp_old, length(soltree[old_node.parent].children)
+            # @show soltree[old_node.parent].children
+            # @assert tmp_old - 1 == length(soltree[old_node.parent].children)
+            # @show new_node.node_id,soltree[new_node.parent].children
+            # @assert new_node.node_id in soltree[new_node.parent].children
+        # else
+        #     soltree[node_id] = old_node
         end
         return (false)
     else
@@ -460,7 +476,6 @@ function expand_node2!(parent::Node, soltree, heuristic, open_list, encodings_bu
     succesors = execute(ex, theory, exp_cache)
     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
     # new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
-   
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
@@ -558,11 +573,20 @@ end
 function expand_node!(parent::Node, soltree, heuristic, open_list, all_symbols, symbols_to_index, theory, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
     ex = parent.ex
     succesors = execute(ex, theory, exp_cache)
-    if isa(ex, ExprWithHash)
-        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
-    else
-        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
-    end
+    # if isa(ex, ExprWithHash)
+    #     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
+    # else
+    #     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    # end
+    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    # if length(new_nodes) != length(unique(x.node_id for x in new_nodes))
+    #     @show ex
+    #     @show succesors
+    #     @show length(new_nodes)
+    #     @show [x.node_id for x in new_nodes]
+    #     @assert 1 == 0
+    # end
+
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     # @show length(filtered_new_nodes)
     isempty(filtered_new_nodes) && return(false)
@@ -796,6 +820,7 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::Priority
             break
         end
         nodes, prob = dequeue_pair!(open_list)
+        push!(close_list, nodes.node_id)
         # if nodes.depth >= max_depth
         #     continue
         # end
@@ -854,20 +879,66 @@ function extract_smallest_node_proof(node::Node, soltree::Dict{UInt64, Node}, ru
 end
 
 
+function extract_training_data_till_depth(node, soltree, sym_enc=sym_enc)
+    depth_dict = Dict()
+    for i in values(soltree)
+        if !haskey(depth_dict, i.depth)
+            depth_dict[i.depth] = Node[i]
+        else
+            push!(depth_dict[i.depth], i)
+        end
+    end
+    all_proof = []
+    extract_training_data_till_depth!(node, soltree, depth_dict, all_proof)
+    all_proof = reverse(all_proof)
+    # @show all_proof
+    all_data = []
+    hp = []
+    hn = []
+    for node_in_proof in all_proof
+        nodes_on_depth = []
+        node_index = nothing
+        for (ind,i) in enumerate(depth_dict[node_in_proof.depth])
+            if i.node_id == node_in_proof.node_id
+                node_index = ind
+            end
+            push!(nodes_on_depth, i.ex.ex)
+        end
+        # nodes_on_depth = [i.ex for i in depth_dict[nodes_in_proof.depth]]
+        # node_index = indexin(nodes_in_proof, nodes_on_depth)
+        append!(all_data, nodes_on_depth)
+        append!(hp, fill(node_index, length(nodes_on_depth) - 1))
+        append!(hn, filter(!=(node_index), collect(1:length(nodes_on_depth))))
+    end
+    return all_data, hp, hn, all_proof
+end
+
+
+function extract_training_data_till_depth!(node, soltree, depth_dict, all_proof)
+    if isnothing(node.parent)
+        return
+    end
+    # children_list = soltree[node.parent].children
+    push!(all_proof, node)
+    extract_training_data_till_depth!(soltree[node.parent], soltree, depth_dict, all_proof)
+end
+
+
 function extract_training_data(node, soltree, sym_enc=sym_enc)
     training_exp=[]
     hp=Vector[]
     hn=Vector[]
     proof_vector=[]
-    extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
+    test_vector = Dict()
+    extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector, test_vector)
     hp = reduce(vcat, hp)
     hn = reduce(vcat, hn)
     tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_exp, sym_enc)
-    return tdata, hp, hn, reverse(proof_vector)
+    return tdata, hp, hn, reverse(proof_vector), test_vector
 end
 
 
-function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
+function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector, test_vector)
     if isnothing(node.parent)
         n = length(hn)
         a = sum(x->length(x), hn)
@@ -894,7 +965,10 @@ function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vecto
         push!(training_exp, soltree[i].ex)
     end
     push!(hp[end], pos_index)
-    extract_training_data!(soltree[node.parent], soltree, training_exp, hp, hn, proof_vector)
+    if length(hn) > 1
+        test_vector[pos_index] = vcat(hn[end-1], hp[end-1])
+    end
+    extract_training_data!(soltree[node.parent], soltree, training_exp, hp, hn, proof_vector, test_vector)
 end
 
 

@@ -485,9 +485,36 @@ function plot_exp_size_distribution(name)
 end
 
 
-function test_have_learned_the_proof()
-    
+function test_tmp(training_samples)
+    # map(training_samples) do ex
+    for (ind,ex) in enumerate(training_samples)
+        ex = ex.initial_expr
+        @show (ind, ex)
+        ex = :(116 - (v0 * 67 + v1 * 17) <= 1004)
+        exp_cache = LRU{Expr, Vector}(maxsize=100_000)
+        cache = LRU(maxsize=1_000_000)
+        size_cache = LRU(maxsize=100_000)
+        expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+        root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+
+        soltree = Dict{UInt64, MyModule.Node}()
+        open_list = PriorityQueue{MyModule.Node, Float32}()
+        second_open_list = PriorityQueue{MyModule.Node, Float32}()
+        close_list = Set{UInt64}()
+        expansion_history = Dict{UInt64, Vector}()
+        encodings_buffer = Dict{UInt64, ProductNode}()
+        soltree[root.node_id] = root
+        o = MyModule.exp_size(root.ex, size_cache)
+        enqueue!(open_list, root, only(o))
+        MyModule.build_tree!(soltree, heuristic, open_list, close_list,  new_all_symbols, sym_enc, 1000, 10, theory, cache, exp_cache, size_cache, expr_cache, 1)
+        smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+        td, hp, hn, all_proof, cr  = MyModule.extract_training_data(smallest_node, soltree)
+        @show cr
+        @show MyModule.new_loss(heuristic, td, hp, hn, cr)
+        MyModule.check_soltree_consistancy(soltree)
+    end
 end
+
 
 test_different_searches(heuristic1, data, experiment_name="overfit")
 plot_hist_comparison()
