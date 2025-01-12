@@ -12,8 +12,8 @@ using CSV
 function prepare_dataset(n=typemax(Int))
     samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
-    samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
-    # samples = sort(samples, by=x->length(x.proof))
+    # samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
+    samples = sort(samples, by=x->length(x.proof))
     last(samples, min(length(samples), n))
 end
 
@@ -45,26 +45,33 @@ function train(heuristic, training_samples, surrogate::Function, agg::Function, 
     loss_stats = []
     matched_stats = []
     samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
-    batched_samples = get_batched_samples(samples, batch_size)
+    # batched_samples = get_batched_samples(samples, batch_size)
+    root_nodes = [MyModule.single_fast_ex2mill(sample.initial_expr) for sample in training_samples]
     for ep in 1:epochs
         sum_loss = 0.0
         hard_loss = 0
-        for (i, (ds, I₊, I₋)) in enumerate(batched_samples)
+        for (i, (ds, I₊, I₋)) in enumerate(samples)
+            root_node = root_nodes[i]
             sa, grad = Flux.Zygote.withgradient(heuristic) do h
-                o = vec(h(ds))
-                agg(surrogate.(o[I₊] - o[I₋]))
+                # o = vec(h(ds))
+                # agg(surrogate.(o[I₊] - o[I₋]))
+                MyModule.new_loss1(h, root_node, ds, I₊, I₋)
             end
             sum_loss += sa
             Optimisers.update!(opt_state, heuristic, grad[1])
         end
-        violations = [MyModule.loss(heuristic, sample..., Heaviside, sum) for sample in batched_samples]
-        matched_count, improved_count, new_proof_count, not_matched_count = MyModule.heuristic_sanity_check(heuristic, training_samples, [])
-        @show matched_count
-        @show improved_count
-        @show new_proof_count
-        @show not_matched_count
-        push!(matched_stats, matched_count)
-        println(ep, ": ", sum_loss/length(training_samples), " matched_count: ", matched_count, " violations: ", sum(violations), " ", quantile(violations, 0:0.1:1))
+        violations = [MyModule.loss(heuristic, sample..., Heaviside, sum) for sample in samples]
+        if mod(epochs, 200) == 0
+            matched_count, improved_count, new_proof_count, not_matched_count = MyModule.heuristic_sanity_check(heuristic, training_samples, [])
+            @show matched_count
+            @show improved_count
+            @show new_proof_count
+            @show not_matched_count
+            push!(matched_stats, matched_count)
+            println(ep, ": ", sum_loss/length(training_samples), " matched_count: ", matched_count, " violations: ", sum(violations), " ", quantile(violations, 0:0.1:1))
+        else
+            println("violations: ", sum(violations), " ", quantile(violations, 0:0.1:1))
+        end
     end
 end
 
@@ -90,30 +97,30 @@ epochs = 1000
 surrogate = softplus
 agg = sum
 
-# train(heuristic, training_samples, surrogate, agg)
-# data = [i.initial_expr for i in training_samples]
-# experiment_name = "testing_new_training_api_$(length(data))
-# df = map(data) do ex
-#     # @benchmark begin
-#     exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
-#     cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
-#     size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
-#     expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
-#     root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
+train(heuristic, training_samples, surrogate, agg)
+data = [i.initial_expr for i in training_samples]
+experiment_name = "testing_new_training_api_$(length(data))"
+df = map(data) do ex
+    # @benchmark begin
+    exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
+    cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
+    size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
+    expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
+    root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
 
-#     soltree = Dict{UInt64, MyModule.Node}()
-#     open_list = PriorityQueue{MyModule.Node, Float32}()
-#     close_list = Set{UInt64}()
-#     expansion_history = Dict{UInt64, Vector}()
-#     encodings_buffer = Dict{UInt64, ProductNode}()
-#     println("Initial expression: $ex")
-#     soltree[root.node_id] = root
-#     o = heuristic(root.ex, cache)
-#     enqueue!(open_list, root, only(o))
+    soltree = Dict{UInt64, MyModule.Node}()
+    open_list = PriorityQueue{MyModule.Node, Float32}()
+    close_list = Set{UInt64}()
+    expansion_history = Dict{UInt64, Vector}()
+    encodings_buffer = Dict{UInt64, ProductNode}()
+    println("Initial expression: $ex")
+    soltree[root.node_id] = root
+    o = heuristic(root.ex, cache)
+    enqueue!(open_list, root, only(o))
 
-#     MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, new_all_symbols, sym_enc, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0)
-#     smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
-#     tdata, hp, hn, proof = MyModule.extract_training_data(smallest_node, soltree)
-#     (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache), se = MyModule.reconstruct(smallest_node.ex, new_all_symbols, LRU(maxsize=1000)), pr = proof)
-# end |> DataFrame
-# CSV.write("profile_results_trained_heuristic_$(experiment_name).csv", df)
+    MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, new_all_symbols, sym_enc, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0)
+    smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
+    tdata, hp, hn, proof = MyModule.extract_training_data(smallest_node, soltree)
+    (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache), se = MyModule.reconstruct(smallest_node.ex, new_all_symbols, LRU(maxsize=1000)), pr = proof)
+end |> DataFrame
+CSV.write("profile_results_trained_heuristic_$(experiment_name).csv", df)

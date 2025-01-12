@@ -19,7 +19,7 @@ function heuristic_sanity_check(heuristic, training_samples, training_data)
     count_matched = 0
     count_all = 0
     length_diff = 0
-    exp_cache = LRU(maxsize=100_000)
+    exp_cache = LRU{Expr, Vector}(maxsize=100_000)
     cache = LRU(maxsize=1_000_000)
     size_cache = LRU(maxsize=100_000)
     expr_cache = LRU(maxsize=100_000)

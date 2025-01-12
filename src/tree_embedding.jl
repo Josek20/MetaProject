@@ -573,19 +573,32 @@ function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrog
 end
 
 
-function new_loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, new_dict::Dict, surrogate::Function = softplus)
+function new_loss1(heuristic, root_node::ProductNode, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = softplus)
     o = embed(heuristic, big_vector)
-    new_o = vec(heuristic.heuristic(o))
-    # @show size(new_o)
-    for (ind1,inds2) in new_dict
-        tmp = vcat(o[:, inds2], repeat(o[:,ind1], outer=(1,length(inds2))), zeros(2, length(inds2)))
-        tmp_o = vec(heuristic.heuristic(heuristic.joint_model(tmp)))
-        # @show size(tmp_o)
-        new_o[inds2] .= tmp_o
-    end
+    o1 = embed(heuristic, root_node)
+    some_n = size(o)[2]
+    new_o = vcat(o, repeat(o1, outer=(1, some_n)), zeros(2, some_n))
     diff = new_o[hp] - new_o[hn]
     return sum(surrogate.(diff))
 end
+
+
+# function new_loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, new_dict::Dict, surrogate::Function = softplus)
+#     o = embed(heuristic, big_vector)
+#     new_o = vec(heuristic.heuristic(o))
+#     # new_o_accum = similar(new_o)  # Initialize the accumulator with the same size as new_o
+#     # new_o_accum .= new_o 
+#     # @show size(new_o)
+#     for (ind1,inds2) in new_dict
+#         tmp = vcat(o[:, inds2], repeat(o[:,ind1], outer=(1,length(inds2))), zeros(2, length(inds2)))
+#         tmp_o = vec(heuristic.heuristic(heuristic.joint_model(tmp)))
+#         # @show size(tmp_o)
+#         # new_o[inds2] .= tmp_o
+#         # new_o_accum[inds2] = tmp_o
+#     end
+#     diff = new_o[hp] - new_o[hn]
+#     return sum(surrogate.(diff))
+# end
 
 # function loss(heuristic, big_vector::ProductNode, hp::Matrix, hn::Matrix, surrogate::Function = softplus)
 #     o = heuristic(big_vector)

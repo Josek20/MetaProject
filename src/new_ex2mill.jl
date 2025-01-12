@@ -232,7 +232,7 @@ function multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
 end
 
 
-function single_fast_ex2mill(ex, sym_enc)
+function single_fast_ex2mill(ex, sym_enc=sym_enc)
     st, nm, ps, bg = count_expr_stats(ex, sym_enc)
     a = unfold_allocation(st, nm, ps, bg)
     return a

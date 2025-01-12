@@ -1026,7 +1026,7 @@ function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_s
     open_list = PriorityQueue{Node, Float32}()
     second_open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
-    root = Node(ex, (0,0), nothing, 0, expr_cache)
+    root = Node(ex, (0,0), nothing, 0, nothing)
     o = heuristic(root.ex, cache)
     # o = exp_size(root.ex, size_cache)
     # root = Node(ex, (0,0), nothing, 0, nothing)
@@ -1044,7 +1044,7 @@ function initialize_tree_search(heuristic, ex::Expr, max_steps, max_depth, all_s
     # else
     #     @show simplified_expression
     # end
-    big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
+    big_vector, hp, hn, proof_vector, cr = extract_training_data(smallest_node, soltree)
     tmp = []
     # @show proof_vector
     # @show length(soltree)
