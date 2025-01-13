@@ -228,3 +228,19 @@ function check_soltree_consistancy(soltree::Dict)
     @assert length(all_different_children) == length(unique(all_different_children)) == length(soltree) - 1
     @assert parent_has_not_child == 0
 end
+
+
+function check_proof_consistancy(initial_expr, final_expression, proof, theory=theory)
+    result_expression = copy(initial_expr)
+    for (slot_place, rule_id) in proof
+        tmp = my_rewriter!(slot_place, result_expression, theory[rule_id])
+        if isnothing(tmp)
+            tmp = result_expression
+        else
+            result_expression = tmp
+        end
+        @assert !isnothing(result_expression)
+
+    end
+    @assert final_expression == result_expression
+end

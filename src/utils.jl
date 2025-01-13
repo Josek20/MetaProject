@@ -22,8 +22,8 @@ function get_training_data_from_proof_with_soltree(proof::Vector, initial_expres
     end
     # function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
     build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, new_all_symbols, sym_enc, 1000, 50, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.5)
-    big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
-    return big_vector, hp, hn
+    big_vector, hp, hn, proof_vector, _ = extract_training_data(smallest_node, soltree)
+    return big_vector, hp, hn, proof_vector
 end
 
 

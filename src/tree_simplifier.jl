@@ -141,6 +141,17 @@ function show_proof(init_ex, proof)
 end
 
 
+function batched_exp_size(ex::Vector, size_cache)
+    not_in_cache = ()
+    if isempty(not_in_cache)
+        return
+    end
+    get!(size_cache, ex) do
+        
+    end
+end
+
+
 function exp_size1(ex::ExprWithHash, size_cache)
     get!(size_cache, ex) do
         return istree(ex.ex) ? reduce(+, exp_size1(x, size_cache) for x in arguments(ex.ex); init=0) + 1 : 1
@@ -441,27 +452,11 @@ function push_to_tree!(soltree::Dict, new_node::Node)
     if haskey(soltree, node_id)
         old_node = soltree[node_id]
         if new_node.depth < old_node.depth
-            # @show new_node, old_node
-            # @show soltree[new_node.parent].children
             soltree[node_id].depth = new_node.depth
-            # tmp_new = length(soltree[new_node.parent].children)
+            soltree[node_id].rule_index = new_node.rule_index
             push!(soltree[new_node.parent].children, new_node.node_id)
-            # tmp_new = length(soltree[new_node.parent].children)
-            # @show soltree[new_node.parent].children
-            # @assert tmp_new + 1 == length(soltree[new_node.parent].children)
-            # tmp_old = length(soltree[old_node.parent].children)
-            # @show old_node.node_id
-            # @show soltree[old_node.parent].children
             filter!(x->x!=old_node.node_id, soltree[old_node.parent].children) 
             soltree[node_id].parent = new_node.parent
-            
-            # @show tmp_old, length(soltree[old_node.parent].children)
-            # @show soltree[old_node.parent].children
-            # @assert tmp_old - 1 == length(soltree[old_node.parent].children)
-            # @show new_node.node_id,soltree[new_node.parent].children
-            # @assert new_node.node_id in soltree[new_node.parent].children
-        # else
-        #     soltree[node_id] = old_node
         end
         return (false)
     else
@@ -573,12 +568,12 @@ end
 function expand_node!(parent::Node, soltree, heuristic, open_list, all_symbols, symbols_to_index, theory, cache, exp_cache, size_cache, expr_cache, alpha=0.9, lambda=-100.4) 
     ex = parent.ex
     succesors = execute(ex, theory, exp_cache)
-    # if isa(ex, ExprWithHash)
-    #     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
-    # else
-    #     new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
-    # end
-    new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    if isa(ex, ExprWithHash)
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, expr_cache), succesors)
+    else
+        new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
+    end
+    # new_nodes = map(x-> Node(x[2], x[1], parent.node_id, parent.depth + 1, nothing), succesors)
     # if length(new_nodes) != length(unique(x.node_id for x in new_nodes))
     #     @show ex
     #     @show succesors
@@ -879,57 +874,13 @@ function extract_smallest_node_proof(node::Node, soltree::Dict{UInt64, Node}, ru
 end
 
 
-function extract_training_data_till_depth(node, soltree, sym_enc=sym_enc)
-    depth_dict = Dict()
-    for i in values(soltree)
-        if !haskey(depth_dict, i.depth)
-            depth_dict[i.depth] = Node[i]
-        else
-            push!(depth_dict[i.depth], i)
-        end
-    end
-    all_proof = []
-    extract_training_data_till_depth!(node, soltree, depth_dict, all_proof)
-    all_proof = reverse(all_proof)
-    # @show all_proof
-    all_data = []
-    hp = []
-    hn = []
-    for node_in_proof in all_proof
-        nodes_on_depth = []
-        node_index = nothing
-        for (ind,i) in enumerate(depth_dict[node_in_proof.depth])
-            if i.node_id == node_in_proof.node_id
-                node_index = ind
-            end
-            push!(nodes_on_depth, i.ex.ex)
-        end
-        # nodes_on_depth = [i.ex for i in depth_dict[nodes_in_proof.depth]]
-        # node_index = indexin(nodes_in_proof, nodes_on_depth)
-        append!(all_data, nodes_on_depth)
-        append!(hp, fill(node_index, length(nodes_on_depth) - 1))
-        append!(hn, filter(!=(node_index), collect(1:length(nodes_on_depth))))
-    end
-    return all_data, hp, hn, all_proof
-end
-
-
-function extract_training_data_till_depth!(node, soltree, depth_dict, all_proof)
-    if isnothing(node.parent)
-        return
-    end
-    # children_list = soltree[node.parent].children
-    push!(all_proof, node)
-    extract_training_data_till_depth!(soltree[node.parent], soltree, depth_dict, all_proof)
-end
-
-
 function extract_training_data(node, soltree, sym_enc=sym_enc)
     training_exp=[]
     hp=Vector[]
     hn=Vector[]
     proof_vector=[]
     test_vector = Dict()
+    new_test_vector = []
     extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector, test_vector)
     hp = reduce(vcat, hp)
     hn = reduce(vcat, hn)
@@ -951,12 +902,17 @@ function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vecto
         return
     end
     push!(proof_vector, node.rule_index)
-    children_list = soltree[node.parent].children
+    if node.depth == 1
+        extended_children_list = soltree[node.parent].children
+    else
+        tmp = [soltree[i].children for i in soltree[soltree[node.parent].parent].children]
+        extended_children_list = vcat(tmp...)
+    end
     l = length(training_exp)
     pos_index = 0
     push!(hn, [])
     push!(hp, [])
-    for (ind,i) in enumerate(children_list)
+    for (ind,i) in enumerate(extended_children_list)
         if node.node_id == i
             pos_index = ind + l
         else
@@ -965,9 +921,9 @@ function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vecto
         push!(training_exp, soltree[i].ex)
     end
     push!(hp[end], pos_index)
-    if length(hn) > 1
-        test_vector[pos_index] = vcat(hn[end-1], hp[end-1])
-    end
+    # if length(hn) > 1
+    #     test_vector[pos_index] = vcat(hn[end-1], hp[end-1])
+    # end
     extract_training_data!(soltree[node.parent], soltree, training_exp, hp, hn, proof_vector, test_vector)
 end
 

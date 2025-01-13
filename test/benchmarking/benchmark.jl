@@ -487,10 +487,11 @@ end
 
 function test_tmp(training_samples)
     # map(training_samples) do ex
+    new_training_samples = MyModule.TrainingSample[]
     for (ind,ex) in enumerate(training_samples)
-        ex = ex.initial_expr
+        # ex = ex.initial_expr
         @show (ind, ex)
-        ex = :(116 - (v0 * 67 + v1 * 17) <= 1004)
+        # ex = :(116 - (v0 * 67 + v1 * 17) <= 1004)
         exp_cache = LRU{Expr, Vector}(maxsize=100_000)
         cache = LRU(maxsize=1_000_000)
         size_cache = LRU(maxsize=100_000)
@@ -509,10 +510,22 @@ function test_tmp(training_samples)
         MyModule.build_tree!(soltree, heuristic, open_list, close_list,  new_all_symbols, sym_enc, 1000, 10, theory, cache, exp_cache, size_cache, expr_cache, 1)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
         td, hp, hn, all_proof, cr  = MyModule.extract_training_data(smallest_node, soltree)
-        @show cr
-        @show MyModule.new_loss(heuristic, td, hp, hn, cr)
+        # @show cr
+        # @show MyModule.new_loss1(heuristic, td, hp, hn, cr)
         MyModule.check_soltree_consistancy(soltree)
+        @show smallest_node.ex, all_proof
+        MyModule.check_proof_consistancy(ex, smallest_node.ex, all_proof)
+        # training_data::D
+        # saturated::S
+        # expression::E
+        # proof::P
+        # hp::HP
+        # hn::HN
+        # initial_expr::IE
+        tmp = MyModule.TrainingSample(td, false, smallest_node.ex, all_proof, hp, hn, ex)
+        push!(new_training_samples, tmp)
     end
+    serialize("data/training_data/size_heuristic_training_samples1.bin", new_training_samples)
 end
 
 
