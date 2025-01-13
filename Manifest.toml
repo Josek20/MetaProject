@@ -2,7 +2,7 @@
 
 julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "cda82c8559995ecab4eb04ed416ff90a72cfb44b"
+project_hash = "f6469a2cd065c5491f528c9447a6fbf646cc382e"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -514,12 +514,6 @@ version = "1.4.2"
 deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 version = "1.11.0"
-
-[[deps.InternedExpr]]
-deps = ["AutoHashEquals", "InteractiveUtils", "Reexport", "TermInterface", "TimerOutputs"]
-path = "../Interned/InternedExpr.jl"
-uuid = "523338a4-1799-415c-b9e7-d00d95b268cb"
-version = "0.1.0"
 
 [[deps.InverseFunctions]]
 git-tree-sha1 = "a779299d77cd080bf77b97535acecd73e1c5e5cb"

@@ -18,7 +18,8 @@ using Metatheory.TermInterface
 # using InternedExpr
 include("onlynode.jl")
 include("onlynodes_rules.jl")
-include("scoping.jl")
+# include("scoping.jl")
+include("scoping2.jl")
 include("my_theory.jl")
 export theory
 include("small_data_loader.jl")

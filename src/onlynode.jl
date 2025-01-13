@@ -67,6 +67,14 @@ function NodeCache()
     NodeCache(Dict{OnlyNode, NodeID}(), OnlyNode[])
 end
 
+function Base.empty!(nc::NodeCache)
+    empty!(nc.nodemap)
+    empty!(nc.nodes)
+    push!(nc.nodes, nullnode)
+    nc.nodemap[nullnode] = nullid
+    nc
+end
+
 function Base.get!(nc::NodeCache, k::OnlyNode)
     get!(nc.nodemap, k) do 
         push!(nc.nodes, k)

@@ -1,8 +1,8 @@
-Node(ex::NodeID, rule_index::Tuple, parent, depth::Int64, ee::Union{ProductNode, Nothing}) = Node(ex, rule_index, UInt64[],  parent, depth, hash(nc[][ex]), ee)
+Node(ex::NodeID, rule_index::Tuple, parent, depth::Int64, ee::Union{ProductNode, Nothing}) = Node(ex, rule_index, UInt64[],  parent, depth, hash(nc[ex]), ee)
 
 function exp_size(x::NodeID, size_cache)
     get!(size_cache, x) do
-        node = nc[][x]
+        node = nc[x]
         if node == nullnode
             return 0f0
         elseif !(node.iscall)
@@ -14,7 +14,7 @@ end
 
 
 function all_expand(node_id::NodeID, theory, expr_cache)
-    node = nc[][node_id]
+    node = nc[node_id]
     !(node.iscall) && return(NodeID[])
     get!(expr_cache, node_id) do
         self = [r(node_id) for r in theory]
