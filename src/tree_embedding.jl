@@ -377,7 +377,7 @@ end
 function (m::ExprModel)(ds::ProductNode{<:NamedTuple{(:head,:args)}})
     head_model = m.head_model
     h = vcat(head_model.ms.head(ds.data.head),
-        head_model.ms.args(m(ds.data.args)),
+        head_model.ms.args.m(m(ds.data.args)),
         )
     head_model.m(h)
 end
@@ -386,7 +386,7 @@ end
 function (m::ExprModel)(ds::ProductNode{<:NamedTuple{(:args,:position)}})
     args_model = m.args_model
     h = vcat(
-        args_model.ms.args(m(ds.data.args)),
+        args_model.ms.args.m(m(ds.data.args)),
         args_model.ms.position(ds.data.position),
     )
     args_model.m(h)

@@ -72,16 +72,16 @@ hidden_size = 128
 
 head_model = ProductModel(
     (;head = ArrayModel(Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))),
-      args = ArrayModel(Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))),  
+      args = Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)),  
         ),
-    ArrayModel(Flux.Chain(Dense(2*hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)))
+    Flux.Chain(Dense(2*hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))
     )
 
 args_model = ProductModel(
-    (;args = ArrayModel(Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))),  
+    (;args = Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)),  
       position = ArrayModel(Dense(2,hidden_size)),  
         ),
-    ArrayModel(Flux.Chain(Dense(2*hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)))
+    Flux.Chain(Dense(2*hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))
     )
 
 heuristic = ExprModel(
@@ -103,6 +103,11 @@ epochs = 1000
 
 surrogate = softplus
 agg = sum
+
+samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
+ds = samples[end][1]
+m = heuristic
+
 
 train(heuristic, training_samples, surrogate, agg)
 # data = [i.initial_expr for i in training_samples]
