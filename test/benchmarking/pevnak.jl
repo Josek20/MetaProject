@@ -38,25 +38,26 @@ function get_batched_samples(samples, batch_size=10)
 end
 
 
-function train(heuristic, training_samples, surrogate::Function, agg::Function, batch_size=10)
+function train(model, training_samples, surrogate::Function, agg::Function, batch_size=10)
     optimizer=ADAM()
-    opt_state = Flux.setup(optimizer, heuristic)
+    opt_state = Flux.setup(optimizer, model)
     loss_stats = []
     matched_stats = []
     samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
-    batched_samples = get_batched_samples(samples, batch_size)
+    samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
+    # batched_samples = get_batched_samples(samples, batch_size)
     for ep in 1:epochs
         sum_loss = 0.0
         hard_loss = 0
-        for (i, (ds, I₊, I₋)) in enumerate(batched_samples)
-            sa, grad = Flux.Zygote.withgradient(heuristic) do h
-                o = vec(h(ds))
+        for (i, (ds, I₊, I₋)) in enumerate(samples)
+            sa, grad = Flux.Zygote.withgradient(heuristic) do model
+                o = vec(MyModule.heuristic(h, ds))
                 agg(surrogate.(o[I₊] - o[I₋]))
             end
             sum_loss += sa
-            Optimisers.update!(opt_state, heuristic, grad[1])
+            Optimisers.update!(opt_state, model, only(grad))
         end
-        violations = [MyModule.loss(heuristic, sample..., Heaviside, sum) for sample in batched_samples]
+        violations = [MyModule.loss(model, sample..., Heaviside, sum) for sample in batched_samples]
         matched_count, improved_count, new_proof_count, not_matched_count = MyModule.heuristic_sanity_check(heuristic, training_samples, [])
         @show matched_count
         @show improved_count
@@ -64,6 +65,46 @@ function train(heuristic, training_samples, surrogate::Function, agg::Function, 
         @show not_matched_count
         push!(matched_stats, matched_count)
         println(ep, ": ", sum_loss/length(training_samples), " matched_count: ", matched_count, " violations: ", sum(violations), " ", quantile(violations, 0:0.1:1))
+    end
+end
+
+
+function lossfun(m, (ds, I₊, I₋))
+    o = vec(MyModule.heuristic(m, ds))
+    sum(softplus.(o[I₊] - o[I₋]))
+end
+
+function hardloss(m, (ds, I₊, I₋))
+    o = vec(MyModule.heuristic(m, ds))
+    sum(Heaviside.(o[I₊] - o[I₋]))
+end
+
+
+function train2(model, training_samples)
+    optimizer=ADAM()
+    opt_state = Flux.setup(optimizer, model)
+    loss_stats = []
+    matched_stats = []
+    samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
+    samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
+    # batched_samples = get_batched_samples(samples, batch_size)
+    for ep in 1:epochs
+        sum_loss = 0.0
+        hard_loss = 0
+        for (i, (ds, I₊, I₋)) in enumerate(samples)
+            sa, grad = Flux.Zygote.withgradient(Base.Fix2(lossfun, (ds, I₊, I₋)), heuristic)
+            sum_loss += sa
+            Optimisers.update!(opt_state, model, only(grad))
+        end
+        violations = [hardloss(model, sample) for sample in samples]
+        @show (sum(violations), quantile(violations, 0:0.1:1))
+        # matched_count, improved_count, new_proof_count, not_matched_count = MyModule.heuristic_sanity_check(heuristic, training_samples, [])
+        # @show matched_count
+        # @show improved_count
+        # @show new_proof_count
+        # @show not_matched_count
+        # push!(matched_stats, matched_count)
+        # println(ep, ": ", sum_loss/length(training_samples), " matched_count: ", matched_count, " violations: ", sum(violations), " ", quantile(violations, 0:0.1:1))
     end
 end
 
@@ -113,12 +154,13 @@ ds = samples[end][1]
 
 @time dedu = MyModule.deduplicate(ds);
 @time m(dedu);
-@time gradient(m -> sum(m(dedu)), m);
+lossfun(m, ds) = sum(m(ds))
+@time gradient(Base.Fix2(lossfun, dedu), m);
 
 m(dedu) ≈ m(ds)
 
 
-train(heuristic, training_samples, surrogate, agg)
+train2(heuristic, training_samples)
 # data = [i.initial_expr for i in training_samples]
 # experiment_name = "testing_new_training_api_$(length(data))
 # df = map(data) do ex
