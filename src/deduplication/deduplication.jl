@@ -190,3 +190,5 @@ function _deduplicate(ds::ProductNode)
 	dedu_ds = DeduplicatingNode(dedu_ds, ii)
 	dedu_ds, ii
 end
+
+deduplicate(ds) = first(_deduplicate(ds))

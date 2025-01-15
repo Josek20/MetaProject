@@ -397,6 +397,11 @@ function (m::ExprModel)(ds::BagNode)
     m.aggregation(m(ds.data), ds.bags)
 end
 
+function (m::ExprModel)(ds::DeduplicatingNode)
+    # DeduplicatedMatrix(m(ds.x), ds.ii) # this might be slightly faster but might hit some corner cases
+    m(ds.x)[:,ds.ii] # this is safer
+end
+
 function (m::ExprModel)(ds::BagNode{<:Missing})
     repeat(m.aggregation.ψ, 1, numobs(ds))
 end

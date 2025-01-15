@@ -71,17 +71,17 @@ end
 hidden_size = 128
 
 head_model = ProductModel(
-    (;head = ArrayModel(Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))),
-      args = Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)),  
+    (;head = Dense(length(new_all_symbols), hidden_size, Flux.gelu),
+      args = Dense(hidden_size, hidden_size, Flux.gelu),  
         ),
-    Flux.Chain(Dense(2*hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))
+    Dense(2*hidden_size, hidden_size, Flux.gelu)
     )
 
 args_model = ProductModel(
-    (;args = Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)),  
+    (;args = Dense(hidden_size, hidden_size, Flux.gelu),  
       position = ArrayModel(Dense(2,hidden_size)),  
         ),
-    Flux.Chain(Dense(2*hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))
+    Dense(2*hidden_size, hidden_size, Flux.gelu)
     )
 
 heuristic = ExprModel(
@@ -105,8 +105,17 @@ surrogate = softplus
 agg = sum
 
 samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
-ds = samples[end][1]
+
 m = heuristic
+ds = samples[end][1]
+@time m(ds);
+@time gradient(m -> sum(m(ds)), m);
+
+@time dedu = MyModule.deduplicate(ds);
+@time m(dedu);
+@time gradient(m -> sum(m(dedu)), m);
+
+m(dedu) ≈ m(ds)
 
 
 train(heuristic, training_samples, surrogate, agg)
