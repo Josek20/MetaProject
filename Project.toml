@@ -5,12 +5,14 @@ version = "0.1.0"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 LRUCache = "8ac3fa9e-de4c-5943-b1dc-09c6b5f20637"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Metatheory = "e9d8d322-4543-424a-9be4-0cc815abe26c"
 Mill = "1d0525e4-8992-11e8-313c-e310e1f6ddea"
 Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
@@ -22,6 +24,8 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 TermInterface = "8ea1fca8-c5ef-4a55-8b96-4e9afe9c9a3c"
 
 [compat]
+ChainRulesCore = "1"
+LinearAlgebra = "1.11.0"
 Metatheory = "2.0.2"
 Optimisers = "0.3.4"
 

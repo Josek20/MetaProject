@@ -332,7 +332,7 @@ end
 struct ExprModel{HM,A,JM,H}
     head_model::HM
     aggregation::A
-    joint_model::JM    
+    args_model::JM    
     heuristic::H
 end
 
@@ -370,68 +370,35 @@ function (m::ExprModelSimpleChains)(ds::ProductNode)
     m.expr_model(ds, m.model_params)
 end
 
+function heuristic(m::ExprModel, ds)
+    m.heuristic(m(ds))
+end
 
-function (m::ExprModel)(ds::ProductNode)
-    m.heuristic(embed(m, ds))
+function (m::ExprModel)(ds::ProductNode{<:NamedTuple{(:head,:args)}})
+    head_model = m.head_model
+    h = vcat(head_model.ms.head(ds.data.head),
+        head_model.ms.args(m(ds.data.args)),
+        )
+    head_model.m(h)
 end
 
 
-function (m::ExprModel)(ds::ProductNode, params::InitExprModelDense)
-    m.heuristic(embed(m, ds, params), params.heuristic)
+function (m::ExprModel)(ds::ProductNode{<:NamedTuple{(:args,:position)}})
+    args_model = m.args_model
+    h = vcat(
+        args_model.ms.args(m(ds.data.args)),
+        args_model.ms.position(ds.data.position),
+    )
+    args_model.m(h)
 end
 
 
-function embed(m::ExprModel, ds::ProductNode, params::InitExprModelDense) 
-    # @show ds.data
-    if haskey(ds.data, :position)
-        # @show size(m.head_model(ds.data.args.data.head.data))
-        tmp = m.head_model(ds.data.args.data.head.data, params.head_model)
-        tmp = vcat(tmp, embed(m, ds.data.args.data.args, params), ds.data.position.data)
-    else
-        o = m.head_model(ds.data.head.data, params.head_model)
-        # tmp = vcat(o, zeros(Float32, 2, size(o)[2]))
-        # tmp = vcat(tmp, embed(m, ds.data.args))
-        tmp = vcat(o, embed(m, ds.data.args, params), zeros(Float32, 2, size(o)[2]))
-    end
-    # tmp = vcat(m.head_model(ds.data.args.head.data), embed(m, ds.data.args))
-    m.joint_model(tmp, params.joint_model)
+function (m::ExprModel)(ds::BagNode)
+    m.aggregation(m(ds.data), ds.bags)
 end
 
-
-function embed(m::ExprModel, ds::BagNode,params::InitExprModelDense)
-    tmp = embed(m, ds.data, params)
-    m.aggregation(tmp, ds.bags)
-end
-
-
-embed(m::ExprModel, ds::Missing, params::InitExprModelDense) = missing
-
-
-function embed(m::ExprModel, ds::ProductNode) 
-    # @show ds.data
-    if haskey(ds.data, :position)
-        # @show size(m.head_model(ds.data.args.data.head.data))
-        tmp = m.head_model(ds.data.args.data.head.data)
-        tmp = vcat(tmp, embed(m, ds.data.args.data.args), ds.data.position.data)
-    else
-        o = m.head_model(ds.data.head.data)
-        # tmp = vcat(o, zeros(Float32, 2, size(o)[2]))
-        # tmp = vcat(tmp, embed(m, ds.data.args))
-        tmp = vcat(o, embed(m, ds.data.args), zeros(Float32, 2, size(o)[2]))
-    end
-    # tmp = vcat(m.head_model(ds.data.args.head.data), embed(m, ds.data.args))
-    m.joint_model(tmp)
-end
-# function embed(m::ExprModel, ds::ProductNode)
-#     # tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data)
-#     tmp = vcat(m.head_model(ds.data.args.data.head.data), ds.data.position.data, embed(m, ds.data.args.data.args))   
-#     m.joint_model(tmp)
-# end
-
-
-function embed(m::ExprModel, ds::BagNode)
-    tmp = embed(m, ds.data)
-    m.aggregation(tmp, ds.bags)
+function (m::ExprModel)(ds::BagNode{<:Missing})
+    repeat(m.aggregation.ψ, 1, numobs(ds))
 end
 
 function (m::ExprModel)(ex::Union{Expr, Int}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)

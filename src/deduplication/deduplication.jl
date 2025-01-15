@@ -1,0 +1,192 @@
+
+"""
+find_duplicates(o)
+
+create a `mask` identifying unique columns in `o` and a map `si`
+mapping indexes original columns in `o` to the new representation in `o[:,mask]`
+It should hold that `o[:,mask][:,[si[i] for i in 1:size(o,2)]] == o`
+
+The implementation is based on hashing columns
+"""
+find_duplicates(x::AbstractMatrix) = find_duplicates(vec(mapslices(hash, x, dims = 1)))
+
+function find_duplicates(xs::AbstractVector...)
+	h = hash.(first(xs))
+	for x in Base.tail(xs)
+		h .= hash.(x,h)
+	end
+	find_duplicates(h)
+end
+
+function find_duplicates(x::Vector{T}) where {T<:Number}
+	cols = length(x)
+	si = Vector{Int}(undef, cols)
+	unique_cols = Vector{Bool}(undef, cols)
+	di = Dict{T, Int}()
+	@inbounds for j in 1:cols 
+		n = length(di)
+		si[j] = get!(di, x[j], n + 1)
+		unique_cols[j] = n < length(di)
+	end
+	unique_cols, si
+end
+
+"""
+	find_duplicates(x::Vector{T}, max_val::Int) where {T<:Number}
+	find_duplicates(xs::NTuple{N,<:AbstractVector}, max_val::Integer) where {N}
+
+	faster version of deduplication assuming the vector `x` contains values from 1:max_val.
+"""
+function find_duplicates(x::Vector{T}, max_val::Integer) where {T<:Integer}
+	cols = length(x)
+	si = Vector{Int}(undef, cols)
+	unique_cols = Vector{Bool}(undef, cols)
+	di = zeros(T, max_val)
+	unique_count = 0
+	@inbounds for (j, v) in enumerate(x)
+		if iszero(di[v])
+			unique_count += 1
+			di[v] = unique_count
+			unique_cols[j] = true
+		else
+			unique_cols[j] = false
+		end
+		si[j] = di[v]
+	end
+	unique_cols, si
+end
+
+function find_duplicates(xs::NTuple{N,<:AbstractVector{T}}, max_val::Integer) where {N,T<:Integer}
+	o = [x for x in xs[1]]	# this is to make it vector
+	@inbounds for j in 2:N
+		for (i, v) in enumerate(xs[j])
+			o[i] = (o[i] - 1) * max_val + v
+		end
+	end
+	find_duplicates(o, max_val^N)
+end
+
+function find_duplicates(xs::AbstractVector{NTuple{N,<:T}}, max_val::Integer) where {N,T<:Integer}
+	new_x = Vector{T}(undef,length(xs))
+	for (i, x) in enumerate(xs)
+		o = x[1]
+		for j in 2:N
+			o = (o - 1) * max_val + x[j]
+		end
+		new_x[i] = o
+	end
+	find_duplicates(new_x, max_val^N)
+end
+
+
+# Custom key with overwritten hash function allows to bypass the hashing, since when values are already hashed
+# https://discourse.julialang.org/t/dictionary-with-custom-hash-function/49168
+struct HashedKey
+    val::UInt64
+end
+
+Base.hash(a::HashedKey, h::UInt) = xor(a.val, h)
+Base.:(==)(a::HashedKey, b::HashedKey) = a.val == b.val
+
+function find_duplicates(x::Vector{UInt64})
+	n = length(x)
+	si = Vector{Int}(undef, n)
+	uniques = Vector{Bool}(undef, n)
+	di = Dict{HashedKey, Int}()
+	@inbounds for j in 1:n 
+		u = length(di)
+		k = HashedKey(x[j])
+		si[j] = get!(di, k, u + 1)
+		uniques[j] = u < length(di)
+	end
+	uniques, si
+end
+
+
+"""
+struct DeduplicatingNode{D} 
+	x::D
+	ii::Vector{Int}
+end
+A deduplicated data are useful for speeding computation of models, which returns 
+the same answer over multiple observations. The idea is that the result is computed as
+m(ddd::DeduplicatingNode) =  m(ddd.x)[:,ddd.ii], where we assume that m(ddd.x) returns 
+a matrix.
+"""
+struct DeduplicatingNode{D} <: AbstractMillNode
+	x::D
+	ii::Vector{Int}
+end
+
+Mill.MLUtils.numobs(ds::DeduplicatingNode) = length(ds.ii)
+Base.getindex(x::DeduplicatingNode, ii) = DeduplicatingNode(x.x, x.ii[ii])
+Base.getindex(x::DeduplicatingNode, ii::Vector{Bool}) = DeduplicatingNode(x.x, x.ii[ii])
+Base.getindex(x::DeduplicatingNode, ii::Vector{Int}) = DeduplicatingNode(x.x, x.ii[ii])
+Mill.HierarchicalUtils.children(n::DeduplicatingNode) = (n.x,)
+function Mill.HierarchicalUtils.nodecommshow(io::IO, n::DeduplicatingNode)
+	bytes = Base.format_bytes(Base.summarysize(n.ii))
+    print(io, " # ", length(n.ii), " obs, ", bytes)
+end
+
+(m::AbstractMillModel)(dedu::DeduplicatingNode{<:AbstractMillNode}) = DeduplicatedMatrix(m(dedu.x), dedu.ii)
+# (m::AbstractMillModel)(dedu::DeduplicatingNode{<:AbstractMillNode}) = m(dedu.x)[:,dedu.ii]
+
+function _deduplicate(x::AbstractMatrix) 
+	o = DeduplicatedMatrix(x)
+	o, o.ii
+end
+
+function _deduplicate(ds::ArrayNode{<:Matrix})
+	x = ds.data
+	mask, ii = (x isa DeduplicatedMatrix || x isa DeduplicatingNode) ? find_duplicates(x.ii) : find_duplicates(x)
+	dedu_ds = DeduplicatingNode(ds[mask], ii)
+	dedu_ds, ii
+end
+
+function _deduplicate(ds::ArrayNode{<:Flux.OneHotArrays.OneHotMatrix})
+	x = ds.data
+	mask, ii = find_duplicates(x.indices)
+	dedu_ds = DeduplicatingNode(ds[mask], ii)
+	dedu_ds, ii
+end
+
+
+# _sethash(xs::AbstractVector) = sum(hash.(xs)) # this might be good enough for the bang
+_sethash(xs::AbstractVector) = hash(sort(xs)) # this probably more correct
+
+function _deduplicate(ds::BagNode)
+	if numobs(ds.data) == 0 
+		@assert all(isempty(b) for b in ds.bags) "All bags should be empty when instances are empty"
+		dedu_bn = BagNode(ds.data, [0:-1])
+		ii = ones(Int, numobs(ds))
+		dedu_ds = DeduplicatingNode(dedu_bn, ii)
+		return(dedu_ds, ii)
+	end
+	z, ii = _deduplicate(ds.data)
+	mapped_bags = [ii[b] for b in ds.bags]
+	mask, ii = find_duplicates(_sethash.(mapped_bags))
+	dedu_bn = z isa DeduplicatingNode ? BagNode(z.x, mapped_bags[mask]) : BagNode(z, ds.bags[mask])
+	dedu_ds = DeduplicatingNode(dedu_bn, ii)
+	dedu_ds, ii
+end
+
+
+function _deduplicate(ds::BagNode{Missing, AlignedBags{Int64}, Nothing})
+	ii = fill(1, numobs(ds))
+	o = DeduplicatingNode(BagNode(missing, AlignedBags([0:-1])), ii)
+	o, o.ii
+end
+
+
+@inline function _map_tuple(f::F, xs::NamedTuple{KS}) where {KS,F<:Union{Function, Base.Fix1, Base.Fix2}}
+    isempty(xs) && return(xs)
+    NamedTuple{KS}(tuple(f(first(xs)), _map_tuple(f, Base.tail(xs))...))
+end
+
+function _deduplicate(ds::ProductNode)
+	xs = _map_tuple(_deduplicate, ds.data)
+	mask, ii = find_duplicates(_map_tuple(Base.Fix2(getindex,2), xs)...)
+	dedu_ds = ProductNode(map(x -> x[1][mask], xs))
+	dedu_ds = DeduplicatingNode(dedu_ds, ii)
+	dedu_ds, ii
+end

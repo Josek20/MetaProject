@@ -13,7 +13,14 @@ using Base.Threads
 using LRUCache
 using SimpleChains
 using SparseArrays
+using LinearAlgebra
+using ChainRulesCore
 using Metatheory.TermInterface
+
+# include("deduplication/lazyvcatmatrix.jl")
+include("deduplication/dedu_matrix.jl")
+include("deduplication/deduplication.jl")
+
 # using Metatheory: @theory, @rule
 # using InternedExpr
 include("onlynode.jl")

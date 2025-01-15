@@ -9,7 +9,7 @@ using Statistics
 using CSV
 
 function prepare_dataset(n=typemax(Int))
-    samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
+    samples = deserialize("../../data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
     # samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
     samples = sort(samples, by=x->length(x.proof))
@@ -69,10 +69,25 @@ end
 
 
 hidden_size = 128
+
+head_model = ProductModel(
+    (;head = ArrayModel(Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))),
+      args = ArrayModel(Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))),  
+        ),
+    ArrayModel(Flux.Chain(Dense(2*hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)))
+    )
+
+args_model = ProductModel(
+    (;args = ArrayModel(Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size))),  
+      position = ArrayModel(Dense(2,hidden_size)),  
+        ),
+    ArrayModel(Flux.Chain(Dense(2*hidden_size, hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)))
+    )
+
 heuristic = ExprModel(
-    Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.gelu), Dense(hidden_size,hidden_size)),
+    head_model,
     Mill.SegmentedSum(hidden_size),
-    Flux.Chain(Dense(2*hidden_size + 2, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size)),
+    args_model,
     Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
     );
 
@@ -89,7 +104,7 @@ epochs = 1000
 surrogate = softplus
 agg = sum
 
-# train(heuristic, training_samples, surrogate, agg)
+train(heuristic, training_samples, surrogate, agg)
 # data = [i.initial_expr for i in training_samples]
 # experiment_name = "testing_new_training_api_$(length(data))
 # df = map(data) do ex

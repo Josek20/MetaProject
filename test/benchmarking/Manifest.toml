@@ -978,7 +978,7 @@ uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 version = "2023.12.12"
 
 [[deps.MyModule]]
-deps = ["CSV", "DataFrames", "DataStructures", "FileIO", "Flux", "JSON", "LRUCache", "Metatheory", "Mill", "Optimisers", "Revise", "SimpleChains", "SparseArrays", "Statistics", "StatsBase", "TermInterface"]
+deps = ["CSV", "ChainRulesCore", "DataFrames", "DataStructures", "FileIO", "Flux", "JSON", "LRUCache", "LinearAlgebra", "Metatheory", "Mill", "Optimisers", "Revise", "SimpleChains", "SparseArrays", "Statistics", "StatsBase", "TermInterface"]
 path = "../.."
 uuid = "98749e58-590c-4da3-a9b4-40346e7e69f8"
 version = "0.1.0"
