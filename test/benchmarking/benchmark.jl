@@ -443,6 +443,7 @@ function plot_grouped_difference(name, training_samples)
     # df1 = CSV.read("profile_results_exp_size_as_heuristic.csv", DataFrame)
     # df2 = CSV.read("profile_results_trained_heuristic_not_overfit2.csv", DataFrame)
     # df3 = CSV.read("profile_results_trained_heuristic_overfit2.csv", DataFrame)
+    using StatsPlots
     sympy_strings = load_data("data/neural_rewrter/symplified_train.json")
     sympy_data = []
     for (i,j) in sympy_strings[1:1000]                                       
@@ -452,14 +453,16 @@ function plot_grouped_difference(name, training_samples)
     end
     sorted_sympy_data = sort(sympy_data, by=x->MyModule.exp_size(x[1], LRU(maxsize=100)))
     av_def1 = [MyModule.exp_size(i,LRU(maxsize=100)) - MyModule.exp_size(j, LRU(maxsize=100)) for (i,j) in sorted_sympy_data]
-    size_cache = LRU(maxsize=1000)                          
+    size_cache = LRU(maxsize=1000)
+    av_def = []                   
+    training_samples = sort(training_samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=1000)))
     for i in training_samples                               
     tmp = MyModule.exp_size(i.initial_expr, size_cache) - MyModule.exp_size(i.expression, size_cache)                      
     push!(av_def, tmp)                                      
     end
     # df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_1000.csv", DataFrame)
     # df3 = CSV.read("profile_results_trained_heuristic_not_overfit_ep10_hidsize64_1000.csv", DataFrame)
-    df4 = CSV.read("profile_results_trained_heuristic_testing_new_training_api_sorted_filtered_955_10_hidden_size_64.csv", DataFrame)
+    df4 = CSV.read("profile_results_trained_heuristic_testing_new_training_api_sorted_filtered1_1000_10_hidden_size_64.csv", DataFrame)
     big_df = DataFrame()
     big_df[!, :s0] = df4[!, 1]
     big_df[!, :s1] = av_def
