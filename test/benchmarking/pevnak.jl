@@ -37,41 +37,9 @@ function get_batched_samples(samples, batch_size=10)
     return batched_samples
 end
 
-
-function train(model, training_samples, surrogate::Function, agg::Function, batch_size=10)
-    optimizer=ADAM()
-    opt_state = Flux.setup(optimizer, model)
-    loss_stats = []
-    matched_stats = []
-    samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
-    samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
-    # batched_samples = get_batched_samples(samples, batch_size)
-    for ep in 1:epochs
-        sum_loss = 0.0
-        hard_loss = 0
-        for (i, (ds, I₊, I₋)) in enumerate(samples)
-            sa, grad = Flux.Zygote.withgradient(heuristic) do model
-                o = vec(MyModule.heuristic(h, ds))
-                agg(surrogate.(o[I₊] - o[I₋]))
-            end
-            sum_loss += sa
-            Optimisers.update!(opt_state, model, only(grad))
-        end
-        violations = [MyModule.loss(model, sample..., Heaviside, sum) for sample in batched_samples]
-        matched_count, improved_count, new_proof_count, not_matched_count = MyModule.heuristic_sanity_check(heuristic, training_samples, [])
-        @show matched_count
-        @show improved_count
-        @show new_proof_count
-        @show not_matched_count
-        push!(matched_stats, matched_count)
-        println(ep, ": ", sum_loss/length(training_samples), " matched_count: ", matched_count, " violations: ", sum(violations), " ", quantile(violations, 0:0.1:1))
-    end
-end
-
-
 function lossfun(m, (ds, I₊, I₋))
     o = vec(MyModule.heuristic(m, ds))
-    sum(softplus.(o[I₊] - o[I₋]))
+    mean(softplus.(o[I₊] - o[I₋]))
 end
 
 function hardloss(m, (ds, I₊, I₋))
@@ -80,110 +48,64 @@ function hardloss(m, (ds, I₊, I₋))
 end
 
 
-function train2(model, training_samples)
+function train(model, samples)
     optimizer=ADAM()
     opt_state = Flux.setup(optimizer, model)
     loss_stats = []
     matched_stats = []
-    samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
-    samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
     # batched_samples = get_batched_samples(samples, batch_size)
-    for ep in 1:epochs
-        sum_loss = 0.0
-        hard_loss = 0
-        for (i, (ds, I₊, I₋)) in enumerate(samples)
-            sa, grad = Flux.Zygote.withgradient(Base.Fix2(lossfun, (ds, I₊, I₋)), heuristic)
-            sum_loss += sa
-            Optimisers.update!(opt_state, model, only(grad))
+    for outer_epoch in 1:100
+        for ep in 1:10
+            sum_loss = 0.0
+            hard_loss = 0
+            t = @elapsed for (i, (ds, I₊, I₋)) in enumerate(samples)
+                sa, grad = Flux.Zygote.withgradient(Base.Fix2(lossfun, (ds, I₊, I₋)), model)
+                sum_loss += sa
+                Optimisers.update!(opt_state, model, only(grad))
+            end
+            violations = [hardloss(model, sample) for sample in samples]
+            @show (t, sum(violations), quantile(violations, 0:0.1:1))
         end
-        violations = [hardloss(model, sample) for sample in samples]
-        @show (sum(violations), quantile(violations, 0:0.1:1))
-        # matched_count, improved_count, new_proof_count, not_matched_count = MyModule.heuristic_sanity_check(heuristic, training_samples, [])
-        # @show matched_count
-        # @show improved_count
-        # @show new_proof_count
-        # @show not_matched_count
-        # push!(matched_stats, matched_count)
-        # println(ep, ": ", sum_loss/length(training_samples), " matched_count: ", matched_count, " violations: ", sum(violations), " ", quantile(violations, 0:0.1:1))
+
+    # resolve all expressions
+    # improve the current solutions
+    # form the training samples
+
     end
 end
 
 
 hidden_size = 128
 
+function ffnn(idim, hidden_size, layers)
+    layers == 1 && return Dense(idim, hidden_size, Flux.gelu)
+    layers == 2 && return Flux.Chain(Dense(idim, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu))
+end
+
 head_model = ProductModel(
-    (;head = Dense(length(new_all_symbols), hidden_size, Flux.gelu),
-      args = Dense(hidden_size, hidden_size, Flux.gelu),  
+    (;head = ffnn(length(new_all_symbols), hidden_size, 1),
+      args = ffnn(hidden_size, hidden_size, 1),  
         ),
-    Dense(2*hidden_size, hidden_size, Flux.gelu)
+    ffnn(2*hidden_size, hidden_size, 1)
     )
 
 args_model = ProductModel(
-    (;args = Dense(hidden_size, hidden_size, Flux.gelu),  
-      position = ArrayModel(Dense(2,hidden_size)),  
+    (;args = ffnn(hidden_size, hidden_size, 1),  
+      position = Dense(2,hidden_size),  
         ),
-    Dense(2*hidden_size, hidden_size, Flux.gelu)
+    ffnn(2*hidden_size, hidden_size, 1)
     )
 
 heuristic = ExprModel(
     head_model,
     Mill.SegmentedSum(hidden_size),
     args_model,
-    Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
+    Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
     );
-
-# heuristic = ExprModel(
-#     Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.gelu)),
-#     Mill.SegmentedSum(hidden_size),
-#     Flux.Chain(Dense(2*hidden_size + 2, hidden_size, Flux.gelu)),
-#     Flux.Chain(Dense(hidden_size, 1)),
-#     );
     
-training_samples = prepare_dataset(10);
+training_samples = prepare_dataset();
 epochs = 1000
 
-surrogate = softplus
-agg = sum
-
 samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
-
-m = heuristic
-ds = samples[end][1]
-@time m(ds);
-@time gradient(m -> sum(m(ds)), m);
-
-@time dedu = MyModule.deduplicate(ds);
-@time m(dedu);
-lossfun(m, ds) = sum(m(ds))
-@time gradient(Base.Fix2(lossfun, dedu), m);
-
-m(dedu) ≈ m(ds)
-
-
-train2(heuristic, training_samples)
-# data = [i.initial_expr for i in training_samples]
-# experiment_name = "testing_new_training_api_$(length(data))
-# df = map(data) do ex
-#     # @benchmark begin
-#     exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
-#     cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
-#     size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
-#     expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
-#     root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
-
-#     soltree = Dict{UInt64, MyModule.Node}()
-#     open_list = PriorityQueue{MyModule.Node, Float32}()
-#     close_list = Set{UInt64}()
-#     expansion_history = Dict{UInt64, Vector}()
-#     encodings_buffer = Dict{UInt64, ProductNode}()
-#     println("Initial expression: $ex")
-#     soltree[root.node_id] = root
-#     o = heuristic(root.ex, cache)
-#     enqueue!(open_list, root, only(o))
-
-#     MyModule.build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, new_all_symbols, sym_enc, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0)
-#     smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
-#     tdata, hp, hn, proof = MyModule.extract_training_data(smallest_node, soltree)
-#     (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(smallest_node.ex, size_cache), se = MyModule.reconstruct(smallest_node.ex, new_all_symbols, LRU(maxsize=1000)), pr = proof)
-# end |> DataFrame
-# CSV.write("profile_results_trained_heuristic_$(experiment_name).csv", df)
+samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
+train(heuristic, samples)
