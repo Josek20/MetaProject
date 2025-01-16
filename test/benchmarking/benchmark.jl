@@ -439,25 +439,46 @@ function plot_ireducible()
 end
 
 
-function plot_grouped_difference(name)
+function plot_grouped_difference(name, training_samples)
     # df1 = CSV.read("profile_results_exp_size_as_heuristic.csv", DataFrame)
     # df2 = CSV.read("profile_results_trained_heuristic_not_overfit2.csv", DataFrame)
     # df3 = CSV.read("profile_results_trained_heuristic_overfit2.csv", DataFrame)
+    sympy_strings = load_data("data/neural_rewrter/symplified_train.json")
+    sympy_data = []
+    for (i,j) in sympy_strings[1:1000]                                       
+        initial_expr = Meta.parse(i)                                 
+        symp_expr = Meta.parse(j)                                    
+        push!(sympy_data, (initial_expr, symp_expr))                   
+    end
+    sorted_sympy_data = sort(sympy_data, by=x->MyModule.exp_size(x[1], LRU(maxsize=100)))
+    av_def1 = [MyModule.exp_size(i,LRU(maxsize=100)) - MyModule.exp_size(j, LRU(maxsize=100)) for (i,j) in sorted_sympy_data]
+    size_cache = LRU(maxsize=1000)                          
+    for i in training_samples                               
+    tmp = MyModule.exp_size(i.initial_expr, size_cache) - MyModule.exp_size(i.expression, size_cache)                      
+    push!(av_def, tmp)                                      
+    end
     # df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_1000.csv", DataFrame)
-    df4 = CSV.read("profile_results_trained_heuristic_not_overfit_ep10_hidsize64_1000.csv", DataFrame)
+    # df3 = CSV.read("profile_results_trained_heuristic_not_overfit_ep10_hidsize64_1000.csv", DataFrame)
+    df4 = CSV.read("profile_results_trained_heuristic_testing_new_training_api_sorted_filtered_955_10_hidden_size_64.csv", DataFrame)
     big_df = DataFrame()
     big_df[!, :s0] = df4[!, 1]
+    big_df[!, :s1] = av_def
+    big_df[!, :s2] = av_def1
     # big_df[!, :s2] = df1[!, 1] .- df1[!,2]
     # big_df[!, :s1] = df2[!, 1] .- df2[!,2]
     # big_df[!, :s3] = df3[!, 1] .- df3[!,2]
-    big_df[!, :s4] = df4[!, 1] .- df4[!,2]ěěě
+    big_df[!, :s4] = df4[!, 1] .- df4[!,2]
     combined_df = combine(groupby(big_df, :s0),              
-        #    [:s1, :s2, :s3, :s4] .=> mean .=> [:size_heuristic, :not_overfited_heuristic, :overfitted_heuristic, :new_not_overfited])
-           [:s3, :s4] .=> mean .=> [:size_heuristic, :new_not_overfited])
-    plot_data = stack(combined_df, Not(:s0))
-    rename!(plot_data, :variable => :method, :value => :performance)
-    bar(plot_data.:s0, plot_data.performance, group=plot_data.method,
-        xlabel="Expressions size", ylabel="Average Expression Reduction", legend=:topleft, title="1k samples")
+        #    [:s1, :s2, :s3, :s4] .=> mean .=> [:size_heuristic, :old_heuristic, :trained_heuristic1, :trained_heuristic2])
+           [:s1, :s4, :s2] .=> mean .=> [:size_heuristic, :trained_heuristic, :sympy])
+    # ctg = repeat(["Size Heuristic", "Cool Old Heuristic", "Trained Heuristic Old", "Trained Heuristic New"], inner = 13)
+    ctg = repeat(["Size Heuristic", "Trained Heuristic", "Sympy"], inner = 13)
+    # groupedbar(Matrix(combined_df[!, [:size_heuristic, :old_heuristic, :trained_heuristic1, :trained_heuristic2]]), bar_position = :dodge, bar_width=0.9, group=ctg)
+    groupedbar(Matrix(combined_df[!, [:size_heuristic, :trained_heuristic, :sympy]]), bar_position = :dodge, bar_width=0.9, group=ctg)
+    # plot_data = stack(combined_df, Not(:s0))
+    # rename!(plot_data, :variable => :method, :value => :performance)
+    # bar(plot_data.:s0, plot_data.performance, group=plot_data.method,
+    #     xlabel="Expressions size", ylabel="Average Expression Reduction", legend=:topleft, title="1k samples",  bar_width=0.4, opacity=0.7)
 end
 
 
@@ -510,18 +531,9 @@ function test_tmp(training_samples)
         MyModule.build_tree!(soltree, heuristic, open_list, close_list,  new_all_symbols, sym_enc, 1000, 10, theory, cache, exp_cache, size_cache, expr_cache, 1)
         smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
         td, hp, hn, all_proof, cr  = MyModule.extract_training_data(smallest_node, soltree)
-        # @show cr
-        # @show MyModule.new_loss1(heuristic, td, hp, hn, cr)
         MyModule.check_soltree_consistancy(soltree)
         @show smallest_node.ex, all_proof
         MyModule.check_proof_consistancy(ex, smallest_node.ex, all_proof)
-        # training_data::D
-        # saturated::S
-        # expression::E
-        # proof::P
-        # hp::HP
-        # hn::HN
-        # initial_expr::IE
         tmp = MyModule.TrainingSample(td, false, smallest_node.ex, all_proof, hp, hn, ex)
         push!(new_training_samples, tmp)
     end

@@ -141,14 +141,33 @@ function show_proof(init_ex, proof)
 end
 
 
-function batched_exp_size(ex::Vector, size_cache)
-    not_in_cache = ()
+function filter_cached(ex::Vector, cache)
+    in_cache = []
+    not_in_cache = []
+    in_cache_order = []
+    not_in_cache_order = []
+    for (ind,i) in enumerate(ex)
+        if haskey(cache, i)
+            push!(in_cache, cache[i])
+            push!(in_cache_order, ind)
+        else
+            push!(not_in_cache, i)
+            push!(not_in_cache_order, ind)
+        end
+    end
+    return in_cache, not_in_cache, in_cache_order, not_in_cache_order
+end
+
+
+function batched_exp_size(exs::Vector, size_cache)
+    in_cache, not_in_cache, in_cache_order, not_in_cache_order = filter_cached(exs, size_cache)
     if isempty(not_in_cache)
         return
     end
-    get!(size_cache, ex) do
+    result = []
+    # get!(size_cache, ex) do
         
-    end
+    # end
 end
 
 
@@ -903,7 +922,8 @@ function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vecto
     end
     push!(proof_vector, node.rule_index)
     if node.depth == 1
-        extended_children_list = soltree[node.parent].children
+        tmp = vcat([soltree[i].children for i in soltree[node.parent].children if i != node.node_id]...)
+        extended_children_list = vcat(soltree[node.parent].children, tmp)
     else
         tmp = [soltree[i].children for i in soltree[soltree[node.parent].parent].children]
         extended_children_list = vcat(tmp...)
@@ -1033,7 +1053,7 @@ function initialize_and_build_tree(ex::Expr, pipeline_config::SearchTreePipeline
     smallest_node = extract_smallest_terminal_node(tree_search_config.soltree, tree_search_config.close_list, pipeline_config.size_cache)
     simplified_expression = smallest_node.ex
     @show simplified_expression.ex
-    big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, tree_search_config.soltree)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data(smallest_node, tree_search_config.soltree)
     tmp = []
     @show length(proof_vector)
     @show length(tree_search_config.soltree)

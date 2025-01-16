@@ -53,7 +53,7 @@ end
 
 
 function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
-    # get!(cache, ex) do
+    get!(cache, ex) do
         if ex.head == :call
             fun_name, args =  ex.args[1], ex.args[2:end]
         elseif ex.head in all_symbols
@@ -71,12 +71,12 @@ function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
             tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
         end
         tmp = vcat(tmp, args)
-    # end
+    end
 end
 
 
 function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
-    # get!(cache, ex) do
+    get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex]] = 1
 
@@ -88,12 +88,12 @@ function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind
             a = vcat(tmp, model.expr_model.aggregation.:ψ)
         end
         return a
-    # end
+    end
 end
 
 
 function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind)
-    # get!(cache, ex) do
+    get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
 
@@ -105,7 +105,7 @@ function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind
             a = vcat(tmp, model.expr_model.aggregation.:ψ)
         end
         return a
-    # end
+    end
 end
 
 
@@ -174,7 +174,7 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
 end
 
 
-function not_int_cache(ex::Vector, cache)
+function filter_cached(ex::Vector, cache)
     in_cache = []
     not_in_cache = []
     in_cache_order = []
@@ -204,14 +204,21 @@ end
 
 
 function batched_cached_inference!(exs::Vector,::Type{Expr}, cache, model, all_symbols, symbols_to_ind)
-    in_cache, not_in_cache, in_cache_order, not_in_cache_order = not_int_cache(exs, cache)
+    in_cache, not_in_cache1, in_cache_order, not_in_cache_order = filter_cached(exs, cache)
+    if isempty(not_in_cache1)
+        a = zeros(Float32, (128, length(in_cache)))
+        for (cached,i) in zip(in_cache, in_cache_order)
+            a[:, i] = cached
+        end
+        return a
+    end
     fun_indeces = []
     args_bags = []
     sym_args = Union{Symbol, Int, ExprWithHash}[]
     expr_args = Expr[]
     sym_bag_ids = Int[]
     expr_bag_ids = Int[]
-    for (ind1,ex) in enumerate(not_in_cache)
+    for (ind1,ex) in enumerate(not_in_cache1)
         if ex.head == :call
             fun_name, args =  ex.args[1], ex.args[2:end]
         elseif ex.head in all_symbols
@@ -251,10 +258,17 @@ end
 
 
 function batched_cached_inference!(args::Vector, ::Type{Symbol}, cache, model, all_symbols, symbols_to_ind)
-    in_cache, not_in_cache, in_cache_order, not_in_cache_order = not_int_cache(args, cache)
+    in_cache, not_in_cache1, in_cache_order, not_in_cache_order = filter_cached(args, cache)
+    if isempty(not_in_cache1)
+        a = zeros(Float32, (128, length(in_cache)))
+        for (cached,i) in zip(in_cache, in_cache_order)
+            a[:, i] = cached
+        end
+        return a
+    end
     sym_indices = []
     values = Float32[]
-    for (ind,i) in enumerate(not_in_cache)
+    for (ind,i) in enumerate(not_in_cache1)
         if isa(i, Number)
             push!(values, my_sigmoid(i))
         else
@@ -272,7 +286,9 @@ function batched_cached_inference!(args::Vector, ::Type{Symbol}, cache, model, a
         # a = vcat(tmp, model.expr_model.aggregation.:ψ)
         a = vcat(tmp, zeros(Float32, length(model.aggregation.:ψ), length(args)))
     end
+    # @show size(a)
     for (ind, i) in enumerate(not_in_cache_order)
+        # @show args[i]
         cache[args[i]] = a[:, i]
     end
     for (cached,i) in zip(in_cache, in_cache_order)

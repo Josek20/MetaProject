@@ -12,8 +12,8 @@ using CSV
 function prepare_dataset(n=typemax(Int))
     samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
-    # samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
-    samples = sort(samples, by=x->length(x.proof))
+    samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
+    # samples = sort(samples, by=x->length(x.proof))
     last(samples, min(length(samples), n))
 end
 
@@ -45,12 +45,12 @@ function train(heuristic, training_samples, surrogate::Function, agg::Function, 
     loss_stats = []
     matched_stats = []
     samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
-    # batched_samples = get_batched_samples(samples, batch_size)
+    batched_samples = get_batched_samples(samples, batch_size)
     # root_nodes = [MyModule.single_fast_ex2mill(sample.initial_expr) for sample in training_samples]
     for ep in 1:epochs
         sum_loss = 0.0
         hard_loss = 0
-        for (i, (ds, I₊, I₋)) in enumerate(samples)
+        for (i, (ds, I₊, I₋)) in enumerate(batched_samples)
             # root_node = root_nodes[i]
             sa, grad = Flux.Zygote.withgradient(heuristic) do h
                 o = vec(h(ds))
@@ -90,10 +90,10 @@ heuristic = ExprModel(
 #     Flux.Chain(Dense(2*hidden_size + 2, hidden_size, Flux.gelu)),
 #     Flux.Chain(Dense(hidden_size, 1)),
 #     );
-    
+simplified_expression, _, big_vector, saturated, hp, hn, root, proof_vector, tmp = MyModule.initialize_tree_search(heuristic, ex, 1000, 10, new_all_symbols, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
 training_samples = prepare_dataset();
 epochs = 1000
-
+@assert 1 == 0
 surrogate = softplus
 agg = sum
 
