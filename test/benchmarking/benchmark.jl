@@ -455,29 +455,30 @@ function plot_grouped_difference(name, training_samples)
     av_def1 = [MyModule.exp_size(i,LRU(maxsize=100)) - MyModule.exp_size(j, LRU(maxsize=100)) for (i,j) in sorted_sympy_data]
     size_cache = LRU(maxsize=1000)
     av_def = []                   
-    training_samples = sort(training_samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=1000)))
+    training_samples = sort(training_samples, by=x->MyModulle.exp_size(x.initial_expr, LRU(maxsize=1000)))
     for i in training_samples                               
     tmp = MyModule.exp_size(i.initial_expr, size_cache) - MyModule.exp_size(i.expression, size_cache)                      
     push!(av_def, tmp)                                      
     end
-    # df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_1000.csv", DataFrame)
+    df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_1000.csv", DataFrame)
     # df3 = CSV.read("profile_results_trained_heuristic_not_overfit_ep10_hidsize64_1000.csv", DataFrame)
     df4 = CSV.read("profile_results_trained_heuristic_testing_new_training_api_sorted_filtered1_1000_10_hidden_size_64.csv", DataFrame)
     big_df = DataFrame()
     big_df[!, :s0] = df4[!, 1]
     big_df[!, :s1] = av_def
     big_df[!, :s2] = av_def1
-    # big_df[!, :s2] = df1[!, 1] .- df1[!,2]
+    big_df[!, :s3] = df1[!, 1] .- df1[!,2]
     # big_df[!, :s1] = df2[!, 1] .- df2[!,2]
     # big_df[!, :s3] = df3[!, 1] .- df3[!,2]
     big_df[!, :s4] = df4[!, 1] .- df4[!,2]
     combined_df = combine(groupby(big_df, :s0),              
-        #    [:s1, :s2, :s3, :s4] .=> mean .=> [:size_heuristic, :old_heuristic, :trained_heuristic1, :trained_heuristic2])
-           [:s1, :s4, :s2] .=> mean .=> [:size_heuristic, :trained_heuristic, :sympy])
+           [:s1, :s2, :s3, :s4] .=> mean .=> [:size_heuristic, :sympy, :old_heuristic, :trained_heuristic])
+        #    [:s1, :s4, :s2] .=> mean .=> [:size_heuristic, :trained_heuristic, :sympy])
     # ctg = repeat(["Size Heuristic", "Cool Old Heuristic", "Trained Heuristic Old", "Trained Heuristic New"], inner = 13)
-    ctg = repeat(["Size Heuristic", "Trained Heuristic", "Sympy"], inner = 13)
+    ctg = repeat(["Size Heuristic", "Sympy", "Old Heuristic", "Trained Heuristic"], inner = 13)
+    # ctg = repeat(["Size Heuristic", "Trained Heuristic", "Sympy"], inner = 13)
     # groupedbar(Matrix(combined_df[!, [:size_heuristic, :old_heuristic, :trained_heuristic1, :trained_heuristic2]]), bar_position = :dodge, bar_width=0.9, group=ctg)
-    groupedbar(Matrix(combined_df[!, [:size_heuristic, :trained_heuristic, :sympy]]), bar_position = :dodge, bar_width=0.9, group=ctg)
+    groupedbar(Matrix(combined_df[!, [:size_heuristic, :sympy, :old_heuristic, :trained_heuristic]]), bar_position = :dodge, bar_width=0.9, group=ctg)
     # plot_data = stack(combined_df, Not(:s0))
     # rename!(plot_data, :variable => :method, :value => :performance)
     # bar(plot_data.:s0, plot_data.performance, group=plot_data.method,
