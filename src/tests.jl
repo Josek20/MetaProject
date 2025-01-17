@@ -208,3 +208,41 @@ function test_stats_proofs(initial_expr, proofs)
         # MyModule.single_fast_ex2mill(initial_expr)
     end
 end
+
+
+function check_soltree_consistancy(soltree::Dict)
+    incorrect_node_depth_counter = 0
+    all_different_children = []
+    parent_has_not_child = 0
+    for (id, node) in soltree
+        append!(all_different_children, soltree[id].children)
+        if isnothing(node.parent)
+            continue
+        end
+        parent_has_not_child += !(id in soltree[node.parent].children)
+        if node.depth <= soltree[node.parent].depth
+            incorrect_node_depth_counter += 1
+        end
+    end
+    @assert incorrect_node_depth_counter == 0
+    @assert length(all_different_children) == length(unique(all_different_children)) == length(soltree) - 1
+    @assert parent_has_not_child == 0
+end
+
+
+function check_inference_consistancy(model, data)
+    # MyModule.cached_inference!(symex, LRU(maxsize=1000), heuristic)
+    symexs = []
+    # product_nodes = []
+    for i in data
+        symex = intern!(i)
+        push!(symexs, symex)
+    end
+    product_nodes = MyModule.multiple_fast_ex2mill(data, sym_enc)
+    o1 = MyModule.heuristic(model, product_nodes)
+    cache = LRU(maxsize=1000)
+    for i in symexs
+        o2 = model(i, cache)
+        @assert abs(o1 - o2) <= 5e-8
+    end
+end

@@ -50,9 +50,9 @@ function interned_expand_node!(parent::Node, soltree, heuristic, open_list, all_
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     isempty(filtered_new_nodes) && return(false)
     # o = map(x->alpha * exp_size(x.ex, size_cache) + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
-    o = map(x->exp_size(x.ex, size_cache), filtered_new_nodes)
+    # o = map(x->exp_size(x.ex, size_cache), filtered_new_nodes)
     # o = map(x->node_count(x.ex.ex), filtered_new_nodes)
-    # o = map(x->only(heuristic(x.ex, cache)), filtered_new_nodes)
+    o = map(x->only(heuristic(x.ex, cache)), filtered_new_nodes)
     # o = heuristic(exprs, cache)
     for (v,n) in zip(o, filtered_new_nodes)
         enqueue!(open_list, n, v)
@@ -77,11 +77,13 @@ function interned_build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list:
             break
         end
         nodes, prob = dequeue_pair!(open_list)
+        push!(close_list, nodes.node_id)
         step += 1
         reached_goal = interned_expand_node!(nodes, soltree, heuristic, open_list, all_symbols, symbols_to_index, theory, cache, exp_cache, size_cache, expr_cache, alpha)
-        if reached_goal
-            return true 
-        end
+
+        # if reached_goal
+        #     return true 
+        # end
     end
     return false
 end
@@ -93,13 +95,13 @@ function interned_initialize_tree_search(heuristic, ex::Expr, max_steps, max_dep
     close_list = Set{UInt64}()
     ex = intern!(ex)
     root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
-    o = MyModule.exp_size(root.ex, cache)
+    o = heuristic(root.ex, cache)
     soltree[root.node_id] = root
     enqueue!(open_list, root, only(o))
-    reached_goal = MyModule.interned_build_tree!(soltree, heuristic, open_list, close_list, all_symbols, symbols_to_index, 1000, 10, theory, cache, exp_cache, size_cache, expr_cache, 0.5)
+    reached_goal = MyModule.interned_build_tree!(soltree, heuristic, open_list, close_list, all_symbols, symbols_to_index, max_steps, max_depth, theory, cache, exp_cache, size_cache, expr_cache, 0.5)
     smallest_node = extract_smallest_terminal_node(soltree, close_list, size_cache)
     simplified_expression = smallest_node.ex
-    big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data(smallest_node, soltree)
     tmp = []
     return simplified_expression, [], big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector, tmp
 end

@@ -3,6 +3,7 @@ using MyModule
 using MyModule.LRUCache
 using MyModule.Metatheory
 using MyModule.Mill
+using MyModule.Flux
 using MyModule.DataStructures
 using BenchmarkTools
 using Serialization
@@ -35,18 +36,24 @@ function (r::Metatheory.DynamicRule)(term)
 end
 
 
-
 function prepare_dataset(n=typemax(Int))
-    samples = deserialize("../../data/training_data/size_heuristic_training_samples1.bin")
+    samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
     # samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
     samples = sort(samples, by=x->length(x.proof))
     last(samples, min(length(samples), n))
 end
 
-training_samples = prepare_dataset()
+training_samples = prepare_dataset()[1:10]
 ex = training_samples[end].initial_expr
-heuristic(args) = 1 
+# heuristic(args) = 1 
+hidden_size = 64
+heuristic = ExprModel(
+    Flux.Chain(Dense(length(new_all_symbols), hidden_size, Flux.gelu)),
+    Mill.SegmentedSum(hidden_size),
+    Flux.Chain(Dense(2*hidden_size + 2, hidden_size, Flux.gelu)),
+    Flux.Chain(Dense(hidden_size, 1)),
+    );
 
 function profile_intrned(data; empty_cache = true)
     empty_cache && empty!(MyModule.nc)
@@ -60,15 +67,16 @@ function profile_intrned(data; empty_cache = true)
     close_list = Set{UInt64}()
     ex = MyModule.intern!(ex)
     root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
-    o = MyModule.exp_size(root.ex, size_cache)
+    o = heuristic(root.ex, cache)
     soltree[root.node_id] = root
     enqueue!(open_list, root, only(o))
     MyModule.interned_build_tree!(soltree, heuristic, open_list, close_list, all_symbols, symbols_to_index, 1000, 10, theory, cache, exp_cache, size_cache, expr_cache, 0.5)
+    @show length(soltree)
 end
 
 function benchmark_old(data)
     ex = data[end].initial_expr
-    exp_cache = LRU(maxsize=100_000)
+    exp_cache = LRU{Expr, Vector}(maxsize=100_000)
     cache = LRU(maxsize=1_000_000)
     size_cache = LRU(maxsize=100_000)
     expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
@@ -81,12 +89,14 @@ function benchmark_old(data)
     expansion_history = Dict{UInt64, Vector}()
     encodings_buffer = Dict{UInt64, ProductNode}()
     soltree[root.node_id] = root
-    o = MyModule.exp_size(root.ex, size_cache)
+    o = heuristic(root.ex, cache)
     enqueue!(open_list, root, only(o))
     MyModule.build_tree!(soltree, heuristic, open_list, close_list,  new_all_symbols, sym_enc, 1000, 10, theory, cache, exp_cache, size_cache, expr_cache, 1)
+    @show length(soltree)
 end
 
-
+println("===============Doing the testing old================")
 @benchmark map(x -> benchmark_old([x]), training_samples)
+println("===============Doing the testing new================")
 @benchmark map(x -> profile_intrned([x], empty_cache = true), training_samples)
 @benchmark map(x -> profile_intrned([x], empty_cache = false), training_samples)

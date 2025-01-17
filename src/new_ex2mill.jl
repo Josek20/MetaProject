@@ -147,7 +147,7 @@ function handle_bags(bg, new_bg)
     return bg
 end
 
-function no_reduce_multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
+function no_reduce_multiple_fast_ex2mill(expression_vector::Vector, sym_enc=sym_enc)
     if isa(expression_vector[1], ExprWithHash)
         stats = map(x-> count_expr_stats(x.ex, sym_enc), expression_vector)
     else
@@ -232,7 +232,7 @@ function multiple_fast_ex2mill(expression_vector::Vector, sym_enc)
 end
 
 
-function single_fast_ex2mill(ex, sym_enc)
+function single_fast_ex2mill(ex, sym_enc=sym_enc)
     st, nm, ps, bg = count_expr_stats(ex, sym_enc)
     a = unfold_allocation(st, nm, ps, bg)
     return a
