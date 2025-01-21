@@ -753,13 +753,16 @@ function extract_training_data(node, soltree, sym_enc=sym_enc)
 end
 
 
+"""
+    # neighborhood = (1, 2, 3, ∞)
+"""
 function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
     if isnothing(node.parent)
         n = length(hn)
-        a = sum(x->length(x), hn)
+        a = sum(length, hn)
         hp[1] = fill(only(hp[1]), a)
         for i in 2:n
-            a = sum(x->length(x), hn[i:n])
+            a = sum(length, hn[i:n])
             hp[i] = fill(only(hp[i]), a)
             append!(hn, hn[i:n])
         end
@@ -789,7 +792,6 @@ function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vecto
     push!(hp[end], pos_index)
     extract_training_data!(soltree[node.parent], soltree, training_exp, hp, hn, proof_vector)
 end
-
 
 function extract_smallest_terminal_node1(soltree::Dict{UInt64, Node}, close_list::Set{UInt64}, nbest=5)
     all_nodes = values(soltree)

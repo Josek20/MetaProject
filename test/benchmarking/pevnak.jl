@@ -48,7 +48,7 @@ end
 
 
 function prepare_dataset(n=typemax(Int))
-    samples = deserialize("../data/training_data/size_heuristic_training_samples1.bin")
+    samples = deserialize("../../data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
     samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr))
     # samples = sort(samples, by=x->length(x.proof))
@@ -93,8 +93,8 @@ function train(model, samples, training_samples)
     loss_stats = []
     matched_stats = [] 
     # batched_samples = get_batched_samples(samples, batch_size)
-    for outer_epoch in 1:2
-        for ep in 1:10
+    for outer_epoch in 1:100
+        for ep in 1:100
             sum_loss = 0.0
             hard_loss = 0
             t = @elapsed for (i, (ds, I₊, I₋)) in enumerate(samples)
@@ -108,14 +108,23 @@ function train(model, samples, training_samples)
         new_samples = []
         better_samples_counter = 0
         # empty!(cache)
-        t = @elapsed for old_sample in training_samples
+        exp_sizes = 
+        samples = map(training_samples) do old_sample
+            # search_tree, solution = build_search_tree
+
+            # best_node = find_the_solution
+
+
+            # minibach = create_training_sample(size_of_neigborhood(1,2,3,∞))
+
             simplified_expression, _, big_vector, saturated, hp, hn, _, proof_vector, _ = MyModule.interned_initialize_tree_search(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
+            @show simplified_expression
             new_sample = MyModule.TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, old_sample.initial_expr)
             if MyModule.isbetter(old_sample, new_sample)
-                 push!(new_samples, (big_vector, hp, hn))
+                 return(big_vector, hp, hn)
                  better_samples_counter += 1
             else
-                push!(new_samples, (old_sample.training_data, old_sample.hp, old_sample.hn))
+                return(old_sample)
             end
         end
         @show (t, better_samples_counter)
@@ -123,7 +132,6 @@ function train(model, samples, training_samples)
     # resolve all expressions
     # improve the current solutions
     # form the training samples
-
     end
 end
 
@@ -157,7 +165,6 @@ heuristic = ExprModel(
     );
     
 training_samples = prepare_dataset();
-largest_expr = training_data(1)
 epochs = 1000
 
 samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
