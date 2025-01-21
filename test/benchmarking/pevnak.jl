@@ -2,17 +2,56 @@ using MyModule
 using MyModule.Flux
 using MyModule.Mill
 using MyModule.LRUCache
+using MyModule.Metatheory
 using Serialization
 using DataFrames
 using Optimisers
 using Statistics
 using CSV
 
+
+MyModule.get_value(x) = x
+
+const EMPTY_DICT = Base.ImmutableDict{Int,Any}()
+
+function (r::Metatheory.DynamicRule)(term)
+  # n == 1 means that exactly one term of the input (term,) was matched
+  success(bindings, n) =
+    if n == 1
+      bvals = [bindings[i] for i in 1:length(r.patvars)]
+      bvals = map(MyModule.get_value, bvals)
+      v = r.rhs_fun(term, nothing, bvals...)
+      if isnothing(v)
+        return nothing
+      end 
+      v = term isa MyModule.NodeID ? MyModule.intern!(v) : v
+      return(v)
+    end
+
+  try
+    return r.matcher(success, (term,), EMPTY_DICT)
+  catch err
+    rethrow(err)
+    throw(RuleRewriteError(r, term))
+  end
+end
+
+
+function training_data(n=typemax(Int))
+    train_data_path = "data/neural_rewrter/train.json"
+    train_data = isfile(train_data_path) ? load_data(train_data_path)[10_001:70_000] : load_data(test_data_path)[1:1000]
+    train_data = filter(x->!occursin("select", x[1]), train_data)
+    train_data = preprosses_data_to_expressions(train_data)
+    train_data = sort(train_data, by=x->MyModule.exp_size(x))
+    last(train_data, min(length(train_data), n))
+end
+
+
 function prepare_dataset(n=typemax(Int))
-    samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
+    samples = deserialize("../data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
-    # samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr, LRU(maxsize=10000)))
-    samples = sort(samples, by=x->length(x.proof))
+    samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr))
+    # samples = sort(samples, by=x->length(x.proof))
     last(samples, min(length(samples), n))
 end
 
@@ -52,13 +91,9 @@ function train(model, samples, training_samples)
     optimizer=ADAM()
     opt_state = Flux.setup(optimizer, model)
     loss_stats = []
-    matched_stats = []
-    cache = LRU(maxsize=1000_000)
-    exp_cache = LRU(maxsize=1000_000)
-    size_cache = LRU(maxsize=1000_000)
-    expr_cache = LRU(maxsize=1000_000) 
+    matched_stats = [] 
     # batched_samples = get_batched_samples(samples, batch_size)
-    for outer_epoch in 1:10
+    for outer_epoch in 1:2
         for ep in 1:10
             sum_loss = 0.0
             hard_loss = 0
@@ -72,11 +107,11 @@ function train(model, samples, training_samples)
         end
         new_samples = []
         better_samples_counter = 0
-        empty!(cache)
+        # empty!(cache)
         t = @elapsed for old_sample in training_samples
-            simplified_expression, _, big_vector, saturated, hp, hn, _, proof_vector, _ = MyModule.initialize_tree_search(model, old_sample.initial_expr, 1000, 10, new_all_symbols, theory, cache, exp_cache, size_cache, expr_cache, 0.5)
+            simplified_expression, _, big_vector, saturated, hp, hn, _, proof_vector, _ = MyModule.interned_initialize_tree_search(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
             new_sample = MyModule.TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, old_sample.initial_expr)
-            if MyModule.isbetter(old_sample, new_sample, size_cache)
+            if MyModule.isbetter(old_sample, new_sample)
                  push!(new_samples, (big_vector, hp, hn))
                  better_samples_counter += 1
             else
@@ -121,37 +156,23 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
     );
     
-training_samples = prepare_dataset(1);
+training_samples = prepare_dataset();
+largest_expr = training_data(1)
 epochs = 1000
 
 samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
 samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
+MyModule.reset_all_function_caches()
 train(heuristic, samples, training_samples)
+# @assert 1 == 0
 
 data = [i.initial_expr for i in training_samples]
-experiment_name = "testing_new_training_heuristic_v1_sorted_$(length(data))_$(epochs)_hidden_size_$(hidden_size)"
+experiment_name = "test_v1_sorted_$(length(data))_$(epochs)_hidden_size_$(hidden_size)"
 serialize("models/trained_heuristic_$(experiment_name).bin", heuristic)
 #heuristic = deserialize("models/trained_heuristic_testing_new_training_api_sorted_filtered_955_10_hidden_size_64.bin")
+MyModule.reset_all_function_caches()
 df = map(data) do ex
-    exp_cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=100_000)
-    cache = LRU{MyModule.ExprWithHash, Vector}(maxsize=1_000_000)
-    size_cache = LRU{MyModule.ExprWithHash, Int}(maxsize=100_000)
-    expr_cache = LRU{UInt, MyModule.ExprWithHash}(maxsize=100_000)
-    # ex = MyModule.interned
-    # root = MyModule.Node(ex, (0,0), nothing, 0, expr_cache)
-
-    # soltree = Dict{UInt64, MyModule.Node}()
-    # open_list = PriorityQueue{MyModule.Node, Float32}()
-    # close_list = Set{UInt64}()
-    # println("Initial expression: $ex")
-    # soltree[root.node_id] = root
-    # o = heuristic(root.ex, cache)
-    # enqueue!(open_list, root, only(o))
-
-    # MyModule.build_tree!(soltree, heuristic, open_list, close_list, new_all_symbols, sym_enc, 1000, 10, theory, cache, exp_cache, size_cache, expr_cache, 0)
-    # smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list, size_cache)
-    # tdata, hp, hn, proof = MyModule.extract_training_data(smallest_node, soltree)
-    simplified_expression, _, big_vector, saturated, hp, hn, root, proof_vector, _ = MyModule.initialize_tree_search(heuristic, ex, 1000, 10, new_all_symbols, theory, cache, exp_cache, size_cache, expr_cache, 0.5)
-    (; s₀ = MyModule.exp_size(root.ex, size_cache), sₙ = MyModule.exp_size(simplified_expression.ex, size_cache), se = simplified_expression.ex, pr = proof_vector)
+    simplified_expression, _, big_vector, saturated, hp, hn, root, proof_vector, _ = MyModule.interned_initialize_tree_search(heuristic, ex, 1000, 10, new_all_symbols, sym_enc, theory)
+    (; s₀ = MyModule.exp_size(root.ex), sₙ = MyModule.exp_size(simplified_expression), se = simplified_expression, pr = proof_vector)
 end |> DataFrame
 CSV.write("profile_results_trained_heuristic_$(experiment_name).csv", df)

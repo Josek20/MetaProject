@@ -7,11 +7,11 @@ const const_nth = [1 0 1; 0 1 1]
 my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 
 
-function cached_inference!(ex::NodeID, ::Type{Expr}, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::NodeID, ::Type{Expr}, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         node = nc[ex]
         fun_name = node.head
-        args = cached_inference!([node.left, node.right], cache, model, all_symbols, symbols_to_ind)
+        args = cached_inference!([node.left, node.right], model, all_symbols, symbols_to_ind)
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_index[fun_name]] = 1
         # if isa(model, ExprModel)
@@ -25,12 +25,12 @@ function cached_inference!(ex::NodeID, ::Type{Expr}, cache, model, all_symbols, 
         #     tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
         # end
         # tmp = vcat(tmp, args)
-    end
+    # end
 end
 
 
-function cached_inference!(ex::NodeID, ::Type{Symbol}, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::NodeID, ::Type{Symbol}, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         node = nc[ex]
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[node.head]] = 1
@@ -48,12 +48,12 @@ function cached_inference!(ex::NodeID, ::Type{Symbol}, cache, model, all_symbols
         #     a = vcat(tmp, model.expr_model.aggregation.:ψ)
         # end
         # return a
-    end
+    # end
 end
 
 
-function cached_inference!(ex::NodeID, ::Type{Int}, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::NodeID, ::Type{Int}, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         node = nc[ex]
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(node.v)
@@ -72,17 +72,17 @@ function cached_inference!(ex::NodeID, ::Type{Int}, cache, model, all_symbols, s
         #     a = vcat(tmp, model.expr_model.aggregation.:ψ)
         # end
         # return a
-    end
+    # end
 end
 
 
-function cached_inference!(args::Vector{NodeID}, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(args::Vector{NodeID}, model, all_symbols, symbols_to_ind)
     left_node, right_node = args
     tmp = []
     if left_node != nullid
         inference_type = nc[left_node].head ∈ (:float, :integer) ? Int : Symbol
         inference_type = nc[left_node].iscall ? Expr : inference_type 
-        left_infer = cached_inference!(left_node, inference_type, cache, model, all_symbols, symbols_to_ind)
+        left_infer = cached_inference!(left_node, inference_type, model, all_symbols, symbols_to_ind)
         # tmp_left = vcat(left_infer, const_left)
         tmp_left = left_infer
         push!(tmp, tmp_left)
@@ -90,7 +90,7 @@ function cached_inference!(args::Vector{NodeID}, cache, model, all_symbols, symb
     if right_node != nullid
         inference_type = nc[right_node].head ∈ (:float, :integer) ? Int : Symbol
         inference_type = nc[right_node].iscall ? Expr : inference_type 
-        right_infer = cached_inference!(right_node, inference_type, cache, model, all_symbols, symbols_to_ind)
+        right_infer = cached_inference!(right_node, inference_type, model, all_symbols, symbols_to_ind)
         # tmp_right = vcat(right_infer, const_right)
         tmp_right = right_infer
         push!(tmp, tmp_right)
@@ -112,11 +112,11 @@ function cached_inference!(args::Vector{NodeID}, cache, model, all_symbols, symb
 end
 
 
-function cached_inference!(ex::ExprWithHash, ::Type{Expr}, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::ExprWithHash, ::Type{Expr}, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         args = ex.args
         fun_name = ex.head
-        args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
+        args = cached_inference!(args, model, all_symbols, symbols_to_ind)
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_index[fun_name]] = 1
         head_model = model.head_model
@@ -130,12 +130,12 @@ function cached_inference!(ex::ExprWithHash, ::Type{Expr}, cache, model, all_sym
         #     tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
         # end
         # tmp = vcat(tmp, args)
-    end
+    # end
 end
 
 
-function cached_inference!(ex::ExprWithHash, ::Type{Symbol}, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::ExprWithHash, ::Type{Symbol}, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex.head]] = 1
         zero_bag = repeat(model.aggregation.ψ, 1, 1)
@@ -152,12 +152,12 @@ function cached_inference!(ex::ExprWithHash, ::Type{Symbol}, cache, model, all_s
         #     a = vcat(tmp, model.expr_model.aggregation.:ψ)
         # end
         # return a
-    end
+    # end
 end
 
 
-function cached_inference!(ex::ExprWithHash, ::Type{Int}, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::ExprWithHash, ::Type{Int}, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex.head)
         zero_bag = repeat(model.aggregation.ψ, 1, 1)
@@ -174,12 +174,12 @@ function cached_inference!(ex::ExprWithHash, ::Type{Int}, cache, model, all_symb
         #     a = vcat(tmp, model.expr_model.aggregation.:ψ)
         # end
         # return a
-    end
+    # end
 end
 
 
-function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::Expr, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         if ex.head == :call
             fun_name, args =  ex.args[1], ex.args[2:end]
         elseif ex.head in all_symbols
@@ -188,7 +188,7 @@ function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
         else
             error("unknown head $(ex.head)")
         end
-        args = cached_inference!(args, cache, model, all_symbols, symbols_to_ind)
+        args = cached_inference!(args, model, all_symbols, symbols_to_ind)
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_index[fun_name]] = 1
         head_model = model.head_model
@@ -202,52 +202,70 @@ function cached_inference!(ex::Expr, cache, model, all_symbols, symbols_to_ind)
         #     tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
         # end
         # tmp = vcat(tmp, args)
-    end
+    # end
 end
 
 
-function cached_inference!(ex::Symbol, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::Symbol, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[ex]] = 1
-
-        if isa(model, ExprModel)
-            tmp = model.head_model(encoding)
-            a = vcat(tmp, model.aggregation.:ψ)
-        else
-            tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
-            a = vcat(tmp, model.expr_model.aggregation.:ψ)
-        end
-        return a
-    end
+        zero_bag = repeat(model.aggregation.ψ, 1, 1)
+        head_model = model.head_model
+        h = vcat(head_model.ms.head.m(encoding),
+            head_model.ms.args.m(zero_bag),
+            )
+        head_model.m(h)
+        # if isa(model, ExprModel)
+        #     tmp = model.head_model(encoding)
+        #     a = vcat(tmp, model.aggregation.:ψ)
+        # else
+        #     tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+        #     a = vcat(tmp, model.expr_model.aggregation.:ψ)
+        # end
+        # return a
+    # end
 end
 
 
-function cached_inference!(ex::Number, cache, model, all_symbols, symbols_to_ind)
-    get!(cache, ex) do
+@my_cache function cached_inference!(ex::Number, model, all_symbols, symbols_to_ind)
+    # get!(cache, ex) do
         encoding = zeros(Float32, length(all_symbols))
         encoding[symbols_to_ind[:Number]] = my_sigmoid(ex)
-
-        if isa(model, ExprModel)
-            tmp = model.head_model(encoding)
-            a = vcat(tmp, model.aggregation.:ψ)
-        else
-            tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
-            a = vcat(tmp, model.expr_model.aggregation.:ψ)
-        end
-        return a
-    end
+        zero_bag = repeat(model.aggregation.ψ, 1, 1)
+        head_model = model.head_model
+        h = vcat(head_model.ms.head.m(encoding),
+            head_model.ms.args.m(zero_bag),
+            )
+        head_model.m(h)
+        # if isa(model, ExprModel)
+        #     tmp = model.head_model(encoding)
+        #     a = vcat(tmp, model.aggregation.:ψ)
+        # else
+        #     tmp = model.expr_model.head_model(encoding, model.model_params.head_model)
+        #     a = vcat(tmp, model.expr_model.aggregation.:ψ)
+        # end
+        # return a
+    # end
 end
 
 
-function cached_inference!(args::Vector, cache, model, all_symbols, symbols_to_ind)
+function cached_inference!(args::Vector, model, all_symbols, symbols_to_ind)
     l = length(args)
-    my_tmp = [cached_inference!(a, cache, model, all_symbols, symbols_to_ind) for a in args]
+    my_tmp = [cached_inference!(a, model, all_symbols, symbols_to_ind) for a in args]
     my_args = hcat(my_tmp...)
     args_model = model.args_model
+    if l == 3
+        t = const_nth
+    elseif l == 2
+        t = const_both
+    else
+        t = const_left
+    end
+    # t = l == 2 ? const_both : const_left
     h = vcat(
         args_model.ms.args.m(my_args),
-        args_model.ms.position.m(l == 2 ? const_both : const_left),
+        args_model.ms.position.m(t),
     )
     positional_encoding = args_model.m(h)
     model.aggregation(positional_encoding, Mill.AlignedBags([1:l]))
@@ -275,12 +293,12 @@ function cached_inference!(args::Vector{MyModule.ExprWithHash}, cache, model, al
     my_tmp = []
     for i in args
         if isa(i.head, Symbol) && symbols_to_ind[i.head] <= 18
-            pl = cached_inference!(i, Expr, cache, model, all_symbols, symbols_to_ind)
+            pl = cached_inference!(i, Expr, model, all_symbols, symbols_to_ind)
         else
             if isa(i.head, Symbol)
-                pl = cached_inference!(i, Symbol, cache, model, all_symbols, symbols_to_ind)
+                pl = cached_inference!(i, Symbol, model, all_symbols, symbols_to_ind)
             else
-                pl = cached_inference!(i, Int, cache, model, all_symbols, symbols_to_ind)
+                pl = cached_inference!(i, Int, model, all_symbols, symbols_to_ind)
             end
         end
         push!(my_tmp, pl)
@@ -544,23 +562,23 @@ function (m::ExprModel)(ds::BagNode{<:Missing})
 end
 
 
-function (m::ExprModel)(ex::NodeID, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    ds = cached_inference!(ex, Expr, cache, m, all_symbols, symbols_to_index)
+function (m::ExprModel)(ex::NodeID, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ex, Expr, m, all_symbols, symbols_to_index)
     # tmp = vcat(ds, zeros(Float32, 2))
     m.heuristic(ds)
 end
 
 
-function (m::ExprModel)(ex::Union{Expr, Int}, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
+function (m::ExprModel)(ex::Union{Expr, Int}, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ex, m, all_symbols, symbols_to_index)
     # tmp = vcat(ds, zeros(Float32, 2))
     # m.heuristic(m.args_model(tmp))
     m.heuristic(ds)
 end
 
 
-function (m::ExprModel)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-    ds = cached_inference!(ex, typeof(ex.ex), cache, m, all_symbols, symbols_to_index)
+function (m::ExprModel)(ex::ExprWithHash, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
+    ds = cached_inference!(ex, typeof(ex.ex), m, all_symbols, symbols_to_index)
     # tmp = vcat(ds, zeros(Float32, 2))
     # m.heuristic(m.args_model(tmp))
     m.heuristic(ds)
@@ -589,18 +607,6 @@ end
 # end
 
 
-# function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-#     ds = cached_inference!(ex, typeof(ex.ex), cache, m, all_symbols, symbols_to_index)
-#     tmp = vcat(ds, zeros(Float32, 2))
-#     m.expr_model.heuristic(m.expr_model.args_model(tmp, m.model_params.args_model), m.model_params.heuristic)
-# end
-
-
-# function (m::ExprModelSimpleChains)(ex::Expr, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
-#     ds = cached_inference!(ex, cache, m, all_symbols, symbols_to_index)
-#     tmp = vcat(ds, zeros(Float32, 2))
-#     m.expr_model.heuristic(m.expr_model.args_model(tmp, m.model_params.args_model), m.model_params.heuristic)
-# end
 
 
 # function (m::ExprModelSimpleChains)(ex::ExprWithHash, cache, all_symbols=new_all_symbols, symbols_to_index=sym_enc)
@@ -655,136 +661,7 @@ logistic(x) = log(1 + exp(x))
 hinge(x) = min(0, max(1, x + 1))
 # loss01(x) = x + 1 > 0 ? x + 1 : 0
 
-
-function batched_loss(heuristic, big_vector, hp, hn, bags_of_batches, surrogate::Function = hinge)
-    o = heuristic(big_vector)
-    p = (o * hp) .* hn
-
-    diff = p - o[1, :] .* hn
-    diff = map(bg->filter(!=(0), diff[bg]), bags_of_batches)
-    filtered_diff = filter(!=(0), diff)
-    return sum(surrogate.(filtered_diff))
-end
-
-
-# function loss(heuristic, big_vector::Vector, hp=nothing, hn=nothing, surrogate::Function = softplus, cache = LRU(maxsize=10000))
-#     o = map(x->only(heuristic(x, cache)), big_vector)
-#     # @show size(o)
-#     p = (transpose(o) * hp) .* hn
-
-#     diff = p - o .* hn
-#     filtered_diff = filter(!=(0), diff)
-#     return sum(surrogate.(filtered_diff))
-# end
-
-
-function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = hinge)
-    o = heuristic(big_vector)
-    diff = o[hp] .- o[hn]
-    # return sum(surrogate.(diff))
-    # return sum(filter(x->x>=0, diff))
-    return sum(count(>(0), diff))
-end
-
-
-# function loss(heuristic, big_vector::ProductNode, hp::Matrix, hn::Matrix, surrogate::Function = softplus)
-#     o = heuristic(big_vector)
-#     p = (o * hp) .* hn
-
-#     diff = p - o[1, :] .* hn
-#     filtered_diff = filter(!=(0), diff)
-#     return sum(surrogate.(filtered_diff))
-# end
-
-
-# function loss(heuristic, big_vector::ProductNode, hp::Vector, hn::Vector, surrogate::Function = softplus)
-#     o = vec(heuristic(big_vector))
-#     diff = o[hp] - o[hn]
-#     # return sum(surrogate.(diff))
-#     return sum(filter(x->x>=0, diff))
-# end
-
-
 function loss(heuristic, big_vector::ProductNode, hp, hn, surrogate::Function = softplus, agg::Function = mean)
     o = vec(heuristic(big_vector))
     return agg(surrogate.(o[hp] - o[hn]))
-end
-
-
-function heuristic_loss(heuristic, data, in_solution, not_in_solution)
-    loss_t = 0.0
-    heuristics = heuristic(data)
-    in_solution = findall(x->x!=0,sum(in_solution, dims=2)[:, 1]) 
-    for (ind,i) in enumerate(in_solution)
-        a = findall(x->x!=0,not_in_solution[:, ind])
-        for j in a
-            if heuristics[i] >= heuristics[j]
-                loss_t += heuristics[i] - heuristics[j] + 1
-            end
-        end
-    end
-
-    return loss_t
-end
-
-
-function check_loss(heuristics, data, hp, hn)
-    fl1 = heuristic_loss(heuristics, data, hp, hn)
-    fl2 = loss(heuristics, data, hp, hn)
-    @assert fl1 == fl2
-end
-
-
-# function loss(heuristic::ExprModel, params::InitExprModelDense, big_vector, hp, hn, surrogate::Function = logistic)
-#     o = heuristic(big_vector, params)
-#     p = (o * hp) .* hn
-
-#     diff = p - o[1, :] .* hn
-#     filtered_diff = filter(!=(0), diff)
-#     # return sum(log.(1 .+ exp.(filtered_diff)))
-#     # return mean(softmax(filtered_diff))
-#     return sum(surrogate.(filtered_diff))
-# end
-
-
-struct MySimpleChainsLoss{T,Y<:AbstractVector{T}}<:SimpleChains.AbstractLoss{T}
-    targets::Y
-end
-
-SimpleChains.target(loss::MySimpleChainsLoss) = loss.targets
-(loss::MySimpleChainsLoss)(x::AbstractArray) = MySimpleChainsLoss(x)
-
-function (loss::MySimpleChainsLoss)(prev_layer_out::AbstractArray{T}, p::Ptr, pu) where {T}
-    total_loss = loss(big_vector, hp, hn)
-    return total_loss, p, pu
-end
-
-function SimpleChains.layer_output_size(::Val{T}, sl::MySimpleChainsLoss, s::Tuple) where {T}
-    SimpleChains._layer_output_size_no_temp(Val{T}(), sl, s)
-end
-function SimpleChains.forward_layer_output_size(::Val{T}, sl::MySimpleChainsLoss, s) where {T}
-    SimpleChains._layer_output_size_no_temp(Val{T}(), sl, s)
-end
-
-# Todo: implement back prop for your model 
-function SimpleChains.chain_valgrad!(
-    __,
-    previous_layer_output::AbstractArray{T},
-    layers::Tuple{MySimpleChainsLoss},
-    _::Ptr,
-    pu::Ptr{UInt8},
-) where {T}
-    loss = getfield(layers, 1)
-    total_loss = calculate_loss(loss, previous_layer_output)
-    y = loss.targets
-
-    # Store the backpropagated gradient in the previous_layer_output array.
-    for i in eachindex(y)
-        sign_arg = 2 * y[i] - 1
-        # Get the value of the last logit
-        logit_i = previous_layer_output[i]
-        previous_layer_output[i] = -(sign_arg * inv(1 + exp(sign_arg * logit_i)))
-    end
-
-    return total_loss, previous_layer_output, pu
 end

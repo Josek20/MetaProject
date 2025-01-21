@@ -31,7 +31,7 @@ function get_training_data_from_proof(proof::Vector, initial_expression::Expr)
     soltree = Dict{UInt64, Node}()
     exp_cache = LRU(maxsize=10_000)
     expr_cache = LRU(maxsize=10_000)
-    root = Node(initial_expression, (0,0), nothing, 0, expr_cache)
+    root = Node(initial_expression, (0,0), nothing, 0)
     soltree[root.node_id] = root
     ex = initial_expression
     smallest_node = root
@@ -39,7 +39,7 @@ function get_training_data_from_proof(proof::Vector, initial_expression::Expr)
         # reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
         # @show i
         succesors = execute(smallest_node.ex, theory, exp_cache)
-        new_nodes = map(x-> Node(x[2], x[1], smallest_node.node_id, smallest_node.depth + 1, expr_cache), succesors)
+        new_nodes = map(x-> Node(x[2], x[1], smallest_node.node_id, smallest_node.depth + 1), succesors)
         filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
         nodes_ids = map(x->x.node_id, filtered_new_nodes)
         append!(smallest_node.children, nodes_ids)
@@ -259,4 +259,53 @@ function track_proof(initial_expression::Expr, proof::Vector, finall_expression:
         ex = isnothing(o) ? ex : o
     end
     @assert ex == finall_expression
+end
+
+
+function simple_to_flux(m1::ExprModelSimpleChains, m2::ExprModel)
+    simple_weights = SimpleChains.weights(m1.expr_model.args_model, m1.model_params.args_model)
+    for i in 1:length(m2.args_model.layers)
+        m2.args_model.layers[i].weight .= simple_weights[i]
+    end
+    simple_weights = SimpleChains.weights(m1.expr_model.head_model, m1.model_params.head_model)
+    for i in 1:length(m2.head_model.layers)
+        m2.head_model.layers[i].weight .= simple_weights[i]
+    end
+    simple_weights = SimpleChains.weights(m1.expr_model.heuristic, m1.model_params.heuristic)
+    for i in 1:length(m2.heuristic.layers)
+        m2.heuristic.layers[i].weight .= simple_weights[i]
+    end
+    return m2
+end
+
+
+function flux_to_simple(m1::ExprModelSimpleChains, m2::ExprModel)
+    simple_weights = SimpleChains.weights(m1.expr_model.args_model, m1.model_params.args_model)
+    simple_biases = SimpleChains.biases(m1.expr_model.args_model, m1.model_params.args_model)
+    for i in 1:length(m2.args_model.layers)
+        simple_weights[i] .= m2.args_model.layers[i].weight
+        simple_biases[i] .= m2.args_model.layers[i].bias 
+    end
+    simple_weights = SimpleChains.weights(m1.expr_model.head_model, m1.model_params.head_model)
+    simple_biases = SimpleChains.biases(m1.expr_model.head_model, m1.model_params.head_model)
+    for i in 1:length(m2.head_model.layers)
+        simple_weights[i] .= m2.head_model.layers[i].weight
+        simple_biases[i] .= m2.head_model.layers[i].bias 
+    end
+    simple_weights = SimpleChains.weights(m1.expr_model.heuristic, m1.model_params.heuristic)
+    simple_biases = SimpleChains.biases(m1.expr_model.heuristic, m1.model_params.heuristic)
+    for i in 1:length(m2.heuristic.layers)
+        simple_weights[i] .= m2.heuristic.layers[i].weight
+        simple_biases[i] .= m2.heuristic.layers[i].bias
+    end 
+    return m1
+end
+
+
+function reset_all_function_caches()
+    empty!(memoize_cache(exp_size))
+    empty!(memoize_cache(all_expand))
+    empty!(memoize_cache(interned_cached_inference!))
+    empty!(memoize_cache(hashed_expr_cached_inference!))
+    empty!(memoize_cache(expr_cached_inference!))
 end

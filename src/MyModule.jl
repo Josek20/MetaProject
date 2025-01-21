@@ -16,7 +16,9 @@ using SparseArrays
 using LinearAlgebra
 using ChainRulesCore
 using Metatheory.TermInterface
+using MacroTools: isexpr, combinedef, namify, splitarg, splitdef
 
+include("memoization/memoize.jl")
 # include("deduplication/lazyvcatmatrix.jl")
 include("deduplication/dedu_matrix.jl")
 include("deduplication/deduplication.jl")
@@ -75,11 +77,16 @@ end
 include("tree_simplifier.jl")
 include("interned_pipeline.jl")
 
-include("tree_embedding.jl")
+# Todo: Should be deleted. Have splited to different files
+# include("tree_embedding.jl")
+include("expr_model.jl")
+include("expr_model_loss.jl")
+# Todo: Fix the simple chains model with updated api
+include("simple_chains_model.jl")
+export ExprModelSimpleChains
 include("new_ex2mill.jl")
 include("policy_tree_simplifier.jl")
 # include("generate_random_expressions.jl")
-export ExprModelSimpleChains
 export ex2mill, heuristic_loss, ExprModel, all_symbols, symbols_to_index, TrainingSample, train_heuristic!, build_tree, execute, policy_loss_func, test_policy, tree_sample_to_policy_sample, PolicyTrainingSample, variable_names, new_all_symbols, sym_enc, cache_hits, cache_misses 
 include("tests.jl")
 include("utils.jl")

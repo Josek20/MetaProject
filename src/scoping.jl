@@ -1,7 +1,7 @@
 ########################################################################
 # Function interfacing with ScopedValue
 ########################################################################
-using Base.ScopedValues
+# using Base.ScopedValues
 
 nc::NodeCache =NodeCache()
 
