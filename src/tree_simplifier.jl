@@ -766,12 +766,19 @@ function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vecto
         return
     end
     push!(proof_vector, node.rule_index)
-    children_list = soltree[node.parent].children
+    if node.depth == 1
+        tmp = vcat([soltree[i].children for i in soltree[node.parent].children if i != node.node_id]...)
+        extended_children_list = vcat(soltree[node.parent].children, tmp)
+    else
+        tmp = [soltree[i].children for i in soltree[soltree[node.parent].parent].children]
+        extended_children_list = vcat(tmp...)
+    end
+    # children_list = soltree[node.parent].children
     l = length(training_exp)
     pos_index = 0
     push!(hn, [])
     push!(hp, [])
-    for (ind,i) in enumerate(children_list)
+    for (ind,i) in enumerate(extended_children_list)
         if node.node_id == i
             pos_index = ind + l
         else
