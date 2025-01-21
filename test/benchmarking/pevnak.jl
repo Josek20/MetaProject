@@ -38,8 +38,8 @@ end
 
 
 function training_data(n=typemax(Int))
-    train_data_path = "data/neural_rewrter/train.json"
-    train_data = isfile(train_data_path) ? load_data(train_data_path)[10_001:70_000] : load_data(test_data_path)[1:1000]
+    train_data_path = "../data/neural_rewrter/train.json"
+    train_data = load_data(train_data_path)[10_001:70_000]
     train_data = filter(x->!occursin("select", x[1]), train_data)
     train_data = preprosses_data_to_expressions(train_data)
     train_data = sort(train_data, by=x->MyModule.exp_size(x))
@@ -164,7 +164,7 @@ samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_ex
 samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
 MyModule.reset_all_function_caches()
 train(heuristic, samples, training_samples)
-# @assert 1 == 0
+@assert 1 == 0
 
 data = [i.initial_expr for i in training_samples]
 experiment_name = "test_v1_sorted_$(length(data))_$(epochs)_hidden_size_$(hidden_size)"

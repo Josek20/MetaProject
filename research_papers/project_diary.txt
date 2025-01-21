@@ -1,3 +1,12 @@
+25.12.2024 - 21.01.2025
+1) Pevny suggested and prototyped the OnlyNodes (intension to be more type stable and have string interning)
+2) Work done by me to do the testing and ensure its reliability for the pipeline
+3) Pevny rewrote the ExprModel, I rewrote inference functions to use new api
+4) Collisions in training samples enqualities were found. They might influence the training (no specific guarantee)
+5) suggestion to have nodes in a training sample that are 2 distance from the proof (solve the collision problem)
+6) I have extended the extract training sample function to includes extra nodes from the tree (solve the collision problem)
+
+
 10.12.2024
 1) Karel run sympy on the dataset
 2) Re did the training samples extraction, works a bit faster, outputs vectors instead of matrix (hp, hn)
