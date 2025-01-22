@@ -1,3 +1,4 @@
+
 using MyModule
 using MyModule.Flux
 using MyModule.Mill
@@ -8,6 +9,8 @@ using DataFrames
 using Optimisers
 using Statistics
 using CSV
+
+using MyModule: new_all_symbols, exp_size
 
 
 MyModule.get_value(x) = x
@@ -35,11 +38,6 @@ function (r::Metatheory.DynamicRule)(term)
     throw(RuleRewriteError(r, term))
   end
 end
-
-function MyModule.deduplicate(ts::TrainingSample)
-    @set ts.training_data = MyModule.deduplicate(ts.training_data)
-end
-
 
 function training_data(n=typemax(Int))
     train_data_path = "../data/neural_rewrter/train.json"
@@ -102,7 +100,7 @@ function train(model, samples)
             sum_loss = 0.0
             hard_loss = 0
             t = @elapsed for (i, s) in enumerate(samples)
-                ds, I₊, I₋ = s.training_data, s.hp, s.hn
+                ds, I₊, I₋ = s.ds, s.hp, s.hn
                 sa, grad = Flux.Zygote.withgradient(Base.Fix2(lossfun, (ds, I₊, I₋)), model)
                 sum_loss += sa
                 Optimisers.update!(opt_state, model, only(grad))
@@ -112,7 +110,8 @@ function train(model, samples)
         end
 
         MyModule.reset_inference_caches()
-        new_samples = map(samples) do old_sample
+        t = @elapsed new_samples = map(samples) do old_sample
+            @show MyModule.cache_status()
             # search_tree, solution = build_search_tree
 
             # best_node = find_the_solution
@@ -121,28 +120,34 @@ function train(model, samples)
             # minibach = create_training_sample(size_of_neigborhood(1,2,3,∞))
 
             t1 = @elapsed simplified_expression, _, big_vector, saturated, hp, hn, _, proof_vector, _ = MyModule.interned_initialize_tree_search(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
-            mean_size += MyModule.exp_size(simplified_expression)
             new_sample = MyModule.TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, old_sample.initial_expr)
-            sa = MyModule.exp_size(old_sample.expression)
+            sa = old_sample.goal_size
             sb = MyModule.exp_size(new_sample.expression)
             s = string(sa, "-->",sb, "  time to simplify: ", t1)
             if sa == sb
                 s = Base.AnnotatedString(s, [(1:length(s), :face, :grey)])
-                elseif sa > sb
-                    s = Base.AnnotatedString(s, [(1:length(s), :face, :red)])
-                    println(s)
-                else
-                    s = Base.AnnotatedString(s, [(1:length(s), :face, :green)])
-                    println(s)
+                println(s)
+            elseif sa > sb
+                s = Base.AnnotatedString(s, [(1:length(s), :face, :red)])
+                println(s)
+            else
+                s = Base.AnnotatedString(s, [(1:length(s), :face, :green)])
+                println(s)
             end
-            if MyModule.isbetter(old_sample, new_sample)
-                return(MyModule.deduplicate(new_sample))
+            if sb < sa
+                ns = (ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = old_sample.initial_expr, goal_size = sb)
+                return(ns)
             else
                 return(old_sample)
             end
         end
-        mean_size /= length(training_samples)
+        stats = map(last, new_sample)
         @show (t, better_samples_counter, mean_size)
+        (;  better = mean(x -> x[1] > x[2], stats),
+            worse = mean(x -> x[1] < x[2], stats),
+            same = mean(x -> x[1] == x[2], stats),
+            time = t1,
+        )
     # resolve all expressions
     # improve the current solutions
     # form the training samples
@@ -171,7 +176,7 @@ args_model = ProductModel(
     ffnn(2*hidden_size, hidden_size, 1)
     )
 
-heuristic = ExprModel(
+model = ExprModel(
     head_model,
     Mill.SegmentedSum(hidden_size),
     args_model,
@@ -181,18 +186,26 @@ heuristic = ExprModel(
 training_samples = prepare_dataset(100);
 epochs = 1000
 
-samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
-samples = map(MyModule.deduplicate, samples)
-train(heuristic, samples)
-@assert 1 == 0
+samples = map(training_samples) do sample
+    ds, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+    (; ds = MyModule.deduplicate(ds),
+       hp,
+       hn,
+       initial_expr = sample.initial_expr,
+       goal_size = exp_size(sample.expression),
+    )
+end
+# train(heuristic, samples, training_samples)
 
-data = [i.initial_expr for i in training_samples]
-experiment_name = "test_v1_sorted_$(length(data))_$(epochs)_hidden_size_$(hidden_size)"
-serialize("models/trained_heuristic_$(experiment_name).bin", heuristic)
-#heuristic = deserialize("models/trained_heuristic_testing_new_training_api_sorted_filtered_955_10_hidden_size_64.bin")
-MyModule.reset_all_function_caches()
-df = map(data) do ex
-    simplified_expression, _, big_vector, saturated, hp, hn, root, proof_vector, _ = MyModule.interned_initialize_tree_search(heuristic, ex, 1000, 10, new_all_symbols, sym_enc, theory)
-    (; s₀ = MyModule.exp_size(root.ex), sₙ = MyModule.exp_size(simplified_expression), se = simplified_expression, pr = proof_vector)
-end |> DataFrame
-CSV.write("profile_results_trained_heuristic_$(experiment_name).csv", df)
+# @assert 1 == 0
+
+# data = [i.initial_expr for i in training_samples]
+# experiment_name = "test_v1_sorted_$(length(data))_$(epochs)_hidden_size_$(hidden_size)"
+# serialize("models/trained_heuristic_$(experiment_name).bin", heuristic)
+# #heuristic = deserialize("models/trained_heuristic_testing_new_training_api_sorted_filtered_955_10_hidden_size_64.bin")
+# MyModule.reset_all_function_caches()
+# df = map(data) do ex
+#     simplified_expression, _, big_vector, saturated, hp, hn, root, proof_vector, _ = MyModule.interned_initialize_tree_search(heuristic, ex, 1000, 10, new_all_symbols, sym_enc, theory)
+#     (; s₀ = MyModule.exp_size(root.ex), sₙ = MyModule.exp_size(simplified_expression), se = simplified_expression, pr = proof_vector)
+# end |> DataFrame
+# CSV.write("profile_results_trained_heuristic_$(experiment_name).csv", df)

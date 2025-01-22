@@ -50,8 +50,8 @@ function get_training_data_from_proof(proof::Vector, initial_expression::Expr)
         smallest_node = only(filter(x->x.rule_index == i, filtered_new_nodes))
         # ex = smallest_node.ex.ex
     end
-    big_vector, hp, hn, proof_vector, _ = extract_training_data(smallest_node, soltree)
-    return big_vector, hp, hn
+    ds, hp, hn, proof_vector, _ = extract_training_data(smallest_node, soltree)
+    return (;ds, hp, hn)
 end
 
 
@@ -310,6 +310,17 @@ function reset_all_function_caches()
     empty!(memoize_cache(interned_cached_inference!))
     empty!(memoize_cache(hashed_expr_cached_inference!))
     empty!(memoize_cache(expr_cached_inference!))
+end
+
+function cache_status()
+    (
+    node_cache = round(Base.summarysize(nc) / 1_000_000, digits = 2),
+    exp_size = round(Base.summarysize(memoize_cache(exp_size)) / 1_000_000, digits = 2),
+    all_expand = round(Base.summarysize(memoize_cache(all_expand)) / 1_000_000, digits = 2),
+    interned_cached_inference = round(Base.summarysize(memoize_cache(interned_cached_inference!)) / 1_000_000, digits = 2),
+    hashed_expr_cached_inference = round(Base.summarysize(memoize_cache(hashed_expr_cached_inference!)) / 1_000_000, digits = 2),
+    expr_cached_inference = round(Base.summarysize(memoize_cache(expr_cached_inference!)) / 1_000_000, digits = 2),
+    )
 end
 
 
