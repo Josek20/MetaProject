@@ -113,7 +113,7 @@ function interned_initialize_tree_search(heuristic, ex::Expr, max_steps, max_dep
     smallest_node = extract_smallest_terminal_node(soltree, close_list)
     simplified_expression = smallest_node.ex
     # @show length(soltree)
-    big_vector, hp, hn, proof_vector, _ = interned_extract_training_data(smallest_node, soltree)
+    # big_vector, hp, hn, proof_vector, _ = interned_extract_training_data(smallest_node, soltree)
     
     big_vector, hp, hn, proof_vector, _ = extract_training_data1(smallest_node, soltree, root, 2)
     # tmp = []
