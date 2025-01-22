@@ -10,9 +10,39 @@ using Statistics
 using CSV
 
 
+MyModule.get_value(x) = x
+
+const EMPTY_DICT = Base.ImmutableDict{Int,Any}()
+
+function (r::Metatheory.DynamicRule)(term)
+  # n == 1 means that exactly one term of the input (term,) was matched
+  success(bindings, n) =
+    if n == 1
+      bvals = [bindings[i] for i in 1:length(r.patvars)]
+      bvals = map(MyModule.get_value, bvals)
+      v = r.rhs_fun(term, nothing, bvals...)
+      if isnothing(v)
+        return nothing
+      end 
+      v = term isa MyModule.NodeID ? MyModule.intern!(v) : v
+      return(v)
+    end
+
+  try
+    return r.matcher(success, (term,), EMPTY_DICT)
+  catch err
+    rethrow(err)
+    throw(RuleRewriteError(r, term))
+  end
+end
+
+function MyModule.deduplicate(ts::TrainingSample)
+    @set ts.training_data = MyModule.deduplicate(ts.training_data)
+end
+
 
 function training_data(n=typemax(Int))
-    train_data_path = "data/neural_rewrter/train.json"
+    train_data_path = "../data/neural_rewrter/train.json"
     train_data = load_data(train_data_path)[10_001:70_000]
     train_data = filter(x->!occursin("select", x[1]), train_data)
     train_data = preprosses_data_to_expressions(train_data)
@@ -61,17 +91,18 @@ function hardloss(m, (ds, I₊, I₋))
 end
 
 
-function train(model, samples, training_samples)
+function train(model, samples)
     optimizer=ADAM()
     opt_state = Flux.setup(optimizer, model)
     loss_stats = []
     matched_stats = [] 
     # batched_samples = get_batched_samples(samples, batch_size)
     for outer_epoch in 1:100
-        for ep in 1:100
+        for ep in 1:20
             sum_loss = 0.0
             hard_loss = 0
-            t = @elapsed for (i, (ds, I₊, I₋)) in enumerate(samples)
+            t = @elapsed for (i, s) in enumerate(samples)
+                ds, I₊, I₋ = s.training_data, s.hp, s.hn
                 sa, grad = Flux.Zygote.withgradient(Base.Fix2(lossfun, (ds, I₊, I₋)), model)
                 sum_loss += sa
                 Optimisers.update!(opt_state, model, only(grad))
@@ -79,11 +110,9 @@ function train(model, samples, training_samples)
             violations = [hardloss(model, sample) for sample in samples]
             @show (t, sum(violations), quantile(violations, 0:0.1:1))
         end
-        new_samples = []
-        better_samples_counter = 0
-        # empty!(cache)
-        exp_sizes = 
-        samples = map(training_samples) do old_sample
+
+        MyModule.reset_inference_caches()
+        new_samples = map(samples) do old_sample
             # search_tree, solution = build_search_tree
 
             # best_node = find_the_solution
@@ -91,19 +120,29 @@ function train(model, samples, training_samples)
 
             # minibach = create_training_sample(size_of_neigborhood(1,2,3,∞))
 
-            simplified_expression, _, big_vector, saturated, hp, hn, _, proof_vector, _ = MyModule.interned_initialize_tree_search(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
-            @show simplified_expression
+            t1 = @elapsed simplified_expression, _, big_vector, saturated, hp, hn, _, proof_vector, _ = MyModule.interned_initialize_tree_search(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
+            mean_size += MyModule.exp_size(simplified_expression)
             new_sample = MyModule.TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, old_sample.initial_expr)
+            sa = MyModule.exp_size(old_sample.expression)
+            sb = MyModule.exp_size(new_sample.expression)
+            s = string(sa, "-->",sb, "  time to simplify: ", t1)
+            if sa == sb
+                s = Base.AnnotatedString(s, [(1:length(s), :face, :grey)])
+                elseif sa > sb
+                    s = Base.AnnotatedString(s, [(1:length(s), :face, :red)])
+                    println(s)
+                else
+                    s = Base.AnnotatedString(s, [(1:length(s), :face, :green)])
+                    println(s)
+            end
             if MyModule.isbetter(old_sample, new_sample)
-                 return(big_vector, hp, hn)
-                 better_samples_counter += 1
+                return(MyModule.deduplicate(new_sample))
             else
                 return(old_sample)
             end
         end
-        MyModule.reset_all_function_caches()
-        @show (t, better_samples_counter)
-        samples = new_samples
+        mean_size /= length(training_samples)
+        @show (t, better_samples_counter, mean_size)
     # resolve all expressions
     # improve the current solutions
     # form the training samples
@@ -111,7 +150,7 @@ function train(model, samples, training_samples)
 end
 
 
-hidden_size = 64
+hidden_size = 128
 
 function ffnn(idim, hidden_size, layers)
     layers == 1 && return Dense(idim, hidden_size, Flux.gelu)
@@ -139,28 +178,12 @@ heuristic = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
     );
     
-training_samples = prepare_dataset();
+training_samples = prepare_dataset(100);
 epochs = 1000
 
-samples = [MyModule.get_training_data_from_proof_with_soltree(sample.proof, sample.initial_expr) for sample in training_samples]
-samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
-train(heuristic, samples, training_samples)
-
-# begin
-#     MyModule.reset_all_function_caches()
-#     soltree = Dict{UInt64, MyModule.Node}()
-#     open_list = PriorityQueue{MyModule.Node, Float32}()
-#     close_list = Set{UInt64}()
-#     ex = MyModule.intern!(ex)
-#     root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
-#     o = heuristic(root.ex)
-#     soltree[root.node_id] = root
-#     enqueue!(open_list, root, only(o))
-#     reached_goal = MyModule.interned_build_tree!(soltree, heuristic, open_list, close_list, all_symbols, symbols_to_index, 1000, 10, theory)
-#     smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
-#     big_vector, hp, hn, proof_vector, _ = extract_training_data1(smallest_node, soltree, root, 2)
-# end
-    
+samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
+samples = map(MyModule.deduplicate, samples)
+train(heuristic, samples)
 @assert 1 == 0
 
 data = [i.initial_expr for i in training_samples]

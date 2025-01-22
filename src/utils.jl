@@ -311,3 +311,10 @@ function reset_all_function_caches()
     empty!(memoize_cache(hashed_expr_cached_inference!))
     empty!(memoize_cache(expr_cached_inference!))
 end
+
+
+function reset_inference_caches()
+    empty!(memoize_cache(interned_cached_inference!))
+    empty!(memoize_cache(hashed_expr_cached_inference!))
+    empty!(memoize_cache(expr_cached_inference!))
+end
