@@ -240,9 +240,15 @@ function check_inference_consistancy(model, data)
     end
     product_nodes = MyModule.multiple_fast_ex2mill(data, sym_enc)
     o1 = MyModule.heuristic(model, product_nodes)
-    cache = LRU(maxsize=1000)
     for i in symexs
-        o2 = model(i, cache)
+        o2 = model(i)
         @assert abs(o1 - o2) <= 5e-8
+    end
+end
+
+
+function get_conflicting_inequalities(training_samples, training_expressions_in_samples)
+    for ((ds, I₊, I₋), training_expressions) in zip(training_samples, training_expressions_in_samples)
+        
     end
 end

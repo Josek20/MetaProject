@@ -10,35 +10,9 @@ using Statistics
 using CSV
 
 
-MyModule.get_value(x) = x
-
-const EMPTY_DICT = Base.ImmutableDict{Int,Any}()
-
-function (r::Metatheory.DynamicRule)(term)
-  # n == 1 means that exactly one term of the input (term,) was matched
-  success(bindings, n) =
-    if n == 1
-      bvals = [bindings[i] for i in 1:length(r.patvars)]
-      bvals = map(MyModule.get_value, bvals)
-      v = r.rhs_fun(term, nothing, bvals...)
-      if isnothing(v)
-        return nothing
-      end 
-      v = term isa MyModule.NodeID ? MyModule.intern!(v) : v
-      return(v)
-    end
-
-  try
-    return r.matcher(success, (term,), EMPTY_DICT)
-  catch err
-    rethrow(err)
-    throw(RuleRewriteError(r, term))
-  end
-end
-
 
 function training_data(n=typemax(Int))
-    train_data_path = "../data/neural_rewrter/train.json"
+    train_data_path = "data/neural_rewrter/train.json"
     train_data = load_data(train_data_path)[10_001:70_000]
     train_data = filter(x->!occursin("select", x[1]), train_data)
     train_data = preprosses_data_to_expressions(train_data)
@@ -127,6 +101,7 @@ function train(model, samples, training_samples)
                 return(old_sample)
             end
         end
+        MyModule.reset_all_function_caches()
         @show (t, better_samples_counter)
         samples = new_samples
     # resolve all expressions
@@ -136,7 +111,7 @@ function train(model, samples, training_samples)
 end
 
 
-hidden_size = 128
+hidden_size = 64
 
 function ffnn(idim, hidden_size, layers)
     layers == 1 && return Dense(idim, hidden_size, Flux.gelu)
@@ -167,10 +142,25 @@ heuristic = ExprModel(
 training_samples = prepare_dataset();
 epochs = 1000
 
-samples = [MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr) for sample in training_samples]
+samples = [MyModule.get_training_data_from_proof_with_soltree(sample.proof, sample.initial_expr) for sample in training_samples]
 samples = map(x->(MyModule.deduplicate(x[1]), x[2], x[3]), samples)
-MyModule.reset_all_function_caches()
 train(heuristic, samples, training_samples)
+
+# begin
+#     MyModule.reset_all_function_caches()
+#     soltree = Dict{UInt64, MyModule.Node}()
+#     open_list = PriorityQueue{MyModule.Node, Float32}()
+#     close_list = Set{UInt64}()
+#     ex = MyModule.intern!(ex)
+#     root = MyModule.Node(ex, (0,0), nothing, 0, nothing)
+#     o = heuristic(root.ex)
+#     soltree[root.node_id] = root
+#     enqueue!(open_list, root, only(o))
+#     reached_goal = MyModule.interned_build_tree!(soltree, heuristic, open_list, close_list, all_symbols, symbols_to_index, 1000, 10, theory)
+#     smallest_node = MyModule.extract_smallest_terminal_node(soltree, close_list)
+#     big_vector, hp, hn, proof_vector, _ = extract_training_data1(smallest_node, soltree, root, 2)
+# end
+    
 @assert 1 == 0
 
 data = [i.initial_expr for i in training_samples]

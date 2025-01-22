@@ -1,9 +1,11 @@
 function get_training_data_from_proof_with_soltree(proof::Vector, initial_expression::Expr)
     soltree = Dict{UInt64, Node}()
     exp_cache = LRU(maxsize=10_000)
-    expr_cache = LRU(maxsize=10_000)
+    # expr_cache = LRU(maxsize=10_000)
     open_list = PriorityQueue{Node, Float32}()
-    root = Node(initial_expression, (0,0), nothing, 0, expr_cache)
+    close_list = Set{UInt64}()
+
+    root = Node(initial_expression, (0,0), nothing, 0)
     soltree[root.node_id] = root
     ex = initial_expression
     smallest_node = root
@@ -11,7 +13,7 @@ function get_training_data_from_proof_with_soltree(proof::Vector, initial_expres
         # reached_goal = build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, all_symbols, symbols_to_index, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
         # @show i
         succesors = execute(smallest_node.ex, theory, exp_cache)
-        new_nodes = map(x-> Node(x[2], x[1], smallest_node.node_id, smallest_node.depth + 1, expr_cache), succesors)
+        new_nodes = map(x-> Node(x[2], x[1], smallest_node.node_id, smallest_node.depth + 1), succesors)
         filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
         nodes_ids = map(x->x.node_id, filtered_new_nodes)
         append!(smallest_node.children, nodes_ids)
@@ -21,8 +23,8 @@ function get_training_data_from_proof_with_soltree(proof::Vector, initial_expres
         # ex = smallest_node.ex.ex
     end
     # function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
-    build_tree!(soltree, heuristic, open_list, close_list, encodings_buffer, new_all_symbols, sym_enc, 1000, 50, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, 0.5)
-    big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
+    build_tree!(soltree, heuristic, open_list, close_list, new_all_symbols, sym_enc, 100, 50, theory, exp_cache)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data(smallest_node, soltree)
     return big_vector, hp, hn
 end
 
@@ -48,7 +50,7 @@ function get_training_data_from_proof(proof::Vector, initial_expression::Expr)
         smallest_node = only(filter(x->x.rule_index == i, filtered_new_nodes))
         # ex = smallest_node.ex.ex
     end
-    big_vector, hp, hn, proof_vector = extract_training_data(smallest_node, soltree)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data(smallest_node, soltree)
     return big_vector, hp, hn
 end
 

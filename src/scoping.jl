@@ -20,7 +20,7 @@ end
 
 typeof_value(x::NodeID) = typeof_value(nc[x])
 
-# Rules.get_value(x::NodeID) = Rules.get_value(nc[x])
+get_value(x::NodeID) = get_value(nc[x])
 
 function instantiate(left::NodeID, pat::PatTerm, mem)
   args = []

@@ -230,7 +230,7 @@ new_stats/stats/stats/policy_training_loss50ep.png
 new_stats/stats/stats/policy_training_loss60ep.png
 new_stats/stats/stats/policy_training_loss80ep.png
 new_stats/stats/stats/policy_training_loss100ep.png
-models/inf_grad_heuristic1.bson
+models/*
 .vscode/launch.json
 .vscode/settings.json
 data/training_data/training_data/benchmarking.bin

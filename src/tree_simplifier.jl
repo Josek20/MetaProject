@@ -731,12 +731,63 @@ function build_tree_with_multiple_queues!(soltree::Dict{UInt64, Node}, heuristic
 end
 
 
-function extract_smallest_node_proof(node::Node, soltree::Dict{UInt64, Node}, rules_in_proof=[])
-    if node.parent == node.node_id
-        return reverse(rules_in_proof)
+function extract_proof(node::Node, soltree::Dict{UInt64, Node}, nodes_in_proof=[])
+    if node.parent isa Nothing
+        return reverse(nodes_in_proof)
     end
-    push!(nodes_in_proof, node.rule_index)
-    return extract_smallest_node_proof(soltree[node.parent], soltree, rules_in_proof)
+    push!(nodes_in_proof, node)
+    return extract_proof(soltree[node.parent], soltree, nodes_in_proof)
+end
+
+
+function extract_nodes_from_proof!(root, soltree, nodes_on_the_proof, n=1, extracted_nodes=[])
+    if n == 0
+        return
+    end
+    # nodes = map(x->soltree[x].ex, soltree[node.parent])
+    # append!(extracted_nodes, nodes)
+    for i in root.children
+        child_node = soltree[i]
+        if child_node.node_id ∈ nodes_on_the_proof
+            continue
+        else
+            push!(extracted_nodes, child_node.ex)
+            extract_nodes_from_proof!(child_node, soltree, nodes_on_the_proof, n - 1, extracted_nodes)
+            # append!(extracted_nodes, new_nodes)
+        end
+    end
+    # return extracted_nodes
+end
+
+
+function extract_training_data1(node, soltree, root, n=1, sym_enc=sym_enc)
+    nodes_in_proof = extract_proof(node, soltree)
+    training_expressions = []
+    hp = []
+    hn = []
+    nodes_ids_in_proof = [i.node_id for i in nodes_in_proof]
+    for (ind,node) in enumerate(vcat([root], nodes_in_proof[1:end-1]))
+        extended_nodes = []
+        extract_nodes_from_proof!(node, soltree, nodes_ids_in_proof, n, extended_nodes)
+        # @show length(extended_nodes)
+        if isempty(hn)
+            new_hn = collect(2:length(extended_nodes) + 1)
+            append!(hp, fill(1, length(extended_nodes)))
+        else
+            new_hn = collect(hn[end] + 2:hn[end] + 1 + length(extended_nodes))
+            new_hn = vcat(hn, new_hn)
+            append!(hp, fill(hn[end] + 1, length(new_hn)))
+        end
+        append!(hn, new_hn)
+        # @show hn
+        # @show hp
+        push!(training_expressions, nodes_in_proof[ind].ex)
+        append!(training_expressions, extended_nodes)
+    end
+    # @show length(training_expressions)
+    training_expressions = [expr(nc, i) for i in training_expressions]
+    tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_expressions, sym_enc)
+    return tdata, hp, hn, nodes_in_proof, 0
 end
 
 

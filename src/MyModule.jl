@@ -29,6 +29,55 @@ include("onlynode.jl")
 include("onlynodes_rules.jl")
 include("scoping.jl")
 # include("scoping2.jl")
+get_value(x) = x
+typeof_value(x)  = typeof(x)
+
+function Metatheory.matcher(slot::Metatheory.PatVar)
+    pred = slot.predicate
+    if slot.predicate isa Type
+    # pred = x -> typeof(x) <: slot.predicate
+        pred = x -> MyModule.typeof_value(x) <: slot.predicate
+    end
+    function slot_matcher(next, data, bindings)
+        !Metatheory.islist(data) && return
+        val = Metatheory.get(bindings, slot.idx, nothing)
+        if val !== nothing
+            if isequal(val, Metatheory.car(data))
+                return next(bindings, 1)
+            end
+        else
+            if pred(Metatheory.car(data))
+                next(Metatheory.assoc(bindings, slot.idx, Metatheory.car(data)), 1)
+            end
+        end
+    end
+end
+
+
+const EMPTY_DICT = Base.ImmutableDict{Int,Any}()
+function (r::Metatheory.DynamicRule)(term)
+    # n == 1 means that exactly one term of the input (term,) was matched
+    success(bindings, n) =
+    if n == 1
+        bvals = [bindings[i] for i in 1:length(r.patvars)]
+        bvals = map(MyModule.get_value, bvals)
+        v = r.rhs_fun(term, nothing, bvals...)
+        if isnothing(v)
+            return nothing
+        end 
+        v = term isa MyModule.NodeID ? MyModule.intern!(v) : v
+        return(v)
+    end
+    
+    try
+        return r.matcher(success, (term,), EMPTY_DICT)
+    catch err
+        rethrow(err)
+        throw(RuleRewriteError(r, term))
+    end
+end
+
+
 include("my_theory.jl")
 export theory
 include("small_data_loader.jl")
