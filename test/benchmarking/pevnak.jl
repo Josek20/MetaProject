@@ -141,13 +141,14 @@ function train(model, samples)
                 return(old_sample)
             end
         end
-        stats = map(last, new_sample)
+        stats = mean(x.goal_size > y.goal_size for (x,y) in zip(new_samples, samples))
         @show (t, better_samples_counter, mean_size)
-        (;  better = mean(x -> x[1] > x[2], stats),
-            worse = mean(x -> x[1] < x[2], stats),
-            same = mean(x -> x[1] == x[2], stats),
+        (;  better = mean(x.goal_size > y.goal_size for (x,y) in zip(new_samples, samples)),
+            worse = mean(x.goal_size < y.goal_size for (x,y) in zip(new_samples, samples)),
+            same = mean(x.goal_size == y.goal_size for (x,y) in zip(new_samples, samples)), 
             time = t1,
         )
+        samples = new_samples
     # resolve all expressions
     # improve the current solutions
     # form the training samples
@@ -183,7 +184,7 @@ model = ExprModel(
     Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
     );
     
-training_samples = prepare_dataset(100);
+training_samples = prepare_dataset();
 epochs = 1000
 
 samples = map(training_samples) do sample
@@ -195,7 +196,7 @@ samples = map(training_samples) do sample
        goal_size = exp_size(sample.expression),
     )
 end
-# train(heuristic, samples, training_samples)
+train(heuristic, samples, training_samples)
 
 # @assert 1 == 0
 
