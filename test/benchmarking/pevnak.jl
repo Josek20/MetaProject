@@ -12,6 +12,35 @@ using CSV
 
 using MyModule: new_all_symbols, exp_size
 
+using MyModule: interned_build_tree!, extract_smallest_terminal_node, Node, intern!, extract_training_data1, TrainingSample
+using MyModule.DataStructures
+
+
+function build_search_tree(heuristic, ex::Expr, max_steps, max_depth, all_symbols, symbols_to_index, theory)
+    soltree = Dict{UInt64, Node}()
+    open_list = PriorityQueue{Node, Float32}()
+    close_list = Set{UInt64}()
+    ex = intern!(ex)
+    root = Node(ex, (0,0), nothing, 0, nothing)
+    o = heuristic(root.ex)
+    soltree[root.node_id] = root
+    enqueue!(open_list, root, only(o))
+    reached_goal = interned_build_tree!(soltree, heuristic, open_list, close_list, all_symbols, symbols_to_index, max_steps, max_depth, theory)
+    smallest_node = extract_smallest_terminal_node(soltree, close_list)
+    return(soltree, smallest_node, root)
+end
+
+function _extract_training_data(smallest_node, soltree, root, max_depth, initial_expr)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data1(smallest_node, soltree, root, max_depth)
+    saturated = false
+    simplified_expression = smallest_node.ex
+    new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, initial_expr)            
+end
+
+function _extract_training_data_2(smallest_node, soltree, root, max_depth, initial_expr)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data2(smallest_node, soltree, root, max_depth)
+    new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, initial_expr)            
+end
 
 MyModule.get_value(x) = x
 
@@ -109,21 +138,19 @@ function train(model, samples)
             @show (t, sum(violations), quantile(violations, 0:0.1:1))
         end
 
-        MyModule.reset_inference_caches()
-        t = @elapsed new_samples = map(samples) do old_sample
-            @show MyModule.cache_status()
+        @show MyModule.cache_status()
+        t = @elapsed new_samples = map(enumerate(samples)) do (i, old_sample)
+            MyModule.reset_inference_caches()
+
             # search_tree, solution = build_search_tree
 
             # best_node = find_the_solution
 
-
-            # minibach = create_training_sample(size_of_neigborhood(1,2,3,∞))
-
-            t1 = @elapsed simplified_expression, _, big_vector, saturated, hp, hn, _, proof_vector, _ = MyModule.interned_initialize_tree_search(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
-            new_sample = MyModule.TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, old_sample.initial_expr)
+            t1 = @elapsed (soltree, smallest_node, root) = build_search_tree(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
             sa = old_sample.goal_size
-            sb = MyModule.exp_size(new_sample.expression)
-            s = string(sa, "-->",sb, "  time to simplify: ", t1)
+            sb = MyModule.exp_size(smallest_node.ex)
+            s = string(i,"  ", sa, "-->",sb, "  time to simplify: ", t1)
+            # @show MyModule.cache_status()
             if sa == sb
                 s = Base.AnnotatedString(s, [(1:length(s), :face, :grey)])
                 println(s)
@@ -135,8 +162,10 @@ function train(model, samples)
                 println(s)
             end
             if sb < sa
+                new_sample = _extract_training_data(smallest_node, soltree, root, 2, old_sample.initial_expr)
                 ns = (ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = old_sample.initial_expr, goal_size = sb)
                 return(ns)
+                # return(old_sample)
             else
                 return(old_sample)
             end
@@ -196,7 +225,7 @@ samples = map(training_samples) do sample
        goal_size = exp_size(sample.expression),
     )
 end
-train(heuristic, samples, training_samples)
+# train(model, samples)
 
 # @assert 1 == 0
 
