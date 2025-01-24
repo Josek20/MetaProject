@@ -148,7 +148,7 @@ function train(model, samples)
         end
 
         @show MyModule.cache_status()
-        t = @elapsed stats = map(enumerate(samples)) do (i, old_sample)
+        t = @elapsed samples = map(enumerate(samples)) do (i, old_sample)
             MyModule.reset_inference_caches()
 
             # search_tree, solution = build_search_tree
@@ -179,7 +179,7 @@ function train(model, samples)
             end
         end
 
-        push!(all_stats, stats)
+        push!(all_stats,  [s.goal_size for s in samples])
         println(mean.(all_stats))
         # @show summarize(stats)
         # @show (t, better_samples_counter, mean_size)
@@ -236,7 +236,7 @@ samples = map(training_samples) do sample
        goal_size = exp_size(sample.expression),
     )
 end
-# train(model, samples)
+train(model, samples)
 
 
 # data = [i.initial_expr for i in training_samples]
