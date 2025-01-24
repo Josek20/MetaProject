@@ -12,7 +12,7 @@ using CSV
 
 using MyModule: new_all_symbols, exp_size
 
-using MyModule: interned_build_tree!, extract_smallest_terminal_node, Node, intern!, extract_training_data1, TrainingSample
+using MyModule: interned_build_tree!, extract_smallest_terminal_node, Node, intern!, extract_training_data1, TrainingSample, extract_training_data3
 using MyModule.DataStructures
 
 
@@ -158,7 +158,7 @@ function train(model, samples)
 
             # best_node = find_the_solution
 
-            t = @elapsed (soltree, smallest_node, root) = build_search_tree(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
+            t = @elapsed (soltree, smallest_node, root) = build_search_tree(model, old_sample.initial_expr, 1000, 50, new_all_symbols, sym_enc, theory)
             sa = old_sample.goal_size
             sb = MyModule.exp_size(smallest_node.ex)
             s = string(i,"  ", sa, "-->",sb, "  time to simplify: ", t)
