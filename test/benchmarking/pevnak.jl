@@ -117,14 +117,26 @@ function hardloss(m, (ds, I₊, I₋))
     sum(Heaviside.(o[I₊] - o[I₋]))
 end
 
+function summarize(xs, ys)
+    summary = (;  better = mean(x > y for (x,y) in zip(xs, ys)),
+        worse = mean(x < y for (x,y) in zip(xs, ys)),
+        same = mean(x == y for (x,y) in zip(xs, ys)), 
+    )
+end
+
+function summarize(all_stats)
+    for i in 1:length(all_stats) - 1
+        println(summarize(all_stats[i], all_stats[i+1]))
+    end
+end
 
 function train(model, samples)
     optimizer=ADAM()
     opt_state = Flux.setup(optimizer, model)
     loss_stats = []
-    matched_stats = [] 
-    # batched_samples = get_batched_samples(samples, batch_size)
-    for outer_epoch in 1:100
+    all_stats = []
+    push!(all_stats, [s.goal_size for s in samples])
+    for outer_epoch in 1:3
         for ep in 1:20
             sum_loss = 0.0
             hard_loss = 0
@@ -139,17 +151,17 @@ function train(model, samples)
         end
 
         @show MyModule.cache_status()
-        t = @elapsed new_samples = map(enumerate(samples)) do (i, old_sample)
+        t = @elapsed stats = map(enumerate(samples)) do (i, old_sample)
             MyModule.reset_inference_caches()
 
             # search_tree, solution = build_search_tree
 
             # best_node = find_the_solution
 
-            t1 = @elapsed (soltree, smallest_node, root) = build_search_tree(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
+            t = @elapsed (soltree, smallest_node, root) = build_search_tree(model, old_sample.initial_expr, 1000, 10, new_all_symbols, sym_enc, theory)
             sa = old_sample.goal_size
             sb = MyModule.exp_size(smallest_node.ex)
-            s = string(i,"  ", sa, "-->",sb, "  time to simplify: ", t1)
+            s = string(i,"  ", sa, "-->",sb, "  time to simplify: ", t)
             # @show MyModule.cache_status()
             if sa == sb
                 s = Base.AnnotatedString(s, [(1:length(s), :face, :grey)])
@@ -165,19 +177,21 @@ function train(model, samples)
                 new_sample = _extract_training_data(smallest_node, soltree, root, 2, old_sample.initial_expr)
                 ns = (ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = old_sample.initial_expr, goal_size = sb)
                 return(ns)
-                # return(old_sample)
             else
                 return(old_sample)
             end
         end
-        stats = mean(x.goal_size > y.goal_size for (x,y) in zip(new_samples, samples))
-        @show (t, better_samples_counter, mean_size)
-        (;  better = mean(x.goal_size > y.goal_size for (x,y) in zip(new_samples, samples)),
-            worse = mean(x.goal_size < y.goal_size for (x,y) in zip(new_samples, samples)),
-            same = mean(x.goal_size == y.goal_size for (x,y) in zip(new_samples, samples)), 
-            time = t1,
-        )
-        samples = new_samples
+
+        push!(all_stats, stats)
+        println(mean.(all_stats))
+        # @show summarize(stats)
+        # @show (t, better_samples_counter, mean_size)
+        # (;  better = mean(x.goal_size > y.goal_size for (x,y) in zip(new_samples, samples)),
+        #     worse = mean(x.goal_size < y.goal_size for (x,y) in zip(new_samples, samples)),
+        #     same = mean(x.goal_size == y.goal_size for (x,y) in zip(new_samples, samples)), 
+        #     time = t1,
+        # )
+        # samples = new_samples
     # resolve all expressions
     # improve the current solutions
     # form the training samples

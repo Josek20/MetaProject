@@ -759,6 +759,46 @@ function extract_nodes_from_proof!(root, soltree, nodes_on_the_proof, n=1, extra
     # return extracted_nodes
 end
 
+"""
+    returns a structure with distances from the proof
+"""
+function distance_from_proof(soltree, nodes_in_proof)
+    d = sizehint!(Dict{UInt64,UInt16}(), length(soltree))
+    function length_from_path(node)
+        get!(d, node.node_id) do 
+            node.parent isa Nothing && return 0 # this is to handle root node
+            node ∈ nodes_in_proof ? 0 : length_from_path(soltree[node.parent]) + 1
+        end
+    end
+
+    foreach(length_from_path, values(soltree))
+    d
+end
+
+function parent_in_proof(soltree, nodes_in_proof, nodes)
+    d = sizehint!(Dict{UInt64,UInt64}(), length(nodes))
+    for node in nodes_in_proof
+        d[node] = d
+    end
+
+    function _parent(node)
+        get!(d, id) do 
+            _parent(node.parent)
+        end
+    end
+
+    foreach(_parent, values(soltree))
+    d
+end
+
+
+function extract_training_data2(node,...)
+    d2p = distance_from_proof(soltree, nodes_on_the_proof)
+    d2p = filter(v -> v ≤ 2, d2p) # ids of nodes of interest
+
+    d = parent_in_proof(soltree, nodes_in_proof, keys(d2p))
+end
+
 
 function extract_training_data1(node, soltree, root, n=1, sym_enc=sym_enc)
     nodes_in_proof = extract_proof(node, soltree)
