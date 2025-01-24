@@ -900,8 +900,9 @@ function extract_training_data3(node, soltree, root, n=1, sym_enc=sym_enc)
         n == p && continue
         push!(proof_node_neighbors[p], n)
     end
-    max_length = cumsum([length(proof_node_neighbors[n.node_id]) for n in nodes_in_proof])[end]
-    hp, hn = sizehint!(Int[], max_length), sizehint!(Int[], max_length)
+    max_length = cumsum([length(proof_node_neighbors[n.node_id]) for n in nodes_in_proof])
+    @show max_length
+    hp, hn = sizehint!(Int[], sum(max_length[1:end-1])), sizehint!(Int[], sum(max_length[1:end-1]))
     training_expressions = sizehint!(typeof(node.ex)[], length(d2p))
     for (ind,n) in enumerate(nodes_in_proof[1:end-1])
         id = n.node_id
@@ -911,14 +912,15 @@ function extract_training_data3(node, soltree, root, n=1, sym_enc=sym_enc)
         else
             new_hn = hn[end] + 2:hn[end] + 1 + length(proof_node_neighbors[id])
             @assert length(new_hn) == length(proof_node_neighbors[id]) 
-            append!(hp, fill(hn[end] + 1, length(proof_node_neighbors[id]) + length(hn)))
-            append!(hn, hn)
+            prev_inequalities = hn[end - max_length[ind - 1] + 1:end]
+            append!(hp, fill(hn[end] + 1, length(proof_node_neighbors[id]) + length(prev_inequalities)))
+            append!(hn, prev_inequalities)
             append!(hn, new_hn)
         end
         push!(training_expressions, nodes_in_proof[ind + 1].ex)
         append!(training_expressions, [soltree[i].ex for i in proof_node_neighbors[id]])
     end
-    @assert length(hp) == length(hn)
+    @assert length(hp) == length(hn) == sum(max_length[1:end-1])
     training_expressions = transform_to_expr(training_expressions)
     td = no_reduce_multiple_fast_ex2mill(training_expressions, sym_enc)
     return td, hp, hn, [], td
