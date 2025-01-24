@@ -946,21 +946,21 @@ function extract_training_data1(node, soltree, root, n=1, sym_enc=sym_enc)
         push!(training_expressions, nodes_in_proof[ind].ex, extended_nodes...)
     end
     @assert length(hp) == length(hn)
-    training_expressions = [expr(nc, i) for i in training_expressions]
+    training_expressions = transform_to_expr(training_expressions)
     tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_expressions, sym_enc)
     return tdata, hp, hn, nodes_in_proof, training_expressions
 end
 
 
 function extract_training_data(node, soltree, sym_enc=sym_enc)
-    training_exp=[]
+    training_exp=typeof(node.ex)[]
     hp=Vector[]
     hn=Vector[]
     proof_vector=[]
     extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
     hp = reduce(vcat, hp)
     hn = reduce(vcat, hn)
-    training_exp = [expr(nc, i) for i in training_exp]
+    training_exp = transform_to_expr(training_exp)
     tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_exp, sym_enc)
     return tdata, hp, hn, reverse(proof_vector), training_exp
 end
@@ -1133,13 +1133,12 @@ end
 
 
 function TrainingSample(ex::Expr)
-    return TrainingSample{Union{ProductNode, Nothing}, Bool, ExprWithHash, Vector, Matrix, Matrix, Expr}(nothing, false, ExprWithHash(ex, LRU(maxsize=1000)), [], [], [], ex)
+    return TrainingSample{Union{ProductNode, Nothing}, Bool, ExprWithHash, Vector, Matrix, Matrix, Expr}(nothing, false, ExprWithHash(ex), [], [], [], ex)
 end
 
 
 function TrainingSample(list_of_ex::Vector)
-    hash_expr_cache = LRU(maxsize=10_000)
-    return map(ex->TrainingSample{Union{ProductNode, Nothing}, Bool, ExprWithHash, Vector, Matrix, Matrix, Expr}(nothing, false, ExprWithHash(ex, hash_expr_cache), [], zeros(0,0), zeros(0,0), ex), list_of_ex)
+    return map(ex->TrainingSample{Union{ProductNode, Nothing}, Bool, ExprWithHash, Vector, Matrix, Matrix, Expr}(nothing, false, ExprWithHash(ex), [], zeros(0,0), zeros(0,0), ex), list_of_ex)
 end
 
 

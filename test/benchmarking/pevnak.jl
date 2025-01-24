@@ -31,7 +31,7 @@ function build_search_tree(heuristic, ex::Expr, max_steps, max_depth, all_symbol
 end
 
 function _extract_training_data(smallest_node, soltree, root, max_depth, initial_expr)
-    big_vector, hp, hn, proof_vector, _ = extract_training_data1(smallest_node, soltree, root, max_depth)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data3(smallest_node, soltree, root, max_depth)
     saturated = false
     simplified_expression = smallest_node.ex
     new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, initial_expr)            
@@ -231,16 +231,15 @@ model = ExprModel(
 training_samples = prepare_dataset();
 epochs = 1000
 samples = map(training_samples) do sample
-    ds, hp, hn, tr = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+    ds, hp, hn, _ = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
     (; ds = MyModule.deduplicate(ds),
        hp,
        hn,
        initial_expr = sample.initial_expr,
        goal_size = exp_size(sample.expression),
-       tr = tr,
     )
 end
-# train(model, samples)
+train(model, samples)
 
 
 # data = [i.initial_expr for i in training_samples]
