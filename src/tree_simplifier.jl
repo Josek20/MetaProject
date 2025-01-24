@@ -921,7 +921,7 @@ function extract_training_data3(node, soltree, root, n=1, sym_enc=sym_enc)
     @assert length(hp) == length(hn)
     training_expressions = transform_to_expr(training_expressions)
     td = no_reduce_multiple_fast_ex2mill(training_expressions, sym_enc)
-    return td, hp, hn
+    return td, hp, hn, [], td
 end
 
 
