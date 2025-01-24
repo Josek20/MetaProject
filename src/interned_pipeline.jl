@@ -19,7 +19,7 @@ end
     node = nc[x]
     if node == nullnode
         return 0f0
-    elseif !(node.iscall)
+    elseif !(node.iscall) && node.head ∉ [:&&, :||]
         return 1f0
     end
     return exp_size(node.left) + exp_size(node.right) + 1
