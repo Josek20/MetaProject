@@ -79,7 +79,7 @@ end
 
 
 function prepare_dataset(n=typemax(Int))
-    samples = deserialize("../../data/training_data/size_heuristic_training_samples1.bin")
+    samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
     samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr))
     # samples = sort(samples, by=x->length(x.proof))
@@ -200,6 +200,7 @@ end
 
 
 hidden_size = 128
+hidden_size = 128
 
 function ffnn(idim, hidden_size, layers)
     layers == 1 && return Dense(idim, hidden_size, Flux.gelu)
@@ -229,19 +230,18 @@ model = ExprModel(
     
 training_samples = prepare_dataset();
 epochs = 1000
-
 samples = map(training_samples) do sample
-    ds, hp, hn = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
+    ds, hp, hn, tr = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
     (; ds = MyModule.deduplicate(ds),
        hp,
        hn,
        initial_expr = sample.initial_expr,
        goal_size = exp_size(sample.expression),
+       tr = tr,
     )
 end
 # train(model, samples)
 
-# @assert 1 == 0
 
 # data = [i.initial_expr for i in training_samples]
 # experiment_name = "test_v1_sorted_$(length(data))_$(epochs)_hidden_size_$(hidden_size)"

@@ -2,7 +2,7 @@
 
 julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "fa24e0a3532636a8d1ee10a266a3c33a55480b8c"
+project_hash = "14ff595ddcdacf0f0c9db226c61abe76d879940f"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -170,12 +170,6 @@ git-tree-sha1 = "5a97e67919535d6841172016c9530fd69494e5ec"
 uuid = "2a0fbf3d-bb9c-48f3-b0a9-814d99fd7ab9"
 version = "0.2.6"
 
-[[deps.CSV]]
-deps = ["CodecZlib", "Dates", "FilePathsBase", "InlineStrings", "Mmap", "Parsers", "PooledArrays", "PrecompileTools", "SentinelArrays", "Tables", "Unicode", "WeakRefStrings", "WorkerUtilities"]
-git-tree-sha1 = "deddd8725e5e1cc49ee205a1964256043720a6c3"
-uuid = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
-version = "0.10.15"
-
 [[deps.ChainRules]]
 deps = ["Adapt", "ChainRulesCore", "Compat", "Distributed", "GPUArraysCore", "IrrationalConstants", "LinearAlgebra", "Random", "RealDot", "SparseArrays", "SparseInverseSubset", "Statistics", "StructArrays", "SuiteSparse"]
 git-tree-sha1 = "4312d7869590fab4a4f789e97bd82f0a04eaaa05"
@@ -203,12 +197,6 @@ deps = ["InteractiveUtils", "UUIDs"]
 git-tree-sha1 = "7eee164f122511d3e4e1ebadb7956939ea7e1c77"
 uuid = "da1fd8a2-8d9e-5ec2-8556-3022fb5608a2"
 version = "1.3.6"
-
-[[deps.CodecZlib]]
-deps = ["TranscodingStreams", "Zlib_jll"]
-git-tree-sha1 = "bce6804e5e6044c6daab27bb533d1295e4a2e759"
-uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
-version = "0.7.6"
 
 [[deps.Combinatorics]]
 git-tree-sha1 = "08c8b6831dc00bfea825826be0bc8336fc369860"
@@ -376,17 +364,6 @@ version = "1.16.6"
 
     [deps.FileIO.weakdeps]
     HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-
-[[deps.FilePathsBase]]
-deps = ["Compat", "Dates"]
-git-tree-sha1 = "7878ff7172a8e6beedd1dea14bd27c3c6340d361"
-uuid = "48062228-2e41-5def-b9a4-89aafe57970f"
-version = "0.9.22"
-weakdeps = ["Mmap", "Test"]
-
-    [deps.FilePathsBase.extensions]
-    FilePathsBaseMmapExt = "Mmap"
-    FilePathsBaseTestExt = "Test"
 
 [[deps.FileWatching]]
 uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
@@ -1219,11 +1196,6 @@ git-tree-sha1 = "d7298ebdfa1654583468a487e8e83fae9d72dac3"
 uuid = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 version = "0.5.26"
 
-[[deps.TranscodingStreams]]
-git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"
-uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
-version = "0.11.3"
-
 [[deps.Transducers]]
 deps = ["Accessors", "ArgCheck", "BangBang", "Baselet", "CompositionsBase", "ConstructionBase", "DefineSingletons", "Distributed", "InitialValues", "Logging", "Markdown", "MicroCollections", "Requires", "SplittablesBase", "Tables"]
 git-tree-sha1 = "7deeab4ff96b85c5f72c824cae53a1398da3d1cb"
@@ -1284,17 +1256,6 @@ weakdeps = ["Requires", "StaticArraysCore"]
 
     [deps.VectorizedRNG.extensions]
     VectorizedRNGStaticArraysExt = ["StaticArraysCore"]
-
-[[deps.WeakRefStrings]]
-deps = ["DataAPI", "InlineStrings", "Parsers"]
-git-tree-sha1 = "b1be2855ed9ed8eac54e5caff2afcdb442d52c23"
-uuid = "ea10d353-3f73-51f8-a26c-33c1cb351aa5"
-version = "1.4.2"
-
-[[deps.WorkerUtilities]]
-git-tree-sha1 = "cd1659ba0d57b71a464a29e64dbc67cfe83d54e7"
-uuid = "76eceee3-57b5-4d4a-8e66-0e911cebbf60"
-version = "1.6.1"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]

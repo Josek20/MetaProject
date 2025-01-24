@@ -443,17 +443,17 @@ function plot_grouped_difference(name)
     # df1 = CSV.read("profile_results_exp_size_as_heuristic.csv", DataFrame)
     # df2 = CSV.read("profile_results_trained_heuristic_not_overfit2.csv", DataFrame)
     # df3 = CSV.read("profile_results_trained_heuristic_overfit2.csv", DataFrame)
-    # df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_1000.csv", DataFrame)
-    df4 = CSV.read("profile_results_trained_heuristic_test_new_training_heuristic_no_boosting_batched_sorted_1000_1000_hidden_size_128.csv", DataFrame)
+    df1 = CSV.read("profile_results_trained_heuristic_old_heuristic_check_1000.csv", DataFrame)
+    df4 = CSV.read("profile_results_trained_heuristic_testing_new_training_heuristic_v3_sorted_1000_100_hidden_size_64.csv", DataFrame)
     big_df = DataFrame()
     big_df[!, :s0] = df4[!, 1]
-    # big_df[!, :s2] = df1[!, 1] .- df1[!,2]
+    big_df[!, :s2] = df1[!, 1] .- df1[!,2]
     # big_df[!, :s1] = df2[!, 1] .- df2[!,2]
     # big_df[!, :s3] = df3[!, 1] .- df3[!,2]
     big_df[!, :s4] = df4[!, 1] .- df4[!,2]
     combined_df = combine(groupby(big_df, :s0),              
         #    [:s1, :s2, :s3, :s4] .=> mean .=> [:size_heuristic, :not_overfited_heuristic, :overfitted_heuristic, :new_not_overfited])
-           [:s3, :s4] .=> mean .=> [:size_heuristic, :new_not_overfited])
+           [:s2, :s4] .=> mean .=> [:size_heuristic, :new_not_overfited])
     plot_data = stack(combined_df, Not(:s0))
     rename!(plot_data, :variable => :method, :value => :performance)
     bar(plot_data.:s0, plot_data.performance, group=plot_data.method,

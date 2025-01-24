@@ -14,7 +14,7 @@ function interned_extract_training_data(node, soltree, sym_enc=sym_enc)
 end
 
 
-@my_cache function exp_size(x::NodeID)
+@my_cache LRU(maxsize=100000) function exp_size(x::NodeID)
     # get!(size_cache, x) do
     node = nc[x]
     if node == nullnode
@@ -27,7 +27,7 @@ end
 end
 
 
-@my_cache function all_expand(node_id::NodeID, theory)
+@my_cache LRU(maxsize=10000) function all_expand(node_id::NodeID, theory)
     node = nc[node_id]
     !(node.iscall) && return(NodeID[])
     # get!(expr_cache, node_id) do
@@ -63,7 +63,6 @@ function interned_expand_node!(parent::Node, soltree, heuristic, open_list, all_
     new_nodes = map(x-> Node(x, (0,0), parent.node_id, parent.depth + 1, nothing), succesors)
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     isempty(filtered_new_nodes) && return(false)
-    # o = map(x->exp_size(x.ex), filtered_new_nodes)
     o = map(x->only(heuristic(x.ex)), filtered_new_nodes)
     for (v,n) in zip(o, filtered_new_nodes)
         enqueue!(open_list, n, v)
@@ -80,14 +79,14 @@ end
 function interned_build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, theory)
     step = 0
     reached_goal = false
-    epsilon = 0.05
-    expand_n = 25
-    expanded_depth = []
     while length(open_list) > 0
         if max_steps <= step
             break
         end
         nodes, prob = dequeue_pair!(open_list)
+        if nodes.depth >= max_depth
+            continue
+        end
         push!(close_list, nodes.node_id)
         step += 1
         reached_goal = interned_expand_node!(nodes, soltree, heuristic, open_list, all_symbols, symbols_to_index, theory)

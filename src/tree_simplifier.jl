@@ -515,9 +515,9 @@ function expand_node!(parent::Node, soltree, heuristic, open_list, all_symbols, 
     isempty(filtered_new_nodes) && return(false)
     exprs = map(x->x.ex, filtered_new_nodes)
     # o = map(x->alpha * exp_size(x.ex, size_cache) + (1 - alpha) * only(heuristic(x.ex, cache)), filtered_new_nodes)
-    # o = map(x->exp_size(x.ex), filtered_new_nodes)
+    o = map(x->exp_size(x.ex), filtered_new_nodes)
     # o = map(x->node_count(x.ex.ex), filtered_new_nodes)
-    o = map(x->only(heuristic(x.ex)), filtered_new_nodes)
+    # o = map(x->only(heuristic(x.ex)), filtered_new_nodes)
     # o = heuristic(exprs, cache)
     for (v,n) in zip(o, filtered_new_nodes)
         enqueue!(open_list, n, v)
@@ -687,11 +687,11 @@ function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::Priority
             break
         end
         nodes, prob = dequeue_pair!(open_list)
-        # if nodes.depth >= max_depth
-        #     continue
-        # end
+        if nodes.depth >= max_depth
+            continue
+        end
         step += 1
-        @show @elapsed reached_goal = expand_node!(nodes, soltree, heuristic, open_list, all_symbols, symbols_to_index, theory, exp_cache)
+        reached_goal = expand_node!(nodes, soltree, heuristic, open_list, all_symbols, symbols_to_index, theory, exp_cache)
         if reached_goal
             return true 
         end
@@ -753,10 +753,99 @@ function extract_nodes_from_proof!(root, soltree, nodes_on_the_proof, n=1, extra
         else
             push!(extracted_nodes, child_node.ex)
             extract_nodes_from_proof!(child_node, soltree, nodes_on_the_proof, n - 1, extracted_nodes)
-            # append!(extracted_nodes, new_nodes)
         end
     end
-    # return extracted_nodes
+end
+
+
+function count_neighbors(root, soltree, nodes_on_the_proof, n=1)
+    if n == 1
+        return length(root.children)
+    end
+    res = 0
+    for i in root.children
+        child_node = soltree[i]
+        if child_node.node_id ∈ nodes_on_the_proof
+            continue
+        end
+        res += count_neighbors(child_node, soltree, nodes_on_the_proof, n - 1)
+    end
+    return res + length(root.children) 
+end
+
+
+function check_allocation(n, hp, hn, last_pointer, allocation_size=100)
+    # @show length(hp[last_pointer:end]), n
+    if n > length(hp[last_pointer:end])
+        # println("Extending")
+        push!(hp, zeros(Int, allocation_size)...)
+        push!(hn, zeros(Int, allocation_size)...)
+    end
+    return hp, hn
+end
+
+
+function extract_training_data2(node, soltree, root, n=1, sym_enc=sym_enc)
+    nodes_in_proof = extract_proof(node, soltree)
+    nodes_ids_in_proof = [i.node_id for i in nodes_in_proof]
+    total_nodes_in_samples = 0
+    for (ind, node) in enumerate(vcat([root], nodes_in_proof[1:end-1]))
+        total_nodes_in_samples += count_neighbors(node, soltree, nodes_ids_in_proof, n)
+    end
+    # @show total_nodes_in_samples
+    total_nodes_in_samples += length(nodes_in_proof)
+    training_expressions = Any[nullid for _ in 1:total_nodes_in_samples]
+    hp = zeros(Int, total_nodes_in_samples)
+    hn = zeros(Int, total_nodes_in_samples)
+    last_pointer = 1
+    old_pointer = 1
+    for (ind, node) in enumerate(vcat([root], nodes_in_proof[1:end-1]))
+        extended_nodes = []
+        extract_nodes_from_proof!(node, soltree, nodes_ids_in_proof, n, extended_nodes)
+        # @show hn[last_pointer - 1 == 0 ? 1 : last_pointer - 1] + length(extended_nodes) + 1
+        hp, hn = check_allocation(hn[last_pointer - 1 == 0 ? 1 : last_pointer - 1] + length(extended_nodes) + 1, hp, hn, last_pointer, (hn[last_pointer - 1 + 1] + length(extended_nodes) + 1) * 2)
+        # @show length(hp[last_pointer:end]), length(hn)
+        # @show last_pointer
+        # @show hp[1:last_pointer], hn[1:last_pointer]
+        # @show length(extended_nodes)
+        if ind == 1
+            new_hn = 2:length(extended_nodes) + 1
+            hn[last_pointer:length(extended_nodes)] = new_hn
+            hp[last_pointer:length(extended_nodes)] .= 1
+            # @show training_expressions[last_pointer:last_pointer+length(extended_nodes) + 1]
+            training_expressions[last_pointer] = nodes_in_proof[ind].ex
+            training_expressions[last_pointer + 1:last_pointer + length(extended_nodes)] = extended_nodes
+            # @show training_expressions[last_pointer:last_pointer+length(extended_nodes) + 1]
+        else
+            new_hn = hn[last_pointer - 1] + 2:hn[last_pointer - 1] + length(extended_nodes) + 1
+            # new_hn = 2:hn[last_pointer - 1] + length(extended_nodes) + 1
+            # new_hn = filter!()
+            new_hp = hn[last_pointer - 1] + 1
+            # @show hn[old_pointer:last_pointer+1]
+            hn[last_pointer:last_pointer + length(old_pointer:last_pointer - 2)] = hn[old_pointer:last_pointer - 1]
+            # @show hn[last_pointer + length(old_pointer:last_pointer):last_pointer + length(new_hn) + length(old_pointer:last_pointer)]
+            hn[last_pointer + length(old_pointer:last_pointer - 2):last_pointer + length(new_hn) + length(old_pointer:last_pointer)] = new_hn
+            # @show last_pointer:last_pointer + length(extended_nodes) - 1
+            hp[last_pointer:last_pointer + length(new_hn) + length(old_pointer:last_pointer - 1)] .= new_hp
+            # @show training_expressions[last_pointer:last_pointer+length(extended_nodes) + 2]
+            training_expressions[last_pointer + 1] = nodes_in_proof[ind].ex
+            training_expressions[last_pointer + 2:last_pointer + length(extended_nodes) + 1] = extended_nodes
+            # @show training_expressions[last_pointer + 1:last_pointer+length(extended_nodes) + 2]
+        end
+        # training_expressions[last_pointer] = nodes_in_proof[ind].ex
+        # training_expressions[last_pointer + 1:last_pointer + length(extended_nodes)] = extended_nodes
+        old_pointer = last_pointer
+        last_pointer += length(extended_nodes)
+    end
+    hp = filter(!=(0), hp)
+    hn = filter(!=(0), hn)
+    training_expressions = filter(!=(nullid), training_expressions)
+    @assert length(hp) == length(hn)
+    # @show length(training_expressions)
+    training_expressions = [expr(nc, i) for i in training_expressions]
+    # @show training_expressions[end-10:end]
+    # tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_expressions, sym_enc)
+    return [], hp, hn, nodes_in_proof, training_expressions
 end
 
 """
@@ -778,25 +867,61 @@ end
 function parent_in_proof(soltree, nodes_in_proof, nodes)
     d = sizehint!(Dict{UInt64,UInt64}(), length(nodes))
     for node in nodes_in_proof
-        d[node] = d
+        d[node.node_id] = node.node_id
     end
 
     function _parent(node)
-        get!(d, id) do 
-            _parent(node.parent)
+        get!(d, node) do 
+            soltree[node].parent isa Nothing && return 0 # this is to handle root node
+            soltree[node].parent ∈ nodes_in_proof ? soltree[node].parent : _parent(soltree[node].parent)
         end
     end
 
-    foreach(_parent, values(soltree))
+    foreach(_parent, keys(nodes))
     d
 end
 
 
-function extract_training_data2(node,...)
-    d2p = distance_from_proof(soltree, nodes_on_the_proof)
-    d2p = filter(v -> v ≤ 2, d2p) # ids of nodes of interest
+transform_to_expr(exp::Vector{NodeID}) = [expr(nc, n) for n in exp]
+transform_to_expr(exp::Vector{Expr}) = exp
+transform_to_expr(exp::Vector{ExprWithHash}) = [n.ex for n in exp]
 
-    d = parent_in_proof(soltree, nodes_in_proof, keys(d2p))
+function extract_training_data3(node, soltree, root, n=1, sym_enc=sym_enc)
+    nodes_in_proof = vcat(root, extract_proof(node, soltree))
+    d2p = distance_from_proof(soltree, nodes_in_proof)
+    d2p = filter(v -> v[2] ≤ n, d2p) # ids of nodes of interest
+    n2p = parent_in_proof(soltree, nodes_in_proof, d2p)
+    @assert 0 ∉ values(n2p)
+    proof_node_neighbors = sizehint!(Dict{UInt64, Vector{UInt64}}(), length(nodes_in_proof)) 
+    for node in nodes_in_proof
+        proof_node_neighbors[node.node_id] = sizehint!(UInt64[], length(n2p))
+    end
+    for (n, p) in n2p
+        n == p && continue
+        push!(proof_node_neighbors[p], n)
+    end
+    max_length = cumsum([length(proof_node_neighbors[n.node_id]) for n in nodes_in_proof])[end]
+    hp, hn = sizehint!(Int[], max_length), sizehint!(Int[], max_length)
+    training_expressions = sizehint!(typeof(node.ex)[], length(d2p))
+    for (ind,n) in enumerate(nodes_in_proof[1:end-1])
+        id = n.node_id
+        if ind == 1
+            append!(hp, fill(1, length(proof_node_neighbors[id])))
+            append!(hn, 2:length(proof_node_neighbors[id]) + 1)
+        else
+            new_hn = hn[end] + 2:hn[end] + 1 + length(proof_node_neighbors[id])
+            @assert length(new_hn) == length(proof_node_neighbors[id]) 
+            append!(hp, fill(hn[end] + 1, length(proof_node_neighbors[id]) + length(hn)))
+            append!(hn, hn)
+            append!(hn, new_hn)
+        end
+        push!(training_expressions, nodes_in_proof[ind + 1].ex)
+        append!(training_expressions, [soltree[i].ex for i in proof_node_neighbors[id]])
+    end
+    @assert length(hp) == length(hn)
+    training_expressions = transform_to_expr(training_expressions)
+    td = no_reduce_multiple_fast_ex2mill(training_expressions, sym_enc)
+    return td, hp, hn
 end
 
 
@@ -806,28 +931,24 @@ function extract_training_data1(node, soltree, root, n=1, sym_enc=sym_enc)
     hp = []
     hn = []
     nodes_ids_in_proof = [i.node_id for i in nodes_in_proof]
-    for (ind,node) in enumerate(vcat([root], nodes_in_proof[1:end-1]))
+    for (ind, node) in enumerate(vcat([root], nodes_in_proof[1:end-1]))
         extended_nodes = []
         extract_nodes_from_proof!(node, soltree, nodes_ids_in_proof, n, extended_nodes)
-        # @show length(extended_nodes)
         if isempty(hn)
-            new_hn = collect(2:length(extended_nodes) + 1)
-            append!(hp, fill(1, length(extended_nodes)))
+            new_hn = 2:length(extended_nodes) + 1
+            append!(hp, ones(Int, length(extended_nodes)))
         else
-            new_hn = collect(hn[end] + 2:hn[end] + 1 + length(extended_nodes))
-            new_hn = vcat(hn, new_hn)
-            append!(hp, fill(hn[end] + 1, length(new_hn)))
+            new_hn = hn[end] + 2:hn[end] + length(extended_nodes) + 1
+            append!(hp, fill(hn[end] + 1, length(new_hn) + length(hn)))
+            append!(hn, hn[1:end])
         end
         append!(hn, new_hn)
-        # @show hn
-        # @show hp
-        push!(training_expressions, nodes_in_proof[ind].ex)
-        append!(training_expressions, extended_nodes)
+        push!(training_expressions, nodes_in_proof[ind].ex, extended_nodes...)
     end
-    # @show length(training_expressions)
+    @assert length(hp) == length(hn)
     training_expressions = [expr(nc, i) for i in training_expressions]
     tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_expressions, sym_enc)
-    return tdata, hp, hn, nodes_in_proof, 0
+    return tdata, hp, hn, nodes_in_proof, training_expressions
 end
 
 
@@ -839,8 +960,9 @@ function extract_training_data(node, soltree, sym_enc=sym_enc)
     extract_training_data!(node, soltree, training_exp, hp, hn, proof_vector)
     hp = reduce(vcat, hp)
     hn = reduce(vcat, hn)
+    training_exp = [expr(nc, i) for i in training_exp]
     tdata = MyModule.no_reduce_multiple_fast_ex2mill(training_exp, sym_enc)
-    return tdata, hp, hn, reverse(proof_vector), 0
+    return tdata, hp, hn, reverse(proof_vector), training_exp
 end
 
 
@@ -883,6 +1005,7 @@ function extract_training_data!(node, soltree, training_exp, hp, hn, proof_vecto
     push!(hp[end], pos_index)
     extract_training_data!(soltree[node.parent], soltree, training_exp, hp, hn, proof_vector)
 end
+
 
 function extract_smallest_terminal_node1(soltree::Dict{UInt64, Node}, close_list::Set{UInt64}, nbest=5)
     all_nodes = values(soltree)

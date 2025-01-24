@@ -247,8 +247,35 @@ function check_inference_consistancy(model, data)
 end
 
 
-function get_conflicting_inequalities(training_samples, training_expressions_in_samples)
-    for ((ds, I₊, I₋), training_expressions) in zip(training_samples, training_expressions_in_samples)
-        
+function get_conflicting_inequalities(training_samples)
+    check_dict = Dict()
+    for (sample_ind, (_, I₊, I₋, _, _, tr)) in enumerate(training_samples)
+        for (ind, ex) in enumerate(tr)
+            is_pos = ind ∈ I₊
+            is_neg = ind ∈ I₋
+            if haskey(check_dict, ex)
+                push!(check_dict[ex], (ind, is_pos, is_neg, sample_ind))
+            else
+                check_dict[ex] = [(ind, is_pos, is_neg)]
+            end
+        end
     end
+    counter = 0
+    colliding_inequalities = []                                                      
+    for (k,v) in check_dict                                                               
+        if length(v) > 1                                                             
+            all_hp = sum([i[2] for i in v])                                              
+            all_hn = sum([i[3] for i in v])                                              
+            if abs(all_hp - all_hn) != all_hp + all_hn                                   
+                @show k
+                counter += 1
+                push!(colliding_inequalities, k)
+            end
+        end
+    end
+    filtered_samples = []
+    for (_, I₊, I₋, _, _, tr) in training_samples
+
+    end
+    return check_dict
 end

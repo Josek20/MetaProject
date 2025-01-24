@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.10.4"
+julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "a3df3806570603479a1f0fa5fb6e83e4bfb8ac78"
+project_hash = "a820a7bd07fcd46f6de7ca4901c577936783b5f9"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -100,11 +100,6 @@ deps = ["Pkg"]
 git-tree-sha1 = "daaeb6f7f77b88c072a83a2451801818acb5c63b"
 uuid = "15f4f7f2-30c1-5605-9d31-71845cf9641f"
 version = "2.1.0"
-
-[[deps.BSON]]
-git-tree-sha1 = "4c3e506685c527ac6a54ccc0c8c76fd6f91b42fb"
-uuid = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
-version = "0.3.9"
 
 [[deps.BangBang]]
 deps = ["Accessors", "ConstructionBase", "InitialValues", "LinearAlgebra", "Requires"]
@@ -720,12 +715,6 @@ version = "1.10.0"
 git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
 uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
-
-[[deps.JLD2]]
-deps = ["FileIO", "MacroTools", "Mmap", "OrderedCollections", "PrecompileTools", "Requires", "TranscodingStreams"]
-git-tree-sha1 = "9b8b3233d4a611a68f6cbcba96049c8d6fd3de73"
-uuid = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
-version = "0.5.4"
 
 [[deps.JLFzf]]
 deps = ["Pipe", "REPL", "Random", "fzf_jll"]

@@ -147,7 +147,7 @@ end
 
 
 
-@my_cache function interned_cached_inference!(ex::NodeID, ::Type{Expr}, model, all_symbols, symbols_to_ind)
+@my_cache LRU(maxsize=100_000) function interned_cached_inference!(ex::NodeID, ::Type{Expr}, model, all_symbols, symbols_to_ind)
     node = nc[ex]
     fun_name = node.head
     args = interned_cached_inference!([node.left, node.right], model, all_symbols, symbols_to_ind)
@@ -161,7 +161,7 @@ end
 end
 
 
-@my_cache function interned_cached_inference!(ex::NodeID, ::Type{Symbol}, model, all_symbols, symbols_to_ind)
+@my_cache LRU(maxsize=100_000) function interned_cached_inference!(ex::NodeID, ::Type{Symbol}, model, all_symbols, symbols_to_ind)
     node = nc[ex]
     encoding = zeros(Float32, length(all_symbols))
     encoding[symbols_to_ind[node.head]] = 1
@@ -174,7 +174,7 @@ end
 end
 
 
-@my_cache function interned_cached_inference!(ex::NodeID, ::Type{Int}, model, all_symbols, symbols_to_ind)
+@my_cache LRU(maxsize=100_000) function interned_cached_inference!(ex::NodeID, ::Type{Int}, model, all_symbols, symbols_to_ind)
     node = nc[ex]
     encoding = zeros(Float32, length(all_symbols))
     encoding[symbols_to_ind[:Number]] = my_sigmoid(node.v)
