@@ -12,7 +12,7 @@ using CSV
 
 using MyModule: new_all_symbols, exp_size
 
-using MyModule: interned_build_tree!, extract_smallest_terminal_node, Node, intern!, extract_training_data1, TrainingSample
+using MyModule: extract_training_data3, interned_build_tree!, extract_smallest_terminal_node, Node, intern!, extract_training_data1, TrainingSample
 using MyModule.DataStructures
 
 
@@ -37,10 +37,6 @@ function _extract_training_data(smallest_node, soltree, root, max_depth, initial
     new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, initial_expr)            
 end
 
-function _extract_training_data_2(smallest_node, soltree, root, max_depth, initial_expr)
-    big_vector, hp, hn, proof_vector, _ = extract_training_data2(smallest_node, soltree, root, max_depth)
-    new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, initial_expr)            
-end
 
 MyModule.get_value(x) = x
 
@@ -79,7 +75,7 @@ end
 
 
 function prepare_dataset(n=typemax(Int))
-    samples = deserialize("data/training_data/size_heuristic_training_samples1.bin")
+    samples = deserialize("../../data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
     samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr))
     # samples = sort(samples, by=x->length(x.proof))
@@ -131,6 +127,7 @@ function summarize(all_stats)
 end
 
 function train(model, samples)
+    proof_neighborhood = 1
     optimizer=ADAM()
     opt_state = Flux.setup(optimizer, model)
     loss_stats = []
@@ -165,7 +162,7 @@ function train(model, samples)
             # @show MyModule.cache_status()
             if sa == sb
                 s = Base.AnnotatedString(s, [(1:length(s), :face, :grey)])
-                println(s)
+                # println(s)
             elseif sa > sb
                 s = Base.AnnotatedString(s, [(1:length(s), :face, :red)])
                 println(s)
@@ -174,7 +171,7 @@ function train(model, samples)
                 println(s)
             end
             if sb < sa
-                new_sample = _extract_training_data(smallest_node, soltree, root, 2, old_sample.initial_expr)
+                new_sample = _extract_training_data(smallest_node, soltree, root, proof_neighborhood, old_sample.initial_expr)
                 ns = (ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = old_sample.initial_expr, goal_size = sb)
                 return(ns)
             else
@@ -239,7 +236,7 @@ samples = map(training_samples) do sample
        goal_size = exp_size(sample.expression),
     )
 end
-train(model, samples)
+# train(model, samples)
 
 
 # data = [i.initial_expr for i in training_samples]
