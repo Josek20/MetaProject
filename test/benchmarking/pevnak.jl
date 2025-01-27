@@ -133,8 +133,8 @@ function train(model, samples)
     loss_stats = []
     all_stats = []
     push!(all_stats, [s.goal_size for s in samples])
-    for outer_epoch in 1:3
-        for ep in 1:20
+    for outer_epoch in 1:6
+        for ep in 1:10
             sum_loss = 0.0
             hard_loss = 0
             t = @elapsed for (i, s) in enumerate(samples)
@@ -161,16 +161,15 @@ function train(model, samples)
             s = string(i,"  ", sa, "-->",sb, "  time to simplify: ", t)
             # @show MyModule.cache_status()
             if sa == sb
-                s = Base.AnnotatedString(s, [(1:length(s), :face, :grey)])
-                # println(s)
+                s = Base.AnnotatedString(s, [(1:length(s), :face, :white)])
             elseif sa > sb
-                s = Base.AnnotatedString(s, [(1:length(s), :face, :red)])
+                s = Base.AnnotatedString(s, [(1:length(s), :face, :yellow)])
                 println(s)
             else
-                s = Base.AnnotatedString(s, [(1:length(s), :face, :green)])
+                s = Base.AnnotatedString(s, [(1:length(s), :face, :grey)])
                 println(s)
             end
-            if sb < sa
+            if sb ≤ sa
                 new_sample = _extract_training_data(smallest_node, soltree, root, proof_neighborhood, old_sample.initial_expr)
                 ns = (ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = old_sample.initial_expr, goal_size = sb)
                 return(ns)

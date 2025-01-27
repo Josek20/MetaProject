@@ -901,7 +901,6 @@ function extract_training_data3(node, soltree, root, n=1, sym_enc=sym_enc)
         push!(proof_node_neighbors[p], n)
     end
     max_length = cumsum([length(proof_node_neighbors[n.node_id]) for n in nodes_in_proof])
-    @show max_length
     hp, hn = sizehint!(Int[], sum(max_length[1:end-1])), sizehint!(Int[], sum(max_length[1:end-1]))
     training_expressions = sizehint!(typeof(node.ex)[], length(d2p))
     for (ind,n) in enumerate(nodes_in_proof[1:end-1])
