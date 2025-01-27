@@ -141,7 +141,7 @@ function exp_size1(ex, size_cache)
 end
 
 
-@my_cache function exp_size(ex::ExprWithHash)
+@my_cache LRU(maxsize=100000)function exp_size(ex::ExprWithHash)
     # get!(size_cache, ex) do
     if isempty(ex.args)
         return 1f0
@@ -151,7 +151,7 @@ end
 end
 
 
-@my_cache function exp_size(ex::Union{Expr, Symbol, Int})
+@my_cache LRU(maxsize=100000) function exp_size(ex::Union{Expr, Symbol, Int})
     # get!(size_cache, ex) do
     if isa(ex, Symbol) || isa(ex, Number)
         return 1f0
@@ -901,7 +901,7 @@ function extract_training_data3(node, soltree, root, n=1, sym_enc=sym_enc)
         push!(proof_node_neighbors[p], n)
     end
     max_length = cumsum([length(proof_node_neighbors[n.node_id]) for n in nodes_in_proof])
-    @show max_length
+    # @show max_length
     hp, hn = sizehint!(Int[], sum(max_length[1:end-1])), sizehint!(Int[], sum(max_length[1:end-1]))
     training_expressions = sizehint!(typeof(node.ex)[], length(d2p))
     for (ind,n) in enumerate(nodes_in_proof[1:end-1])
@@ -923,7 +923,7 @@ function extract_training_data3(node, soltree, root, n=1, sym_enc=sym_enc)
     @assert length(hp) == length(hn) == sum(max_length[1:end-1])
     training_expressions = transform_to_expr(training_expressions)
     td = no_reduce_multiple_fast_ex2mill(training_expressions, sym_enc)
-    return td, hp, hn, [], td
+    return td, hp, hn, [], training_expressions
 end
 
 
