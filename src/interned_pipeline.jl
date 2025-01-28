@@ -19,7 +19,7 @@ end
     node = nc[x]
     if node == nullnode
         return 0f0
-    elseif !(node.iscall) && node.head ∉ [:&&, :||]
+    elseif !(node.iscall)
         return 1f0
     end
     return exp_size(node.left) + exp_size(node.right) + 1
@@ -114,7 +114,7 @@ function interned_initialize_tree_search(heuristic, ex::Expr, max_steps, max_dep
     # @show length(soltree)
     # big_vector, hp, hn, proof_vector, _ = interned_extract_training_data(smallest_node, soltree)
     
-    big_vector, hp, hn, proof_vector, _ = extract_training_data1(smallest_node, soltree, root, 2)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data3(smallest_node, soltree, root, 2)
     # tmp = []
     return simplified_expression, [], big_vector, length(open_list) == 0 || reached_goal, hp, hn, root, proof_vector, []
 end
