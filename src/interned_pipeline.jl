@@ -13,13 +13,12 @@ function interned_extract_training_data(node, soltree, sym_enc=sym_enc)
     return tdata, hp, hn, reverse(proof_vector), 0
 end
 
-
 @my_cache LRU(maxsize=100000) function exp_size(x::NodeID)
     # get!(size_cache, x) do
     node = nc[x]
     if node == nullnode
         return 0f0
-    elseif !(node.iscall)
+    elseif !(node.iscall) && node.head ∉ [:&&, :||]
         return 1f0
     end
     return exp_size(node.left) + exp_size(node.right) + 1

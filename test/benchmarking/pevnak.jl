@@ -196,7 +196,7 @@ end
 
 
 hidden_size = 128
-hidden_size = 128
+layers = 2
 
 function ffnn(idim, hidden_size, layers)
     layers == 1 && return Dense(idim, hidden_size, Flux.gelu)
@@ -204,17 +204,17 @@ function ffnn(idim, hidden_size, layers)
 end
 
 head_model = ProductModel(
-    (;head = ffnn(length(new_all_symbols), hidden_size, 1),
-      args = ffnn(hidden_size, hidden_size, 1),  
+    (;head = ffnn(length(new_all_symbols), hidden_size, layers),
+      args = ffnn(hidden_size, hidden_size, layers),  
         ),
-    ffnn(2*hidden_size, hidden_size, 1)
+    ffnn(2*hidden_size, hidden_size, layers)
     )
 
 args_model = ProductModel(
-    (;args = ffnn(hidden_size, hidden_size, 1),  
+    (;args = ffnn(hidden_size, hidden_size, layers),  
       position = Dense(2,hidden_size),  
         ),
-    ffnn(2*hidden_size, hidden_size, 1)
+    ffnn(2*hidden_size, hidden_size, layers)
     )
 
 model = ExprModel(
