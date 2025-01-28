@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.2"
+julia_version = "1.11.3"
 manifest_format = "2.0"
-project_hash = "293704eea195e9ee1fc1661fba0e56e2d4045a0d"
+project_hash = "30e5f0e0b38a6d89048beb77f72539555e387306"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -977,7 +977,7 @@ uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 version = "2023.12.12"
 
 [[deps.MyModule]]
-deps = ["CSV", "ChainRulesCore", "DataFrames", "DataStructures", "FileIO", "Flux", "JSON", "LRUCache", "LinearAlgebra", "MacroTools", "Metatheory", "Mill", "Optimisers", "Revise", "SimpleChains", "SparseArrays", "Statistics", "StatsBase", "TermInterface"]
+deps = ["ChainRulesCore", "DataStructures", "FileIO", "Flux", "JSON", "LRUCache", "LinearAlgebra", "MacroTools", "Metatheory", "Mill", "Optimisers", "Revise", "SimpleChains", "SparseArrays", "Statistics", "StatsBase", "TermInterface"]
 path = "../.."
 uuid = "98749e58-590c-4da3-a9b4-40346e7e69f8"
 version = "0.1.0"

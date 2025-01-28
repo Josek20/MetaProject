@@ -8,6 +8,7 @@ using Serialization
 using DataFrames
 using Optimisers
 using Statistics
+using StatsBase
 using CSV
 
 using MyModule: new_all_symbols, exp_size
@@ -126,25 +127,27 @@ function summarize(all_stats)
     end
 end
 
-function train(model, samples)
-    proof_neighborhood = 1
+function train(model, samples; max_depth = 60, max_expansions = 1000, proof_neighborhood = 1, bias_in_violations = 1, sampling = :worst_case)
     optimizer=ADAM()
     opt_state = Flux.setup(optimizer, model)
     loss_stats = []
     all_stats = []
     push!(all_stats, [s.goal_size for s in samples])
+    violations = [hardloss(model, sample) + bias_in_violations for sample in samples]
     for outer_epoch in 1:6
         for ep in 1:10
             sum_loss = 0.0
             hard_loss = 0
-            t = @elapsed for (i, s) in enumerate(samples)
-                ds, I₊, I₋ = s.ds, s.hp, s.hn
+            t = @elapsed for i in 1:length(samples)
+                j = sampling == :worst_case ? sample(1:length(samples), StatsBase.Weights(violations)) : i
+                ds, I₊, I₋ = samples[j]
                 sa, grad = Flux.Zygote.withgradient(Base.Fix2(lossfun, (ds, I₊, I₋)), model)
+                violations[j] = hardloss(model, (ds, I₊, I₋)) + bias_in_violations
                 sum_loss += sa
                 Optimisers.update!(opt_state, model, only(grad))
             end
-            violations = [hardloss(model, sample) for sample in samples]
-            @show (t, sum(violations), quantile(violations, 0:0.1:1))
+            true_violations = [hardloss(model, sample) for sample in samples]
+            @show (t, sum(true_violations), quantile(true_violations, 0:0.1:1))
         end
 
         @show MyModule.cache_status()
@@ -155,7 +158,7 @@ function train(model, samples)
 
             # best_node = find_the_solution
 
-            t = @elapsed (soltree, smallest_node, root) = build_search_tree(model, old_sample.initial_expr, 1000, 50, new_all_symbols, sym_enc, theory)
+            t = @elapsed (soltree, smallest_node, root) = build_search_tree(model, old_sample.initial_expr, max_expansions, max_depth, new_all_symbols, sym_enc, theory)
             sa = old_sample.goal_size
             sb = MyModule.exp_size(smallest_node.ex)
             s = string(i,"  ", sa, "-->",sb, "  time to simplify: ", t)
@@ -196,32 +199,41 @@ end
 
 
 hidden_size = 128
-layers = 2
+layers = 1
+skip_connect = true
 
-function ffnn(idim, hidden_size, layers)
+function _ffnn(idim, hidden_size, layers)
     layers == 1 && return Dense(idim, hidden_size, Flux.gelu)
     layers == 2 && return Flux.Chain(Dense(idim, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu))
 end
 
+function ffnn(idim, hidden_size, layers;skip_connect=false)
+    layer = _ffnn(idim, hidden_size, layers)
+    if hidden_size == idim && skip_connect
+        layer = SkipConnection(layer, +)
+    end
+    layer
+end
+
 head_model = ProductModel(
-    (;head = ffnn(length(new_all_symbols), hidden_size, layers),
-      args = ffnn(hidden_size, hidden_size, layers),  
+    (;head = ffnn(length(new_all_symbols), hidden_size, layers; skip_connect),
+      args = ffnn(hidden_size, hidden_size, layers; skip_connect),  
         ),
-    ffnn(2*hidden_size, hidden_size, layers)
+    ffnn(2*hidden_size, hidden_size, layers; skip_connect)
     )
 
 args_model = ProductModel(
-    (;args = ffnn(hidden_size, hidden_size, layers),  
+    (;args = ffnn(hidden_size, hidden_size, layers; skip_connect),  
       position = Dense(2,hidden_size),  
         ),
-    ffnn(2*hidden_size, hidden_size, layers)
+    ffnn(2*hidden_size, hidden_size, layers; skip_connect)
     )
 
 model = ExprModel(
     head_model,
     Mill.SegmentedSum(hidden_size),
     args_model,
-    Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
+    Flux.Chain(SkipConnection(Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu)), + ), Dense(hidden_size, 1)),
     );
     
 training_samples = prepare_dataset();
