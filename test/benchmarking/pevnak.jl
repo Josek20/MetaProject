@@ -38,6 +38,24 @@ function _extract_training_data(smallest_node, soltree, root, max_depth, initial
     new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, initial_expr)            
 end
 
+function extract_proof(heuristic, ex::Expr, max_steps::Integer, max_depth::Integer, all_symbols, symbols_to_index, theory)
+    soltree, smallest_node, root = build_search_tree(heuristic, ex, max_steps, max_depth, all_symbols, symbols_to_index, theory)
+    extract_proof(smallest_node, soltree, root, max_depth)
+end
+
+function extract_proof(smallest_node, soltree, root, max_depth)
+   proof = extract_training_data3(smallest_node, soltree, root, max_depth)[4]
+   initial_expr = MyModule.expr(root.ex)
+   smallest_node = MyModule.expr(smallest_node.ex)
+   (;initial_expr, proof, smallest_node)
+end
+
+function extract_proofs(heuristic, samples; max_steps = 1000, max_depth = 60)
+    map(samples) do s
+        extract_proof(heuristic, s.initial_expr, max_steps, max_depth, new_all_symbols, sym_enc, theory)
+    end
+end
+
 
 MyModule.get_value(x) = x
 
@@ -127,15 +145,28 @@ function summarize(all_stats)
     end
 end
 
-function train(model, samples; max_depth = 60, max_expansions = 1000, proof_neighborhood = 1, bias_in_violations = 1, sampling = :worst_case)
+function initial_training_data(model, initial_expr::Expr; max_depth = 60, max_expansions = 1000) 
+    (soltree, smallest_node, root) = build_search_tree(model, initial_expr, max_expansions, max_depth, new_all_symbols, sym_enc, theory)
+    new_sample = _extract_training_data(smallest_node, soltree, root, proof_neighborhood, old_sample.initial_expr)
+    return(ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = s.initial_expr, goal_size = exp_size(smallest_node))
+end
+
+function initial_training_data(model, samples::AbstractVector; max_depth = 60, max_expansions = 1000)
+    map(samples) do s
+        initial_training_data(model, s.initial_expr)
+    end
+end 
+
+
+function train(model, samples; max_depth = 60, max_expansions = 1000, proof_neighborhood = 1, bias_in_violations = 1, sampling = :worst_case, epochs_before_search=10, number_of_searches = 100)
     optimizer=ADAM()
     opt_state = Flux.setup(optimizer, model)
     loss_stats = []
     all_stats = []
     push!(all_stats, [s.goal_size for s in samples])
     violations = [hardloss(model, sample) + bias_in_violations for sample in samples]
-    for outer_epoch in 1:6
-        for ep in 1:10
+    for outer_epoch in 1:number_of_searches
+        for ep in 1:epochs_before_search
             sum_loss = 0.0
             hard_loss = 0
             t = @elapsed for i in 1:length(samples)
@@ -183,6 +214,8 @@ function train(model, samples; max_depth = 60, max_expansions = 1000, proof_neig
 
         push!(all_stats,  [s.goal_size for s in samples])
         println(mean.(all_stats))
+        true_violations = [hardloss(model, sample) for sample in samples]
+        sum(true_violations) == 0 && break
         # @show summarize(stats)
         # @show (t, better_samples_counter, mean_size)
         # (;  better = mean(x.goal_size > y.goal_size for (x,y) in zip(new_samples, samples)),
@@ -247,8 +280,18 @@ samples = map(training_samples) do sample
        goal_size = exp_size(sample.expression),
     )
 end
-train(model, samples)
+train(model, samples; sampling = :uniform, number_of_searches = 30)
 
+
+mask = filter(1:length(training_samples)) do i 
+    exp_size(training_samples[i].expression) > exp_size(trn_set[i].smallest_node)
+end
+
+df = map(mask) do i 
+    (;i, initial_expr = training_samples[i].initial_expr, size = training_samples[i].expression.ex, model = trn_set[i].smallest_node)
+end |> DataFrame
+
+df = filter(r -> exp_size(r.model) > 5, df)
 
 # data = [i.initial_expr for i in training_samples]
 # experiment_name = "test_v1_sorted_$(length(data))_$(epochs)_hidden_size_$(hidden_size)"
