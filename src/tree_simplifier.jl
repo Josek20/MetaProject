@@ -117,12 +117,19 @@ end
 
 
 function show_proof(init_ex, proof)
-    ex = init_ex
+    ex = copy(init_ex)
     for i in proof
         position, rule = i
+        println("=====================================================================================================")
+        println("Start: $(ex)")
+        println("Rule: $(theory[rule])")
         new_ex = my_rewriter!(position, ex, theory[rule])
-        println("$(ex)->$(theory[rule])->$(new_ex)")
-        ex = new_ex
+        if new_ex isa Nothing
+            println("Result: $(ex)")
+        else
+            println("Result: $(new_ex)")
+            ex = new_ex
+        end
     end
 end
 
@@ -151,7 +158,7 @@ end
 end
 
 
-@my_cache LRU(maxsize=100000) function exp_size(ex::Union{Expr, Symbol, Int})
+@my_cache LRU(maxsize=100000) function exp_size(ex::Union{Expr, Symbol, Number})
     # get!(size_cache, ex) do
     if isa(ex, Symbol) || isa(ex, Number)
         return 1f0
