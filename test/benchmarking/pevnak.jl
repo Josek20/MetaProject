@@ -13,9 +13,17 @@ using CSV
 
 using MyModule: new_all_symbols, exp_size
 
-using MyModule: extract_training_data3, interned_build_tree!, extract_smallest_terminal_node, Node, intern!, extract_training_data1, TrainingSample
+using MyModule: extract_training_data3, interned_build_tree!, extract_smallest_terminal_node, Node, intern!, extract_training_data1, TrainingSample, build_tree!
 using MyModule.DataStructures
 
+function show_proof(soltree, node)
+    proof = []
+    while node.parent != nothing
+        push!(proof, node.ex)
+        node = soltree[node.parent]
+    end
+    return(reverse(proof))
+end
 
 function build_search_tree(heuristic, ex::Expr, max_steps, max_depth, all_symbols, symbols_to_index, theory)
     soltree = Dict{UInt64, Node}()
@@ -145,15 +153,26 @@ function summarize(all_stats)
     end
 end
 
-function initial_training_data(model, initial_expr::Expr; max_depth = 60, max_expansions = 1000) 
+function initial_training_data(model, initial_expr::Expr; max_depth = 60, max_expansions = 1000, proof_neighborhood = 1) 
     (soltree, smallest_node, root) = build_search_tree(model, initial_expr, max_expansions, max_depth, new_all_symbols, sym_enc, theory)
-    new_sample = _extract_training_data(smallest_node, soltree, root, proof_neighborhood, old_sample.initial_expr)
-    return(ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = s.initial_expr, goal_size = exp_size(smallest_node))
+    new_sample = _extract_training_data(smallest_node, soltree, root, proof_neighborhood, initial_expr)
+    return(ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = initial_expr, goal_size = exp_size(smallest_node.ex))
 end
 
-function initial_training_data(model, samples::AbstractVector; max_depth = 60, max_expansions = 1000)
+function initial_training_data(model, samples::AbstractVector; kwargs...)
     map(samples) do s
-        initial_training_data(model, s.initial_expr)
+        initial_training_data(model, s.initial_expr; kwargs...)
+    end
+end 
+
+function evaluate_model(model, initial_expr::Expr; max_depth = 60, max_expansions = 1000, proof_neighborhood = 1) 
+    (soltree, smallest_node, root) = build_search_tree(model, initial_expr, max_expansions, max_depth, new_all_symbols, sym_enc, theory)
+    return(initial_expr = initial_expr, smallest_node = MyModule.expr(smallest_node.ex), goal_size = exp_size(smallest_node.ex))
+end
+
+function evaluate_model(model, samples::AbstractVector; kwargs...)
+    map(samples) do s
+        evaluate_model(model, s.initial_expr; kwargs...)
     end
 end 
 
@@ -271,27 +290,22 @@ model = ExprModel(
     
 training_samples = prepare_dataset();
 epochs = 1000
-samples = map(training_samples) do sample
-    ds, hp, hn, _ = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
-    (; ds = MyModule.deduplicate(ds),
-       hp,
-       hn,
-       initial_expr = sample.initial_expr,
-       goal_size = exp_size(sample.expression),
-    )
-end
+samples = initial_training_data(model, training_samples)
 train(model, samples; sampling = :uniform, number_of_searches = 30)
 
 
-mask = filter(1:length(training_samples)) do i 
-    exp_size(training_samples[i].expression) > exp_size(trn_set[i].smallest_node)
-end
 
-df = map(mask) do i 
-    (;i, initial_expr = training_samples[i].initial_expr, size = training_samples[i].expression.ex, model = trn_set[i].smallest_node)
-end |> DataFrame
+# # pathetic eval
+# sols = DataFrame(evaluate_model(model, samples))
 
-df = filter(r -> exp_size(r.model) > 5, df)
+# filter(r -> r.goal_size >1, sols).smallest_node
+# extract_proofs(model, samples)
+
+# df = map(mask) do i 
+#     (;i, initial_expr = training_samples[i].initial_expr, size = training_samples[i].expression.ex, model = trn_set[i].smallest_node)
+# end |> DataFrame
+
+# df = filter(r -> exp_size(r.model) > 5, df)
 
 # data = [i.initial_expr for i in training_samples]
 # experiment_name = "test_v1_sorted_$(length(data))_$(epochs)_hidden_size_$(hidden_size)"

@@ -161,8 +161,8 @@ theory = @theory a b c d x y begin
     # (a / b) * b --> (a - (a % b))
     max(a,b) * min(a, b) --> a * b
     min(a,b) * max(a, b) --> a * b
-    (a * b) / b --> a
-    (b * a) / b --> a
+    (a * b::Number) / b::Number => b == 0 ? nothing : a
+    (a / b::Number) * b::Number => b == 0 ? nothing : a
 
     # not.rs
     x <= y --> !(y < x)
@@ -200,4 +200,7 @@ theory = @theory a b c d x y begin
     a<=b && c<=a --> c <= b
     b<=a && a<=c --> b <= c
     a + b - c --> a - c + b
+
+    # adding rules
+    # a / 1 --> a
 end
