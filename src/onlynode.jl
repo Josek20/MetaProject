@@ -62,6 +62,8 @@ end
 
 Base.show(io::IO, nc::NodeCache) = print(io, "NodeCache(",length(nc.nodes), ")")
 
+Base.hash(n::NodeID) = hash(nc[n])
+
 
 function NodeCache()
     NodeCache(Dict{OnlyNode, NodeID}(), OnlyNode[])

@@ -28,14 +28,16 @@ end
 
 @my_cache LRU(maxsize=10000) function all_expand(node_id::NodeID, theory)
     node = nc[node_id]
-    !(node.iscall) && return(NodeID[])
+    !(node.iscall) && return([], [])
     # get!(expr_cache, node_id) do
-    self = [r(node_id) for r in theory]
-    self = [isa(x, Int) ? intern!(x) : x for x in self]
-    self = convert(Vector{NodeID}, filter(!isnothing, self))
-    # self = filter(x->x!=InternedExpr.nullnode, self)
-    lefts = all_expand(node.left, theory)
-    rights = all_expand(node.right, theory)
+    self = [(ind, r(node_id)) for (ind, r) in enumerate(theory)]
+    self = [isa(x, Int) ? (ind, intern!(x)) : (ind, x) for (ind, x) in self]
+    # self = convert(Vector{TupleNodeID}, filter(x->!isnothing, self))
+    self = filter(x->!isnothing(x[2]), self)
+    pos_indexes = map(x->([], x[1]), self)
+    self = map(x->x[2], self)
+    lefts, lefts_indexes = all_expand(node.left, theory)
+    rights, rights_indexes = all_expand(node.right, theory)
     lefts = isempty(lefts) ? [node.left] : lefts
     rights = isempty(rights) ? [node.right] : rights
     if length(lefts) > 1 && length(rights) > 1
@@ -51,15 +53,24 @@ end
             intern!(OnlyNode(node.head, node.iscall, node.v, l, r))
         end |> vec
     end
-    return vcat(self, childs)
+    if !isempty(lefts_indexes)
+        lefts_indexes = map(x->(vcat([:left], x[1]),x[2]), lefts_indexes)
+    end
+    if !isempty(rights_indexes)
+        rights_indexes = map(x->(vcat([:right], x[1]),x[2]), rights_indexes)
+    end
+    return vcat(self, childs), vcat(pos_indexes, lefts_indexes, rights_indexes)
     # end
 end
 
 
 function interned_expand_node!(parent::Node, soltree, heuristic, open_list, all_symbols, symbols_to_index, theory) 
     ex = parent.ex
-    succesors = filter(x->x!=ex, all_expand(ex, theory))
-    new_nodes = map(x-> Node(x, (0,0), parent.node_id, parent.depth + 1, nothing), succesors)
+    new_nodes, indexes = all_expand(ex, theory)
+    succesors = filter(x->x!=ex, new_nodes)
+    @show parent.ex
+    @assert length(succesors) == length(indexes)
+    new_nodes = map(x-> Node(x[1], x[2], parent.node_id, parent.depth + 1, nothing), zip(succesors, indexes))
     filtered_new_nodes = filter(x-> push_to_tree!(soltree, x), new_nodes)
     isempty(filtered_new_nodes) && return(false)
     o = map(x->only(heuristic(x.ex)), filtered_new_nodes)

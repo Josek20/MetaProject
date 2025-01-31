@@ -24,8 +24,8 @@ function get_training_data_from_proof_with_soltree(proof::Vector, initial_expres
     end
     # function build_tree!(soltree::Dict{UInt64, Node}, heuristic, open_list::PriorityQueue, close_list::Set{UInt64}, encodings_buffer::Dict{UInt64, ProductNode}, all_symbols::Vector{Symbol}, symbols_to_index::Dict{Symbol, Int64}, max_steps, max_depth, expansion_history, theory, variable_names, cache, exp_cache, size_cache, expr_cache, alpha)
     build_tree!(soltree, heuristic, open_list, close_list, new_all_symbols, sym_enc, 200, 50, theory, exp_cache)
-    big_vector, hp, hn, proof_vector, _ = extract_training_data1(smallest_node, soltree, root, 2)
-    return big_vector, hp, hn
+    big_vector, hp, hn, proof_vector, tr = extract_training_data1(smallest_node, soltree, root, 2)
+    return big_vector, hp, hn, tr
 end
 
 
@@ -301,6 +301,47 @@ function flux_to_simple(m1::ExprModelSimpleChains, m2::ExprModel)
         simple_biases[i] .= m2.heuristic.layers[i].bias
     end 
     return m1
+end
+
+
+function get_conflicting_inequalities_filtered(training_samples)
+    check_dict = Dict()
+    new_samples = []
+    for (sample_ind, (ds, I₊, I₋, tr)) in enumerate(training_samples)
+        # add_sample = 0
+        bad_ineq = []
+        for (ind, ex) in enumerate(tr)
+            is_pos = ind ∈ I₊
+            is_neg = ind ∈ I₋
+            if haskey(check_dict, ex)
+                # add_sample 
+                _, b, c, _ = check_dict[ex][end]
+                if is_pos == b && is_neg == c
+                    push!(check_dict[ex], (ind, is_pos, is_neg, sample_ind))
+                else
+                    push!(bad_ineq, ind)
+                end
+            else
+                check_dict[ex] = [(ind, is_pos, is_neg, sample_ind)]
+            end
+        end
+        if !isempty(bad_ineq)
+            # @show bad_ineq
+            hp_indices = findall(x->x ∈ bad_ineq, I₊)
+            # @show unique(I₊)
+            # @show unique(I₋)
+            hn_indices = findall(x->x ∈ bad_ineq, I₋)
+            # @assert abs(length(hp_indices) - length(hn_indices)) == length(hp_indices) + length(hn_indices)
+            filtered_indices = vcat(hp_indices, hn_indices)
+            I₊ = [x[2] for x in enumerate(I₊) if x[1] ∉ filtered_indices]
+            I₋ = [x[2] for x in enumerate(I₋) if x[1] ∉ filtered_indices]
+            @assert length(I₋) == length(I₊)
+            push!(new_samples, (ds, I₊, I₋, tr))
+        else
+            push!(new_samples, (ds, I₊, I₋, tr))
+        end
+    end
+    return new_samples
 end
 
 

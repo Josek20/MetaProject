@@ -94,48 +94,25 @@ var_symbols = [Symbol("v$(i-1)") for (i,j) in enumerate(1:number_of_variables)]
 new_all_symbols = vcat(all_symbols, var_symbols, :Number)
 sym_enc = Dict(i=>ind for (ind,i) in enumerate(new_all_symbols))
 
-mutable struct SearchTreePipelineConfig{TD, H, BTF}
-    training_data::TD
-    heuristic::H
-    build_tree_function::BTF
-    max_steps::Int
-    max_depth::Int
-    theory::Vector
-    inference_cache::LRU
-    size_cache::LRU
-    matching_expr_cache::LRU
-    hash_expr_cache::LRU
-    heuristic_cache::LRU
-    exp_args_cache::LRU
-    alpha::Float32
-end
-
-
-function SearchTreePipelineConfig(training_data, heuristic, build_tree_function::Function, max_steps=1000, max_depth=50, theory=theory, alpha=0.5f0)
-    matching_expr_cache = LRU(maxsize=100_000)
-    inference_cache = LRU(maxsize=1_000_000)
-    size_cache = LRU(maxsize=100_000)
-    hash_expr_cache = LRU(maxsize=100_000)
-    exp_args_cache = LRU(maxsize=100_000)
-    return SearchTreePipelineConfig(
-        training_data, heuristic, build_tree_function, max_steps, max_depth, theory, 
-        inference_cache, size_cache, matching_expr_cache, hash_expr_cache, inference_cache, exp_args_cache, alpha
-    )
-end
 
 include("new_ex2mill.jl")
-include("tree_simplifier.jl")
-include("interned_pipeline.jl")
+# include("tree_simplifier.jl")
+include("search_utils.jl")
+include("general_search_pipeline.jl")
+# include("interned_pipeline.jl")
 
 # Todo: Should be deleted. Have splited to different files
 # include("tree_embedding.jl")
-include("expr_model.jl")
+# include("expr_model.jl")
+include("model_utils.jl")
+include("general_model_inference.jl")
 include("expr_model_loss.jl")
 # Todo: Fix the simple chains model with updated api
-include("simple_chains_model.jl")
-export ExprModelSimpleChains
-include("policy_tree_simplifier.jl")
+# include("simple_chains_model.jl")
+# export ExprModelSimpleChains
+# include("policy_tree_simplifier.jl")
 # include("generate_random_expressions.jl")
+abstract type ExprModelSimpleChains end
 export ex2mill, heuristic_loss, ExprModel, all_symbols, symbols_to_index, TrainingSample, train_heuristic!, build_tree, execute, policy_loss_func, test_policy, tree_sample_to_policy_sample, PolicyTrainingSample, variable_names, new_all_symbols, sym_enc, cache_hits, cache_misses 
 include("tests.jl")
 include("utils.jl")

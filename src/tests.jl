@@ -247,42 +247,53 @@ function check_inference_consistancy(model, data)
 end
 
 
-function get_conflicting_inequalities_filtered(training_samples)
+function check_for_conflicting_inequalities(training_samples)
     check_dict = Dict()
     new_samples = []
     for (sample_ind, (ds, I₊, I₋, tr)) in enumerate(training_samples)
-        # add_sample = 0
-        bad_ineq = []
         for (ind, ex) in enumerate(tr)
             is_pos = ind ∈ I₊
             is_neg = ind ∈ I₋
             if haskey(check_dict, ex)
-                # add_sample 
-                _, b, c, _ = check_dict[ex][end]
-                if is_pos == b && is_neg == c
-                    push!(check_dict[ex], (ind, is_pos, is_neg, sample_ind))
-                else
-                    push!(bad_ineq, ind)
-                end
+                push!(check_dict[ex], (ind, is_pos, is_neg, sample_ind))
             else
                 check_dict[ex] = [(ind, is_pos, is_neg, sample_ind)]
             end
         end
-        if !isempty(bad_ineq)
-            # @show bad_ineq
-            hp_indices = findall(x->x ∈ bad_ineq, I₊)
-            # @show unique(I₊)
-            # @show unique(I₋)
-            hn_indices = findall(x->x ∈ bad_ineq, I₋)
-            # @assert abs(length(hp_indices) - length(hn_indices)) == length(hp_indices) + length(hn_indices)
-            filtered_indices = vcat(hp_indices, hn_indices)
-            I₊ = [x[2] for x in enumerate(I₊) if x[1] ∉ filtered_indices]
-            I₋ = [x[2] for x in enumerate(I₋) if x[1] ∉ filtered_indices]
-            @assert length(I₋) == length(I₊)
-            push!(new_samples, (ds, I₊, I₋, tr))
-        else
-            push!(new_samples, (ds, I₊, I₋, tr))
+    end
+    conflicting_expr = []
+    for (k,v) in check_dict
+        sum_pos = sum([i[2] for i in v])
+        sum_neg = sum([i[3] for i in v])
+        if sum_pos + sum_neg != abs(sum_pos - sum_neg)
+            push!(conflicting_expr, k)
         end
     end
+    println("Total Number of Conflicting Expressions: $(length(conflicting_expr))")
     return new_samples
+end
+
+
+function test_exp_size(soltree)
+    for i in values(soltree)
+        ex = expr(nc, i.ex)
+        @assert exp_size(ex) == exp_size(i.ex) "inconsistent size for -> $(ex), $(i.ex) -> $(exp_size(ex)), $(exp_size(i.ex))"
+    end
+end
+
+
+function test_all_expand()
+    ex1 = :(-983 <= v0 * 59 || -983 <= 100)
+    ex = :(-123 <= min(v0 * 59, 100))
+    symex = intern!(ex)
+    expanded, _ = all_expand(symex, theory)
+    for i in expanded
+        ex = expr(nc, i)
+        @assert exp_size(ex) == exp_size(i) "inconsistent size for -> $(ex), $(i) -> $(exp_size(ex)), $(exp_size(i))"
+    end
+end
+
+
+function check_proof_consisntancy(initial_expr::NodeID, proof)
+    
 end
