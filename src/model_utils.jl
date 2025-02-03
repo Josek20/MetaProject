@@ -1,5 +1,3 @@
-
-
 const const_left = [1, 0]
 const const_right = [0, 1]
 const const_one = [0, 0]
@@ -14,7 +12,8 @@ my_sigmoid(x, k = 0.01, m = 0) = 1 / (1 + exp(-k * (x - m)))
 function get_head_and_args(ex::NodeID)
     node = nc[ex]
     fun_name = node.head
-    (;args=[node.left, node.right], fun_name=fun_name)
+    args = node.right == nullid ? [node.left] : [node.left, node.right]
+    (;args=args, fun_name=fun_name)
 end
 
 
@@ -41,7 +40,7 @@ end
 
 function get_leaf_args(ex::Union{Symbol, Int})
     symbol_index = ex isa Symbol ? ex : :Number
-    encoding_value = ex isa Symbol ? 1 : my_sigmoid(node.v)
+    encoding_value = ex isa Symbol ? 1 : my_sigmoid(ex)
     (;symbol_index=symbol_index,encoding_value=encoding_value)
 end
     

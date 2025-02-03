@@ -30,21 +30,23 @@ end
 
 
 function expand_node!(parent::Node, soltree, open_list, model; theory=theory)
-    new_ex, _ = all_expand(parent.ex, theory)
+    new_ex, rules_applied = all_expand(parent.ex, theory)
     new_nodes = map(x->Node(x, (), parent.node_id, parent.depth + 1), new_ex)
     new_nodes = filter(x->push_to_tree!(soltree, x), new_nodes)
     isempty(new_nodes) && return
     o = map(x->model(x.ex), new_nodes)
     for (v,n) in zip(o, new_nodes)
-        enqueue!(open_list, (n, v))
+        enqueue!(open_list, n, v)
     end
+    nodes_ids = map(x->x.node_id, new_nodes)
+    append!(parent.children, nodes_ids)
 end
 
 
 function build_tree!(soltree, open_list, close_list, model; max_expansions=1000, max_depth=10)
     expansions = 0
     while !isempty(open_list)
-        expansions != max_expansions && break
+        expansions == max_expansions && break
         node, _ = dequeue_pair!(open_list)
 
         node.depth == max_depth && continue
@@ -58,12 +60,15 @@ end
 
 function extract_smallest_node(soltree)
     smallest_node = nothing
-    smallest_node_size = -1
+    smallest_node_size = typemax(Int)
     for (k, n) in soltree
+        n.depth == 0 && continue
         ex_size = exp_size(n.ex)
-        if isnothing(smallest_node) || (ex_size <= smallest_node_size && n.depth < smallest_node.depth)
+        if ex_size < smallest_node_size
             smallest_node = n
             smallest_node_size = ex_size
+        elseif ex_size == smallest_node_size && n.depth < smallest_node.depth
+            smallest_node = n
         end
     end
     return(smallest_node)

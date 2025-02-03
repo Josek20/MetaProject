@@ -216,7 +216,7 @@ function check_soltree_consistancy(soltree::Dict)
     parent_has_not_child = 0
     for (id, node) in soltree
         append!(all_different_children, soltree[id].children)
-        if isnothing(node.parent)
+        if node.parent == node.node_id
             continue
         end
         parent_has_not_child += !(id in soltree[node.parent].children)
@@ -231,17 +231,17 @@ end
 
 
 function check_inference_consistancy(model, data)
-    # MyModule.cached_inference!(symex, LRU(maxsize=1000), heuristic)
     symexs = []
-    # product_nodes = []
     for i in data
         symex = intern!(i)
         push!(symexs, symex)
     end
-    product_nodes = MyModule.multiple_fast_ex2mill(data, sym_enc)
-    o1 = MyModule.heuristic(model, product_nodes)
-    for i in symexs
+    # product_nodes = MyModule.multiple_fast_ex2mill(data, sym_enc)
+    # o1 = MyModule.heuristic(model, product_nodes)
+    for (ind,(i,j)) in enumerate(zip(symexs, data))
+        # @show ind
         o2 = model(i)
+        o1 = model(j)
         @assert abs(o1 - o2) <= 5e-8
     end
 end
@@ -291,9 +291,4 @@ function test_all_expand()
         ex = expr(nc, i)
         @assert exp_size(ex) == exp_size(i) "inconsistent size for -> $(ex), $(i) -> $(exp_size(ex)), $(exp_size(i))"
     end
-end
-
-
-function check_proof_consisntancy(initial_expr::NodeID, proof)
-    
 end

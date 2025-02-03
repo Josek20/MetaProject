@@ -99,6 +99,7 @@ include("new_ex2mill.jl")
 # include("tree_simplifier.jl")
 include("search_utils.jl")
 include("general_search_pipeline.jl")
+include("training_sample.jl")
 # include("interned_pipeline.jl")
 
 # Todo: Should be deleted. Have splited to different files

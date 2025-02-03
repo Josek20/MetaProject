@@ -9,7 +9,7 @@ end
 Flux.@layer ExprModel
 
 
-@my_cache function general_cached_inference(ex, ::Type{Expr}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+@my_cache LRU(maxsize=10_000) function general_cached_inference(ex, ::Type{Expr}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
     args, fun_name = get_head_and_args(ex)
     args = general_cached_inference(args, model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
     encoding = zeros(Float32, length(all_symbols))
@@ -22,7 +22,7 @@ Flux.@layer ExprModel
 end
 
 
-@my_cache function general_cached_inference(ex, ::Type{Symbol}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+@my_cache LRU(maxsize=10_000) function general_cached_inference(ex, ::Type{Symbol}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
     symbol_index, encoding_value = get_leaf_args(ex)
     encoding = zeros(Float32, length(all_symbols))
     encoding[symbols_to_ind[symbol_index]] = encoding_value
@@ -35,7 +35,7 @@ end
 end
 
 
-@my_cache function general_cached_inference(args::Vector, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+function general_cached_inference(args::Vector, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
     l = length(args)
 
     tmp = []
@@ -64,3 +64,43 @@ function (m::ExprModel)(x)
     ds = general_cached_inference(x, inference_type, m)
     m.heuristic(ds)[1,1]
 end
+
+
+
+function heuristic(m::ExprModel, ds)
+    m.heuristic(m(ds))
+end
+
+
+function (m::ExprModel)(ds::ProductNode{<:NamedTuple{(:head,:args)}})
+    head_model = m.head_model
+    h = vcat(head_model.ms.head(ds.data.head),
+        head_model.ms.args.m(m(ds.data.args)),
+        )
+    head_model.m(h)
+end
+
+
+function (m::ExprModel)(ds::ProductNode{<:NamedTuple{(:args,:position)}})
+    args_model = m.args_model
+    h = vcat(
+        args_model.ms.args.m(m(ds.data.args)),
+        args_model.ms.position(ds.data.position),
+    )
+    args_model.m(h)
+end
+
+
+function (m::ExprModel)(ds::BagNode)
+    m.aggregation(m(ds.data), ds.bags)
+end
+
+function (m::ExprModel)(ds::DeduplicatingNode)
+    # DeduplicatedMatrix(m(ds.x), ds.ii) # this might be slightly faster but might hit some corner cases
+    m(ds.x)[:,ds.ii] # this is safer
+end
+
+function (m::ExprModel)(ds::BagNode{<:Missing})
+    repeat(m.aggregation.ψ, 1, numobs(ds))
+end
+
