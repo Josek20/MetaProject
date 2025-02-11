@@ -7,6 +7,6 @@
 #SBATCH --error=/home/shuhaole/logs/tree_simp_%j.err
 #SBATCH --out=/home/shuhaole/logs/tree_simp_%j.out
 
-ml Julia/1.10.2-linux-x86_64
-julia -p 1 --project=./test/bemchmarking test/benchmarking/benchmark.jl
+ml Julia/1.11.2-linux-x86_64
+julia -p 1 --project=./test/bemchmarking example/test_train_boosting.jl
 # julia -p 10 --project=./example example/tree_simp_example.jl

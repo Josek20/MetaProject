@@ -1,3 +1,14 @@
+01.02.2025 - 07.02.2025
+1) made clean code branch
+2) implementing mcts
+3) have working pipeline that produces consistant results
+
+
+21.01.2025 - 28.01.2025
+1) have somewhat a consistant pipeline, but it takes losts of ep to get results better than baseline
+2) have disqused different approaches to this problem
+
+
 25.12.2024 - 21.01.2025
 1) Pevny suggested and prototyped the OnlyNodes (intension to be more type stable and have string interning)
 2) Work done by me to do the testing and ensure its reliability for the pipeline

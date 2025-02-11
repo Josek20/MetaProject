@@ -14,37 +14,8 @@ function get_training_data_from_proof(proof::Vector, initial_expression::Expr)
         append!(smallest_node.children, nodes_ids)
         smallest_node = only(filter(x->x.rule_index == i, filtered_new_nodes))
     end
-    ds, hp, hn, proof_vector, tr = extract_training_data(smallest_node, soltree)
+    ds, hp, hn, proof_vector, tr = extract_training_data(smallest_node, soltree, root)
     return (;ds, hp, hn, tr)
-end
-
-
-function create_batches_varying_length(data, n_batches)
-    # Step 1: Sort the data by length of each element
-    sorted_data = sort(data, by = x->exp_size(x))
-
-    # Step 2: Calculate the number of elements in each batch
-    total_data_length = length(sorted_data)
-    
-    # Determine the approximate size of each batch, but with varying lengths
-    batch_sizes = [floor(Int, total_data_length / n_batches) for _ in 1:n_batches]
-    
-    # Distribute the remainder data (if total_data_length is not perfectly divisible)
-    remainder = total_data_length % n_batches
-    for i in 1:remainder
-        batch_sizes[i] += 1
-    end
-
-    # Step 3: Split the sorted data into batches according to the calculated sizes
-    batches = []
-    start_idx = 1
-    for batch_size in batch_sizes
-        end_idx = start_idx + batch_size - 1
-        push!(batches, sorted_data[start_idx+100:start_idx + 200 - 1])
-        start_idx = end_idx + 1
-    end
-
-    return batches
 end
 
 
@@ -144,9 +115,7 @@ end
 function reset_all_function_caches()
     empty!(memoize_cache(exp_size))
     empty!(memoize_cache(all_expand))
-    empty!(memoize_cache(interned_cached_inference!))
-    empty!(memoize_cache(hashed_expr_cached_inference!))
-    empty!(memoize_cache(expr_cached_inference!))
+    empty!(memoize_cache(general_cached_inference))
 end
 
 function cache_status()
@@ -154,15 +123,11 @@ function cache_status()
     node_cache = round(Base.summarysize(nc) / 1_000_000, digits = 2),
     exp_size = round(Base.summarysize(memoize_cache(exp_size)) / 1_000_000, digits = 2),
     all_expand = round(Base.summarysize(memoize_cache(all_expand)) / 1_000_000, digits = 2),
-    interned_cached_inference = round(Base.summarysize(memoize_cache(interned_cached_inference!)) / 1_000_000, digits = 2),
-    hashed_expr_cached_inference = round(Base.summarysize(memoize_cache(hashed_expr_cached_inference!)) / 1_000_000, digits = 2),
-    expr_cached_inference = round(Base.summarysize(memoize_cache(expr_cached_inference!)) / 1_000_000, digits = 2),
+    all_cached_inference = round(Base.summarysize(memoize_cache(general_cached_inference)) / 1_000_000, digits = 2),
     )
 end
 
 
 function reset_inference_caches()
-    empty!(memoize_cache(interned_cached_inference!))
-    empty!(memoize_cache(hashed_expr_cached_inference!))
-    empty!(memoize_cache(expr_cached_inference!))
+    empty!(memoize_cache(general_cached_inference))
 end
