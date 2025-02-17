@@ -12,7 +12,7 @@ value_model = Chain(
 # )
 
 rules_groups = length(theory)
-rules_groups = 10
+# rules_groups = 10
 policy_model = Chain(
     Dense(input_dim, hidden_dim, leakyrelu), Dense(hidden_dim, hidden_dim, leakyrelu), Dense(hidden_dim, rules_groups)
 )
@@ -41,29 +41,40 @@ function get_all_subtrees!(ex, pos, all_subtrees::Set)
 end
 
 
+function get_all_subtrees!(ex::NodeID, all_subtrees::Vector)
+    node = nc[ex]
+    push!(all_subtrees, ex)
+    for (ind,i) in enumerate([node.left, node.right])
+        if !(nc[i].iscall) && nc[i].head ∉ [:&&, :||]
+            continue
+        end
+        get_all_subtrees!(i, all_subtrees)
+    end
+end
+
+
 function forward(policy_model, value_model, embedding_heuristic, ex, max_steps=max_steps)
     tree_traces = [ex]
     rule_probs_traces = []
     region_values_traces = []
     rules_applied = []
     subtree_embeddings_traces = []
-    cache = LRU(maxsize=1000)
+    cache = MyModule.memoize_cache(general_cached_inference)
     for _ in 1:max_steps
         # @show cache
-        tmp = MyModule.cached_inference!(ex, cache, embedding_heuristic, new_all_symbols, sym_enc)
+        tmp = MyModule.general_cached_inference(ex, embedding_heuristic)
         if isempty(tmp)
-            error("cached_inference! returned empty results for the expression: $ex")
+            error("general_cached_inference returned empty results for the expression: $ex")
         end
         all_subtrees = Set()
-        get_all_subtrees!(ex, Int[], all_subtrees)
+        get_all_subtrees!(ex, all_subtrees)
         # @show length(all_subtrees), tmp, cache
-        subtree_embedding = []
+        # subtree_embedding = []
         input_embeddings = zeros(length(tmp) * 2, length(all_subtrees))
         # @show tmp
         for (i, subtree) in enumerate(all_subtrees)
-            tree, pos = subtree
-            a = vcat(tmp, cache[tree])
-            push!(subtree_embedding, (subtree, a))
+            a = vcat(tmp, cache[subtree])
+            # push!(subtree_embedding, (subtree, a))
             input_embeddings[:, i] = a
         end
         region_values1 = value_model(input_embeddings)

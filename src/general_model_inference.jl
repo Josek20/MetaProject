@@ -9,7 +9,7 @@ end
 Flux.@layer ExprModel
 
 
-@my_cache LRU(maxsize=10_000) function general_cached_inference(ex, ::Type{Expr}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+@my_cache LRU(maxsize=100_000) function general_cached_inference(ex, ::Type{Expr}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
     args, fun_name = get_head_and_args(ex)
     args = general_cached_inference(args, model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
     encoding = zeros(Float32, length(all_symbols))
@@ -22,7 +22,7 @@ Flux.@layer ExprModel
 end
 
 
-@my_cache LRU(maxsize=10_000) function general_cached_inference(ex, ::Type{Symbol}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+@my_cache LRU(maxsize=100_000) function general_cached_inference(ex, ::Type{Symbol}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
     symbol_index, encoding_value = get_leaf_args(ex)
     encoding = zeros(Float32, length(all_symbols))
     encoding[symbols_to_ind[symbol_index]] = encoding_value
@@ -62,7 +62,7 @@ end
 function (m::ExprModel)(x)
     inference_type = get_inference_type(x)
     ds = general_cached_inference(x, inference_type, m)
-    m.heuristic(ds)[1,1]
+    m.heuristic(ds)
 end
 
 

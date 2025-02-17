@@ -3,12 +3,9 @@ module MyModule
 using Flux
 using JSON
 using Metatheory
-# using .Metatheory.EGraphs: SaturationReport, eqsat_search!, eqsat_apply!, extract!
 using Statistics
 using Mill
-# using CSV
 using DataStructures
-# using DataFrames
 using Base.Threads
 using LRUCache
 using SimpleChains
@@ -23,12 +20,11 @@ include("memoization/memoize.jl")
 include("deduplication/dedu_matrix.jl")
 include("deduplication/deduplication.jl")
 
-# using Metatheory: @theory, @rule
 # using InternedExpr
 include("onlynode.jl")
 include("onlynodes_rules.jl")
 include("scoping.jl")
-# include("scoping2.jl")
+
 get_value(x) = x
 typeof_value(x)  = typeof(x)
 
@@ -100,19 +96,13 @@ include("new_ex2mill.jl")
 include("search_utils.jl")
 include("general_search_pipeline.jl")
 include("training_sample.jl")
-# include("interned_pipeline.jl")
 
-# Todo: Should be deleted. Have splited to different files
-# include("tree_embedding.jl")
-# include("expr_model.jl")
 include("model_utils.jl")
 include("general_model_inference.jl")
 include("expr_model_loss.jl")
 # Todo: Fix the simple chains model with updated api
 # include("simple_chains_model.jl")
 # export ExprModelSimpleChains
-# include("policy_tree_simplifier.jl")
-# include("generate_random_expressions.jl")
 abstract type ExprModelSimpleChains end
 export ex2mill, heuristic_loss, ExprModel, all_symbols, symbols_to_index, TrainingSample, train_heuristic!, build_tree, execute, policy_loss_func, test_policy, tree_sample_to_policy_sample, PolicyTrainingSample, variable_names, new_all_symbols, sym_enc, cache_hits, cache_misses 
 include("tests.jl")

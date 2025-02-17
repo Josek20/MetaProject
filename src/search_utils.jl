@@ -31,7 +31,7 @@ function my_rewriter!(position::Vector{Int}, ex::Expr, rule)
 end
 
 
-function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU{Expr, Vector})
+function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU)
     if !isa(ex, Expr)
         return
     end
@@ -72,7 +72,8 @@ function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tre
 end
 
 
-function all_expand(ex::Expr, theory, cache=LRU{Expr, Vector}(maxsize=10_000))
+@my_cache LRU(maxsize=100_000) function all_expand(ex::Expr, theory)
+    cache = memoize_cache(all_expand)
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
     old_traverse_expr!(ex, theory, 1, Int64[], tmp, cache) 
@@ -90,7 +91,7 @@ function all_expand(ex::Expr, theory, cache=LRU{Expr, Vector}(maxsize=10_000))
 end
 
 
-@my_cache LRU(maxsize=10_000) function all_expand(ex::NodeID, theory)
+@my_cache LRU(maxsize=100_000) function all_expand(ex::NodeID, theory)
     node = nc[ex]
     !(node.iscall) && return([], [])
     self = [(ind, r(ex)) for (ind, r) in enumerate(theory)]

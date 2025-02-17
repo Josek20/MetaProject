@@ -8,9 +8,9 @@ using Serialization
 using Optimisers
 using Statistics
 
-experiment_name = "test_heuristic_boosted_training"
+experiment_name = "test_heuristic_boosted_training_10ksamples"
 train_data_path = "./data/neural_rewrter/train.json"
-train_data = load_data(train_data_path)[1:1_000]
+train_data = load_data(train_data_path)[1:10_000]
 train_data = filter(x->!occursin("select", x[1]), train_data)
 train_data = preprosses_data_to_expressions(train_data)
 sorted_data = sort(train_data, by=x->MyModule.exp_size(x))
@@ -96,7 +96,7 @@ function self_boosted_train(model, data, epochs=10, initial_steps=100, initial_d
 end
 
 
-function validate_train()    
+function validate_train(model, data)
     empty!(MyModule.memoize_cache(MyModule.general_cached_inference))
     empty!(MyModule.memoize_cache(MyModule.exp_size))
     df = map(data) do ex
@@ -106,4 +106,5 @@ function validate_train()
     CSV.write("stats/results_of_$(experiment_name)_ep$(epochs)_hidden$(hidden_size).csv", df)
 end
 
-self_boosted_train(model, data)
+# self_boosted_train(model, data)
+# validate_train(model, data)

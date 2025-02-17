@@ -292,3 +292,18 @@ function test_all_expand()
         @assert exp_size(ex) == exp_size(i) "inconsistent size for -> $(ex), $(i) -> $(exp_size(ex)), $(exp_size(i))"
     end
 end
+
+
+function onlynodes_consistency(data)
+    for ex in data
+        nd = intern!(ex)
+        back_ex = expr(nc, nd)
+        @assert intern!(back_ex) == nd
+    end
+    exs = [:(!(1021 + (v0 * 66 + (v2 * 2 + v1 * 33)) < v0 * 66 + (min(v2 * 2, 31) + v1 * 33) && 1021 + (v0 * 66 + (v2 * 2 + v1 * 33)) < 129))]
+    for ex in exs
+        nd = intern!(ex)
+        back_ex = expr(nc, nd)
+        @assert intern!(back_ex) == nd
+    end 
+end

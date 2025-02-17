@@ -210,6 +210,6 @@ function TermInterface.similarterm(nc::NodeCache, ::NodeID, head, children, symt
     left = length(children) ≥ 1 ? get!(nc, children[1]) : nullid
     right = length(children) ≥ 2 ? get!(nc, children[2]) : nullid
     length(children) > 2 && error("Too many childrens")
-    iscall = exprhead == :call
+    iscall = exprhead == :call || exprhead in [:||, :&&]
     return(get!(nc, OnlyNode(head, iscall, 0f0, left, right)))
 end

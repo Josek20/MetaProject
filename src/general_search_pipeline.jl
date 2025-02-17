@@ -34,7 +34,7 @@ function expand_node!(parent::Node, soltree, open_list, model; theory=theory)
     new_nodes = map(x->Node(x, (), parent.node_id, parent.depth + 1), new_ex)
     new_nodes = filter(x->push_to_tree!(soltree, x), new_nodes)
     isempty(new_nodes) && return
-    o = map(x->model(x.ex), new_nodes)
+    o = map(x->only(model(x.ex)), new_nodes)
     for (v,n) in zip(o, new_nodes)
         enqueue!(open_list, n, v)
     end
@@ -48,11 +48,11 @@ function build_tree!(soltree, open_list, close_list, model; max_expansions=1000,
     while !isempty(open_list)
         expansions == max_expansions && break
         node, _ = dequeue_pair!(open_list)
+        push!(close_list, node.node_id)
 
         node.depth == max_depth && continue
         
         expand_node!(node, soltree, open_list, model)
-        push!(close_list, node.node_id)
         expansions += 1
     end
 end
@@ -82,7 +82,7 @@ function initialize_tree_search(ex, model; max_expansions=1000, max_depth=10)
     soltree = Dict{UInt64, Node}()
     root = Node(ex, (), hash(ex), 0)
     soltree[root.node_id] = root
-    o = model(root.ex)
+    o = only(model(root.ex))
     enqueue!(open_list, root, o)
     build_tree!(soltree, open_list, close_list, model, max_expansions=max_expansions, max_depth=max_depth)
 
