@@ -31,7 +31,7 @@ end
 
 function expand_node!(parent::Node, soltree, open_list, model; theory=theory)
     new_ex, rules_applied = all_expand(parent.ex, theory)
-    new_nodes = map(x->Node(x, (), parent.node_id, parent.depth + 1), new_ex)
+    new_nodes = map(x->Node(x[1], x[2], parent.node_id, parent.depth + 1), zip(new_ex, rules_applied))
     new_nodes = filter(x->push_to_tree!(soltree, x), new_nodes)
     isempty(new_nodes) && return
     o = map(x->only(model(x.ex)), new_nodes)
