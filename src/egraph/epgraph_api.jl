@@ -1,4 +1,4 @@
-struct EGraphEnv<:MyEnv
+mutable struct EGraphEnv<:AbstractEnv
     initial_expr
     egraph
     action_sequence
@@ -22,22 +22,22 @@ function action_space(env::EGraphEnv)
         end
     end
     actions = []
-    for bindings in egraph.buffer
+    for bindings in env.egraph.buffer
         rule_idx, id = bindings[0]
         direction = sign(rule_idx)
         rule_idx = abs(rule_idx)
         rule = env.theory[rule_idx]
         push!(actions, (bindings, rule, id, direction))
     end
-    empty!(egraph.buffer)
+    empty!(env.egraph.buffer)
     return actions
 end
 
 state(env::EGraphEnv) = env.egraph
 
-state_space(env::EGraphEnv) = env.egraph
+state_space(env::EGraphEnv) = env.egraph.classes
 
-reward(env::EGraphEnv) = exp_size(env.expr) - exp_size(extract!(env.egraph, astsize))
+reward(env::EGraphEnv) = exp_size(env.initial_expr) - exp_size(extract!(env.egraph, astsize))
 
 is_terminated(env::EGraphEnv) = env.current_expansions == env.max_expansions ? true : false
 

@@ -1,4 +1,4 @@
-struct NeuRewriterEnv<:MyEnv
+mutable struct NeuRewriterEnv<:AbstractEnv
     initial_state
     current_state
     soltree
@@ -25,13 +25,13 @@ function action_space(env::NeuRewriterEnv)
     get_all_subtrees!(env.current_state.ex, subtrees)
     tree_action = []
     for (st, pos) in subtrees
-        new_ex = [(r(st), pos, ind, st) for (ind,r) in enumerate(env.theory)]
+        new_ex = [(intern!(r(st)), pos, ind, st) for (ind,r) in enumerate(env.theory)]
         # filter empty rewrites
         filtered_ex = filter(x->!isnothing(x[1]), new_ex)
-        new_ex = map(x->(x..., my_rewrite!(env.current_state.ex, x[2], x[1])), new_ex)
+        new_ex = map(x->(x..., my_rewrite!(env.current_state.ex, x[2], x[1])), filtered_ex)
         # filter repeated 
-        filtered_ex = filter(x->!haskey(soltree, hash(x[5])), new_ex)
-        push!(tree_action, filtered_ex)
+        filtered_ex = filter(x->!haskey(env.soltree, hash(x[5])), new_ex)
+        append!(tree_action, filtered_ex)
     end
     return tree_action
 end
@@ -46,7 +46,7 @@ is_terminated(env::NeuRewriterEnv) = env.current_expansions == env.max_expansion
 
 function reset!(env::NeuRewriterEnv)
     empty!(env.soltree)
-    soltree[env.initial_state.node_id] = env.initial_state
+    env.soltree[env.initial_state.node_id] = env.initial_state
     empty!(env.close_list)
     env.current_expansions = 0
 end

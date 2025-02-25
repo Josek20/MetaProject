@@ -1,4 +1,4 @@
-struct PlanningEnv<:MyEnv
+mutable struct PlanningEnv<:AbstractEnv
     initial_state
     soltree
     open_list
@@ -16,7 +16,7 @@ function PlanningEnv(ex, model; max_expansions=2)
     ex = intern!(ex)
     root = Node(ex, (), hash(ex), 0)
     soltree[root.node_id] = root
-    enqueue!(open_list)
+    enqueue!(open_list, root, 0f0)
     return PlanningEnv(root, soltree, open_list, close_list, theory, max_expansions, 0, model)
 end
 
@@ -35,15 +35,15 @@ is_terminated(env::PlanningEnv) = env.current_expansions == env.max_expansions ?
 
 function reset!(env::PlanningEnv)
     empty!(env.soltree)
-    soltree[env.initial_state.node_id] = env.initial_state
+    env.soltree[env.initial_state.node_id] = env.initial_state
     empty!(env.open_list)
-    enqueue!(open_list, env.initial_state, 0)
+    enqueue!(env.open_list, env.initial_state, 0)
     empty!(env.close_list)
     env.current_expansions = 0
 end
 
 function act!(env::PlanningEnv, action)
-    current_node = action
+    current_node, _ = action
     push!(env.close_list, current_node.node_id)
     expand_node!(current_node, env.soltree, env.open_list, env.model)
     env.current_expansions += 1
