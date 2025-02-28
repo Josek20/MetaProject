@@ -33,7 +33,9 @@ function POMDPs.gen(m::ExprEnv, s::NodeID, a::NodeID, rng::AbstractRNG)
 end
 function POMDPs.actions(m::ExprEnv, s::NodeID)
 	all_actions = first(MyModule.all_expand(s, theory))
-    filter(x->x!=s, all_actions)
+    tmp = filter(x->x!=s, all_actions)
+    length(tmp) == 0 && return NodeID[s]
+    return tmp
 end
 
 
@@ -48,8 +50,14 @@ POMDPs.reward(m::ExprEnv, s::NodeID, a::NodeID) = exp_size(s) - exp_size(a)
 
 POMDPs.initialstate(e::ExprEnv) = Deterministic(e.s₀)
 POMDPs.discount(e::ExprEnv) = 0.01
+# POMDPs.terminated(e::ExprEnv) = 
 env = ExprEnv(ex)
-solver = MCTSSolver(n_iterations=50, depth=20, exploration_constant=5.0)
+solver = MCTSSolver(n_iterations=20, depth=20, exploration_constant=5.0)
 planner = solve(solver, env)
-
-a = action(planner, ex)
+max_expansions = 10
+expansion_path = NodeID[ex]
+for i in 1:max_expansions
+    a = action(planner, ex)
+    push!(expansion_path, a)
+    ex = a
+end
