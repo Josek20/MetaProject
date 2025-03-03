@@ -51,7 +51,7 @@ policy_model = ExprModel(
 
 
 function training_data(n=typemax(Int))
-    train_data_path = "data/neural_rewrter/train.json"
+    train_data_path = "../../data/neural_rewrter/test.json"
     train_data = load_data(train_data_path)[1:1000]
     train_data = filter(x->!occursin("select", x[1]), train_data)
     train_data = preprosses_data_to_expressions(train_data)
@@ -74,6 +74,7 @@ end
 function POMDPs.gen(m::ExprEnv, s::NodeID, a::NodeID, rng::AbstractRNG)
  	(;sp = a, r = reward(m, s, a))
 end
+
 function POMDPs.actions(m::ExprEnv, s::NodeID)
 	all_actions = first(MyModule.all_expand(s, theory))
     tmp = filter(x->x!=s, all_actions)
@@ -97,10 +98,12 @@ function rollout_estimate(mdp::ExprEnv, s, remaining_depth)
 end
 
 
-POMDPs.reward(m::ExprEnv, s::NodeID, a::NodeID) = exp_size(s) - exp_size(a)
+function  POMDPs.reward(m::ExprEnv, s::NodeID, a::NodeID) 
+    exp_size(s) - exp_size(a)
+end
 
 POMDPs.initialstate(e::ExprEnv) = Deterministic(e.s₀)
-POMDPs.discount(e::ExprEnv) = 0.01
+POMDPs.discount(e::ExprEnv) = 1
 # POMDPs.terminated(e::ExprEnv) = 
 # solver = MCTSSolver(n_iterations=20, depth=20, exploration_constant=5.0, init_Q=value_init_q)
 max_expansions = 20
@@ -113,18 +116,44 @@ for (ind, ex) in enumerate(trn_data)
         empty!(MyModule.nc)
     end
     
-    solver = MCTSSolver(n_iterations=10, depth=10, exploration_constant=5.0)
+    ex = trn_data[100]
+    solver = MCTSSolver(n_iterations=100,reuse_tree = true, depth=50, init_N = 0, exploration_constant=10.0)
+    ex = intern!(ex)
+    env = ExprEnv(ex)
+    policy = solve(solver, env)
+    expansion_path = NodeID[ex]
+    tmp = ex
+    t = @elapsed for i in 1:max_expansions
+        a = action(policy, tmp)
+        push!(expansion_path, a)
+        tmp = a
+    end
+    exp_size.(expansion_path)
+
+    @show t
+    @show expansion_path[end]
+    push!(final_res, exp_size(expansion_path[end]))
+end
+
+function visulization()
+    using D3Trees
+    ex = trn_data[100]
+    solver = MCTSSolver(n_iterations=100,reuse_tree = true, depth=50, init_N = 3, exploration_constant=5.0, enable_tree_vis=true)
     ex = intern!(ex)
     env = ExprEnv(ex)
     planner = solve(solver, env)
     expansion_path = NodeID[ex]
-    tmp = ex
+    state = ex
+
+    a = action(planner, state)
+    a, info = action_info(planner, state)
+    D3Tree(info[:tree], init_expand=2) # click on the node to expand it
+
+
     t = @elapsed for i in 1:max_expansions
-        a = action(planner, tmp)
+        a = action(policy, tmp)
         push!(expansion_path, a)
         tmp = a
     end
-    @show t
-    @show expansion_path[end]
-    push!(final_res, exp_size(expansion_path[end]))
+    exp_size.(expansion_path)
 end
