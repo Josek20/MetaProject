@@ -3,216 +3,184 @@
 input_dim = 512
 hidden_dim = 256
 max_steps = 50
-value_model = Chain(
-    Dense(input_dim, hidden_dim, leakyrelu), Dense(hidden_dim, hidden_dim, leakyrelu), Dense(hidden_dim, 1)
-)
+hidden_size = 64
 
-# policy_model = Chain(
-#     Dense(input_dim, hidden_dim, leakyrelu), Dense(hidden_dim, hidden_dim, leakyrelu), Dense(hidden_dim, length(theory)), Dense(length(theory), 1)
-# )
+function ffnn(idim, hidden_size, layers)
+    layers == 1 && return Dense(idim, hidden_size, Flux.gelu)
+    layers == 2 && return Flux.Chain(Dense(idim, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu))
+end
 
-rules_groups = length(theory)
-# rules_groups = 10
-policy_model = Chain(
-    Dense(input_dim, hidden_dim, leakyrelu), Dense(hidden_dim, hidden_dim, leakyrelu), Dense(hidden_dim, rules_groups)
-)
+head_model = ProductModel(
+    (;head = ffnn(length(new_all_symbols), hidden_size, 1),
+      args = ffnn(hidden_size, hidden_size, 1),  
+        ),
+    ffnn(2*hidden_size, hidden_size, 1)
+    )
+
+args_model = ProductModel(
+    (;args = ffnn(hidden_size, hidden_size, 1),  
+      position = Dense(2,hidden_size),  
+        ),
+    ffnn(2*hidden_size, hidden_size, 1)
+    )
+
+value_model = ExprModel(
+    head_model,
+    Mill.SegmentedSum(hidden_size),
+    args_model,
+    Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
+    );
+
+
+policy_model = ExprModel(
+    head_model,
+    Mill.SegmentedSum(hidden_size),
+    args_model,
+    Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, length(theory)), softmax)
+    );
+
 
 # myex = :( (v0 + v1) + 119 <= min((v0 + v1) + 120, v2) && ((((v0 + v1) - v2) + 127) / (8 / 8) + v2) - 1 <= min(((((v0 + v1) - v2) + 134) / 16) * 16 + v2, (v0 + v1) + 119))
 myex = :(v0 - 102 <= v0 - 102)
-# function loss(rules_probs, rules_choosen, region_values, region_values_target, value_loss_coef=0.5)
-#     policy_loss = -sum(rules_probs .* rules_choosen)
-#     value_loss = smooth_l1_loss(region_values, region_values_target)
-#     total_loss = policy_loss + value_loss * value_loss_coef
-#     return policy_loss, value_loss, total_loss
-# end
 
+function my_rewrite!(ex::NodeID, pos, new_exp_part::NodeID)
+    if isempty(pos)
+        return new_exp_part
+    end
+    node = MyModule.nc[ex]
 
-function get_all_subtrees!(ex, pos, all_subtrees::Set)
-    if !isa(ex, Expr)
-        return
+    if pos[1] == 1
+        new_part = my_rewrite!(node.left, pos[2:end], new_exp_part)
+        # node.left = new_part
+        new_node = OnlyNode(node.head, node.iscall, node.v, new_part, node.right)
+    else        
+        new_part = my_rewrite!(node.right, pos[2:end], new_exp_part)
+        # node.right = new_part
+        new_node = OnlyNode(node.head, node.iscall, node.v, node.left, new_part)
     end
-    push!(all_subtrees, (ex, copy(pos)))
-    # tmp = length(ex.args) > 2 ? 2 : 1
-    for (ind,i) in enumerate(ex.args)
-        push!(pos, ind)
-        get_all_subtrees!(i, pos, all_subtrees)
-        pop!(pos)
-    end
+    return get!(MyModule.nc, new_node)
 end
 
 
-function get_all_subtrees!(ex::NodeID, all_subtrees::Vector)
-    node = nc[ex]
-    push!(all_subtrees, ex)
+function get_all_subtrees!(ex::NodeID, all_subtrees::Vector, parent=[])
+    node = MyModule.nc[ex]
     for (ind,i) in enumerate([node.left, node.right])
-        if !(nc[i].iscall) && nc[i].head ∉ [:&&, :||]
+        if !(MyModule.nc[i].iscall) && MyModule.nc[i].head ∉ [:&&, :||]
             continue
         end
-        get_all_subtrees!(i, all_subtrees)
+        if i == MyModule.nullid
+            continue
+        end
+        pos = vcat(parent, ind)
+        push!(all_subtrees, (i, pos))
+        get_all_subtrees!(i, all_subtrees, pos)
     end
 end
 
 
-function forward(policy_model, value_model, embedding_heuristic, ex, max_steps=max_steps)
-    tree_traces = [ex]
-    rule_probs_traces = []
-    region_values_traces = []
+function forward(ex, policy_model, value_model;max_expansions=50)
+    soltree = Dict{UInt64, Node}()
+    current = Node(ex, (), hash(ex), 0)
+    soltree[current.node_id] = current
+    smallest_node = current
+    smallest_node_size = exp_size(ex)
     rules_applied = []
-    subtree_embeddings_traces = []
-    cache = MyModule.memoize_cache(general_cached_inference)
-    for _ in 1:max_steps
-        # @show cache
-        tmp = MyModule.general_cached_inference(ex, embedding_heuristic)
-        if isempty(tmp)
-            error("general_cached_inference returned empty results for the expression: $ex")
+    rewrite_sequence = [ex]
+    for step in 1:max_expansions
+        ex = current.ex
+        subtrees = [(ex, [])]
+        get_all_subtrees!(ex, subtrees)
+        # @show subtrees
+        tree_action = []
+        for (st, pos) in subtrees
+            new_ex = [(intern!(r(st)), pos, ind, st) for (ind,r) in enumerate(theory)]
+            # filter empty rewrites
+            filtered_ex = filter(x->!isnothing(x[1]), new_ex)
+            # @show filtered_ex
+            new_ex = map(x->(x..., my_rewrite!(ex, x[2], x[1])), filtered_ex)
+            # @show length(new_ex)
+            # filter repeated
+            filtered_ex = filter(x->!haskey(soltree, hash(x[5])), new_ex)
+            append!(tree_action, filtered_ex)
         end
-        all_subtrees = Set()
-        get_all_subtrees!(ex, all_subtrees)
-        # @show length(all_subtrees), tmp, cache
-        # subtree_embedding = []
-        input_embeddings = zeros(length(tmp) * 2, length(all_subtrees))
-        # @show tmp
-        for (i, subtree) in enumerate(all_subtrees)
-            a = vcat(tmp, cache[subtree])
-            # push!(subtree_embedding, (subtree, a))
-            input_embeddings[:, i] = a
+        isempty(tree_action) && break
+        # if isempty(tree_action)
+        #     push!(rewrite_sequence, subtree)
+        #     break
+        # end
+        root_embedding = MyModule.general_cached_inference(ex, Expr, policy_model)
+        o = map(tree_action) do (_, _, rule_id, subtree, _)
+            # In the original paper concatenated the root embedding to the subtree
+            subtree_embedding = MyModule.general_cached_inference(subtree, Expr, policy_model)
+            (only(value_model.heuristic(subtree_embedding)), only(policy_model.heuristic(subtree_embedding)[rule_id]))
         end
-        region_values1 = value_model(input_embeddings)
-        region_values = softplus(region_values1)
-        rules_probs = policy_model(input_embeddings)
-        subtree_to_change = argmax(region_values)
-        rule_to_apply = argmax(rules_probs[:, subtree_to_change[2]])
-        push!(tree_traces, ex)
-        push!(subtree_embeddings_traces, input_embeddings[:, subtree_to_change[2]])
-        # push!(rule_probs_traces, rules_probs[:, subtree_to_change[2]])
-        # push!(region_values_traces, region_values[1,:])
-        push!(rule_probs_traces, maximum(rules_probs[:, subtree_to_change[2]]))
-        push!(region_values_traces, maximum(region_values[1,:]))
-        push!(rules_applied, rule_to_apply)
-        # @show collect(all_subtrees)[subtree_to_change[2]]
-        # @show rule_to_apply
-        subtree, subtree_path = collect(all_subtrees)[subtree_to_change[2]]
-        # old_ex = copy(ex)
-        for i in theory[(rule_to_apply - 1) * rules_groups + 1: rule_to_apply * rules_groups]
-            o = MyModule.my_rewriter!(subtree_path, ex, i)
-            if !(o isa Nothing)
-                ex = o
-                break
-            end
+        min_index = argmax(o)
+        _, pos, rule_id, subtree, current_exp = tree_action[min_index]
+        current_size = exp_size(current_exp)
+        next_current = Node(current_exp, (pos, rule_id), current.node_id, current.depth + 1)
+        soltree[next_current.node_id] = next_current
+        push!(current.children, next_current.node_id)
+        current = next_current
+        push!(rules_applied, rule_id)
+        push!(rewrite_sequence, subtree)
+        if smallest_node_size > current_size
+            smallest_node_size = current_size
+            smallest_node = current
         end
     end
-    return tree_traces, rule_probs_traces, region_values_traces, rules_applied, subtree_embeddings_traces
+    return smallest_node, rewrite_sequence, rules_applied
 end
 
  
-function get_reward(tree_traces, max_steps=max_steps, gamma=0.9)
-    decay_coef = 1.0
-    size_cache = LRU(maxsize=10000)
-    initial_expression = tree_traces[1]
-    initial_size = MyModule.exp_size(initial_expression, size_cache)
-    current_reward = initial_size - MyModule.exp_size(tree_traces[2], size_cache) - 1 
-    for i in 2:max_steps-1
-        current_reward = max(decay_coef * min(MyModule.exp_size(tree_traces[i], size_cache) - MyModule.exp_size(tree_traces[i+1], size_cache) - 1,initial_size), current_reward)
-        decay_coef *= gamma
+function proper_loss(policy_model, value_model, rewriting_sequence, rewards, rules_applied; gamma=0.9, alpha=10)
+    seq_len = length(rewards)
+    Q = MyModule.heuristic(value_model, rewriting_sequence)
+    P = MyModule.heuristic(policy_model, rewriting_sequence)
+    v_tmp = 0
+    p_tmp = 0
+    for t in 1:seq_len - 1
+        r = rewards[t:seq_len]
+        g = gamma .^ (collect(0:seq_len-t))
+        tmp = sum(g .* r - Q[t:seq_len])
+        # @show tmp
+        v_tmp += tmp ^ 2
+        p_tmp += tmp * log(P[rules_applied[t], t])
+        # @show p_tmp
     end
-
-    current_reward /= initial_size
-    region_value_target = current_reward
-    return  region_value_target
+    return -p_tmp + (alpha * v_tmp) / seq_len 
 end
 
 
-# total_loss(loss_rule_picking, loss_region_picking; alpha=10) = loss_rule_picking + alpha*loss_region_picking 
+optimizer=ADAM()
 
-
-# function reward(s1::Expr, s2::Expr, size_cache)
-#     return MyModule.exp_size(s1, size_cache) - MyModule.exp_size(s2, size_cache)
-# end
-
-
-# function loss_region_picking(tree_traces, region_values_traces; gamma=0.9, max_steps=max_steps)
-#     size_cache = LRU(maxsize=1000)
-#     total_loss = []
-#     for j in 1:max_steps
-#         tmp = 0
-#         for i in j:max_steps
-#             tmp += gamma^(i - j) * reward(tree_traces[i], tree_traces[i + 1], size_cache) - region_values_traces[i] 
-#         end
-#         push!(total_loss, tmp^2)
-#     end
-#     return mean(total_loss)
-# end
-
-
-# function loss_rule_picking(tree_traces, rule_probs_traces; gamma=0.9, max_steps=max_steps)
-#     size_cache = LRU(maxsize=1000)
-#     total_loss = []
-#     for j in 1:max_steps
-#         tmp = 0
-#         for i in j:max_steps
-#             tmp += gamma^(i - j) * reward(tree_traces[i], tree_traces[i + 1], size_cache) - rule_probs_traces[i] 
-#         end
-#         push!(total_loss, tmp * log(rule_probs_traces[j]))
-#     end
-#     return -sum(total_loss)
-# end
-
-
-function loss(policy_model, value_model, input_values, rules_applied, rewards; gamma=0.9, alpha=10, max_steps=max_steps)
-    total_loss_region = 0
-    total_loss_rules = 0
-    for j in 1:max_steps
-        tmp1 = 0
-        tmp2 = 0
-        for i in j:max_steps
-            reward = rewards[i]
-            k = policy_model(input_values[i])
-            k = k[rules_applied[i]]
-            tmp1 += gamma^(i - j) * reward - k
-            tmp2 += gamma^(i - j) * reward - only(value_model(input_values[i]))
-        end
-        total_loss_rules += tmp1 * log(policy_model(input_values[j])[rules_applied[j]])
-        total_loss_region += tmp2^2
-    end
-    total_loss = -total_loss_rules + alpha * total_loss_region / max_steps
-    return total_loss
-end
-
-
-function loss(tree_traces, rule_probs_traces, region_values_traces, size_cache, ; gamma=0.9, alpha=10, max_steps=max_steps)
-    total_loss_region = []
-    total_loss_rules = []
-    for j in 1:max_steps
-        tmp1 = 0
-        tmp2 = 0
-        for i in j:max_steps
-            reward = MyModule.exp_size(tree_traces[i], size_cache) - MyModule.exp_size(tree_traces[i + 1], size_cache)
-            tmp1 += gamma^(i - j) * reward - rule_probs_traces[i]
-            tmp2 += gamma^(i - j) * reward - region_values_traces[i]
-        end
-        push!(total_loss_rules, tmp1 * log(rule_probs_traces[j]))
-        push!(total_loss_region, tmp2^2)
-    end
-    total_loss = -sum(total_loss_rules) + alpha * mean(total_loss_region)
-    return total_loss
-end
-
-ps = Flux.params(policy_model, value_model)
-optimizer = Adam()
-size_cache = LRU(maxsize=100_000)
-for ep in 1:10
-    for ex in sorted_train_data[1:100]
-        tree_traces, rule_probs_traces, region_values_traces, rules_applied, subtree_embeddings_traces = forward(policy_model, value_model, heuristic, ex)
-        rewards = []
-        for i in 1:length(tree_traces) - 1
-            rew = MyModule.exp_size(tree_traces[i], size_cache) - MyModule.exp_size(tree_traces[i+1], size_cache)
+value_opt_state = Flux.setup(optimizer, value_model)
+policy_opt_state = Flux.setup(optimizer, policy_model)
+for ep in 1:1
+    t = @elapsed training_data = map(data) do ex
+        # tree_traces, rule_probs_traces, region_values_traces, rules_applied, subtree_embeddings_traces = forward(policy_model, value_model, heuristic, ex)
+        @show ex
+        smallest_node, rewrite_sequence, rules_applied = forward(intern!(ex), policy_model, value_model;max_expansions=50)
+        rewards = Float32[]
+        for i in 1:length(rewrite_sequence) - 1
+            rew = exp_size(rewrite_sequence[i]) - exp_size(rewrite_sequence[i + 1])
             push!(rewards, rew)
         end
-        sa, grad = Flux.Zygote.withgradient(ps) do
-            loss(policy_model, value_model, subtree_embeddings_traces, rules_applied, rewards)
+        subtree_embeddings_traces = MyModule.no_reduce_multiple_fast_ex2mill([MyModule.expr(MyModule.nc, i) for i in rewrite_sequence[2:end]])
+        (;subtree_embeddings_traces=subtree_embeddings_traces,rewards=rewards,rules_applied=rules_applied, rewrite_sequence=rewrite_sequence[2:end])
+    end
+    @show t
+    for _ in 1:1
+        total_loss = 0
+        tt = @elapsed for (ind, (subtree_embeddings_traces, rewards, rules_applied)) in enumerate(training_data)
+            sa, grad = Flux.Zygote.withgradient(value_model, policy_model) do vm, pm
+                proper_loss(pm, vm, subtree_embeddings_traces, rewards, rules_applied)
+            end
+            @show ind, sa
+            total_loss += sa
+            Optimisers.update!(value_opt_state, value_model, grad[1])
+            Optimisers.update!(policy_opt_state, policy_model, grad[2])
         end
-        @show tree_traces
-        @show sa
-        Flux.update!(optimizer, ps, grad)
+        @show total_loss
+        @show tt
     end
 end

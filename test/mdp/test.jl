@@ -5,18 +5,61 @@ using Random
 using MCTS
 using MCTS.POMDPTools
 
-using MyModule: intern!, NodeID, exp_size
+using MyModule.Mill
+using MyModule.Flux
+using MyModule: intern!, NodeID, exp_size, ExprModel
+
+
+input_dim = 512
+hidden_dim = 256
+max_steps = 50
+hidden_size = 64
+
+function ffnn(idim, hidden_size, layers)
+    layers == 1 && return Dense(idim, hidden_size, Flux.gelu)
+    layers == 2 && return Flux.Chain(Dense(idim, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu))
+end
+
+head_model = ProductModel(
+    (;head = ffnn(length(new_all_symbols), hidden_size, 1),
+      args = ffnn(hidden_size, hidden_size, 1),  
+        ),
+    ffnn(2*hidden_size, hidden_size, 1)
+    )
+
+args_model = ProductModel(
+    (;args = ffnn(hidden_size, hidden_size, 1),  
+      position = Dense(2,hidden_size),  
+        ),
+    ffnn(2*hidden_size, hidden_size, 1)
+    )
+
+value_model = ExprModel(
+    head_model,
+    Mill.SegmentedSum(hidden_size),
+    args_model,
+    Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, 1)),
+    );
+
+
+policy_model = ExprModel(
+    head_model,
+    Mill.SegmentedSum(hidden_size),
+    args_model,
+    Flux.Chain(Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, hidden_size, Flux.gelu), Dense(hidden_size, length(theory)), softmax)
+    );
+
 
 function training_data(n=typemax(Int))
-    train_data_path = "../../data/neural_rewrter/test.json"
-    train_data = load_data(train_data_path)[1:100]
+    train_data_path = "data/neural_rewrter/train.json"
+    train_data = load_data(train_data_path)[1:1000]
     train_data = filter(x->!occursin("select", x[1]), train_data)
     train_data = preprosses_data_to_expressions(train_data)
     train_data = sort(train_data, by=x->MyModule.exp_size(x))
     last(train_data, min(length(train_data), n))
 end
 
-trn_data = training_data(10)
+trn_data = training_data(1000)
 
 ex = first(trn_data)
 ex = intern!(ex)
@@ -45,19 +88,43 @@ end
 #     best = best_sanode_Q(get_state_node(tree, s))
 #     return action(best), (tree=tree, best_Q=q(best))
 # end
+function value_init_q(mdp::ExprEnv, s, a)
+    only(value_model(a))
+end
+
+function rollout_estimate(mdp::ExprEnv, s, remaining_depth)
+    policy_model(s)
+end
+
 
 POMDPs.reward(m::ExprEnv, s::NodeID, a::NodeID) = exp_size(s) - exp_size(a)
 
 POMDPs.initialstate(e::ExprEnv) = Deterministic(e.s₀)
 POMDPs.discount(e::ExprEnv) = 0.01
 # POMDPs.terminated(e::ExprEnv) = 
-env = ExprEnv(ex)
-solver = MCTSSolver(n_iterations=20, depth=20, exploration_constant=5.0)
-planner = solve(solver, env)
-max_expansions = 10
-expansion_path = NodeID[ex]
-for i in 1:max_expansions
-    a = action(planner, ex)
-    push!(expansion_path, a)
-    ex = a
+# solver = MCTSSolver(n_iterations=20, depth=20, exploration_constant=5.0, init_Q=value_init_q)
+max_expansions = 20
+final_res = []
+for (ind, ex) in enumerate(trn_data)
+    println("$(ind): $(ex)")
+    if rem(ind, 10) == 0
+        empty!(MyModule.memoize_cache(MyModule.all_expand))
+        empty!(MyModule.memoize_cache(exp_size))
+        empty!(MyModule.nc)
+    end
+    
+    solver = MCTSSolver(n_iterations=10, depth=10, exploration_constant=5.0)
+    ex = intern!(ex)
+    env = ExprEnv(ex)
+    planner = solve(solver, env)
+    expansion_path = NodeID[ex]
+    tmp = ex
+    t = @elapsed for i in 1:max_expansions
+        a = action(planner, tmp)
+        push!(expansion_path, a)
+        tmp = a
+    end
+    @show t
+    @show expansion_path[end]
+    push!(final_res, exp_size(expansion_path[end]))
 end

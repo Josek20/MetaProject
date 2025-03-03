@@ -7,7 +7,8 @@ using Serialization
 using BenchmarkTools
 using ProfileCanvas
 
-using MyModule: exp_size, initialize_tree_search, all_expand, intern!, Node, build_tree, expand_node!, NodeID, TreePolicyModel, Node, push_to_tree!, extract_smallest_node
+using MyModule: load_data, preprosses_data_to_expressions
+using MyModule: exp_size, initialize_tree_search, all_expand, intern!, Node, build_tree, expand_node!, NodeID, TreePolicyModel, Node, push_to_tree!, extract_smallest_node, OnlyNode
 
 experiment_name = "monte_carlo_alpha_zero"
 train_data_path = "./data/neural_rewrter/train.json"
@@ -60,6 +61,40 @@ policy_model = ExprModel(
 
 has_terminal(ex::Vector{NodeID}, terminal_node = intern!(:1)) = terminal_node ∈ ex
 has_terminal(ex::Vector{Expr}, terminal_node = :(1)) = terminal_node ∈ ex
+
+function get_all_subtrees!(ex::NodeID, all_subtrees::Vector, parent=[])
+    node = MyModule.nc[ex]
+    for (ind,i) in enumerate([node.left, node.right])
+        if !(MyModule.nc[i].iscall) && MyModule.nc[i].head ∉ [:&&, :||]
+            continue
+        end
+        if i == MyModule.nullid
+            continue
+        end
+        pos = vcat(parent, ind)
+        push!(all_subtrees, (i, pos))
+        get_all_subtrees!(i, all_subtrees, pos)
+    end
+end
+
+function my_rewrite!(ex::NodeID, pos, new_exp_part::NodeID)
+    if isempty(pos)
+        return new_exp_part
+    end
+    node = MyModule.nc[ex]
+
+    if pos[1] == 1
+        new_part = my_rewrite!(node.left, pos[2:end], new_exp_part)
+        # node.left = new_part
+        new_node = OnlyNode(node.head, node.iscall, node.v, new_part, node.right)
+    else        
+        new_part = my_rewrite!(node.right, pos[2:end], new_exp_part)
+        # node.right = new_part
+        new_node = OnlyNode(node.head, node.iscall, node.v, node.left, new_part)
+    end
+    return get!(MyModule.nc, new_node)
+end
+
 function rollout(ex, model; max_expansions=10)
     soltree = Dict{UInt64, Node}()
     current = Node(ex, (), hash(ex), 0)
@@ -68,15 +103,29 @@ function rollout(ex, model; max_expansions=10)
     smallest_node_size = exp_size(ex)
     for step in 1:max_expansions
         ex = current.ex
-        new_ex, _ = all_expand(ex, theory)
-        new_nodes = map(x->Node(x, (), current.node_id, current.depth + 1), new_ex)
-        filtered_nodes = filter(x->push_to_tree!(soltree, x), new_nodes)
-        isempty(filtered_nodes) && break
-        # @show length(filtered_nodes)
-        o = map(x->model(x.ex), filtered_nodes)
+        subtrees = [(ex, [])]
+        get_all_subtrees!(ex, subtrees)
+        tree_action = []
+        for (st, pos) in subtrees
+            new_ex = [(intern!(r(st)), pos, ind, st) for (ind,r) in enumerate(theory)]
+            # filter empty rewrites
+            filtered_ex = filter(x->!isnothing(x[1]), new_ex)
+            new_ex = map(x->(x..., my_rewrite!(ex, x[2], x[1])), filtered_ex)
+            # filter repeated 
+            filtered_ex = filter(x->!haskey(soltree, hash(x[5])), new_ex)
+            append!(tree_action, filtered_ex)
+        end
+        isempty(tree_action) && break
+        root_embedding = MyModule.general_cached_inference(ex, Expr, model)
+        o = map(tree_action) do (_, _, rule_id, subtree, _)
+            subtree_embedding = MyModule.general_cached_inference(subtree, Expr, model)
+            model.heuristic(subtree_embedding)[rule_id]
+        end
         min_index = argmax(o)
-        current = filtered_nodes[min_index]
-        current_size = exp_size(current.ex)
+        _, pos, rule_id, subtree, current_exp = tree_action[min_index]
+        current_size = exp_size(current_exp)
+        current = Node(current_exp, (pos, rule_id), current.node_id, current.depth + 1)
+        soltree[current.node_id] = current
         if smallest_node_size > current_size
             smallest_node_size = current_size
             smallest_node = current
@@ -157,7 +206,7 @@ function monte_carlo_expand!(parent, soltree, open_list)
         end
     end
     # if isempty(filtered_new_ex)
-    n,v = dequeue_pair!(open_list)
+    _, _ = dequeue_pair!(open_list)
     monte_carlo_expand!(first(open_list)[1], soltree, open_list)
     # end
 end
@@ -182,8 +231,8 @@ function monte_carlo_search!(root, value_model, policy_model, open_list, rolled_
             for i in filtered_game_states
                 push!(rolled_out, i.node_id)
             end
-            # trees = [rollout(gs.ex, policy_model, max_expansions=30) for gs in filtered_game_states]
-            trees = [initialize_rollout_tree_search(gs.ex, policy_model, max_expansions=20) for gs in filtered_game_states]
+            trees = [rollout(gs.ex, policy_model, max_expansions=30) for gs in filtered_game_states]
+            # trees = [initialize_rollout_tree_search(gs.ex, policy_model, max_expansions=20) for gs in filtered_game_states]
             
             for (rt, (st, sm, cl)) in zip(filtered_game_states, trees)
                 reward = initial_size - exp_size(sm.ex)
@@ -224,7 +273,9 @@ function init_monte_carlo(game_state, value_model, policy_model; max_expansions=
     for i in rollout_nodes
         push!(rolled_out, i.node_id)
     end
-    trees = [initialize_rollout_tree_search(gs.ex, policy_model, max_expansions=20) for gs in rollout_nodes]
+    
+    trees = [rollout(gs.ex, policy_model, max_expansions=30) for gs in rollout_nodes]
+    # trees = [initialize_rollout_tree_search(gs.ex, policy_model, max_expansions=20) for gs in rollout_nodes]
             
     for (rt, (st, sm, cl)) in zip(rollout_nodes, trees)
         reward = exp_size(root.ex) - exp_size(sm.ex)
@@ -249,14 +300,14 @@ function init_monte_carlo(game_state, value_model, policy_model; max_expansions=
 end
 
 
-# @assert 0 == 1
-max_epochs = 10
+@assert 0 == 1
+max_epochs = 1
 inner_epochs = 10
 optimizer=ADAM()
 value_opt_state = Flux.setup(optimizer, value_model)
 policy_opt_state = Flux.setup(optimizer, policy_model)
 sqnorm(x) = sum(abs2, x)
-game_data = [(;ds=nothing, reward=0, initial_expr=i, proof=[]) for i in data[1:100]]
+game_data = [(;ds=nothing, reward=0, initial_expr=i, proof=[]) for i in data]
 batch_size = 100
 @elapsed for epoch in 1:max_epochs
     @show epoch
@@ -309,8 +360,8 @@ batch_size = 100
             # policy_loss = (all_choose_probs * log(the_rest))
             sa, grad = Flux.Zygote.withgradient(value_model, policy_model) do vm, pm
                 o = vec(MyModule.heuristic(vm,i))
-                o1 = pt * MyModule.heuristic(pm, i)
-                sum((o - r).^2) + sum(sqnorm, Flux.params(vm)) + sum(sqnorm, Flux.params(pm)) - sum(log.(o1))
+                o1 = pt * log.(MyModule.heuristic(pm, i))
+                sum((o - r).^2) + sum(sqnorm, Flux.params(vm)) + sum(sqnorm, Flux.params(pm)) - sum(o1)
             end
             # @show sa
             total_loss += sa
@@ -324,10 +375,5 @@ batch_size = 100
     end
     # println("Epoch $epoch: Value Loss = $total_loss")
     serialize("models/trained_value_model_$(experiment_name)_ep$(epoch)_hidden$(hidden_size).bin", value_model)
+    serialize("models/trained_policy_model_$(experiment_name)_ep$(epoch)_hidden$(hidden_size).bin", policy_model)
 end
-# r1 = theory[end-25]
-# r2 = theory[30]
-# s = 414646
-# b = MyModule.nc.nodemap[MyModule.nc.nodes[s]]
-# tmp = :(!((((v0 * 67) / v1) * v1 + 17 * v1) + 1007 < 116))
-# tmp = :(!(1021 + (v0 * 66 + (v2 * 2 + v1 * 33)) < v0 * 66 + (min(v2 * 2, 31) + v1 * 33) && 1021 + (v0 * 66 + (v2 * 2 + v1 * 33)) < 129))
