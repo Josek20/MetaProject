@@ -13,57 +13,18 @@ using CSV
 
 using MyModule: new_all_symbols, exp_size
 
-using MyModule: extract_training_data3, interned_build_tree!, extract_smallest_terminal_node, Node, intern!, extract_training_data1, TrainingSample
+using MyModule: extract_training_data, extract_smallest_node, Node, intern!, initialize_tree_search
 using MyModule.DataStructures
 
 
-function build_search_tree(heuristic, ex::Expr, max_steps, max_depth, all_symbols, symbols_to_index, theory)
-    soltree = Dict{UInt64, Node}()
-    open_list = PriorityQueue{Node, Float32}()
-    close_list = Set{UInt64}()
-    ex = intern!(ex)
-    root = Node(ex, (0,0), nothing, 0, nothing)
-    o = heuristic(root.ex)
-    soltree[root.node_id] = root
-    enqueue!(open_list, root, only(o))
-    reached_goal = interned_build_tree!(soltree, heuristic, open_list, close_list, all_symbols, symbols_to_index, max_steps, max_depth, theory)
-    smallest_node = extract_smallest_terminal_node(soltree, close_list)
-    return(soltree, smallest_node, root)
-end
-
 function _extract_training_data(smallest_node, soltree, root, max_depth, initial_expr)
-    big_vector, hp, hn, proof_vector, _ = extract_training_data3(smallest_node, soltree, root, max_depth)
+    big_vector, hp, hn, proof_vector, _ = extract_training_data(smallest_node, soltree, root, max_depth)
     saturated = false
     simplified_expression = smallest_node.ex
-    new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, initial_expr)            
+    new_sample = TrainingSample(big_vector, saturated, simplified_expression, proof_vector, hp, hn, initial_expr)
+    return(new_sample)
 end
 
-
-MyModule.get_value(x) = x
-
-const EMPTY_DICT = Base.ImmutableDict{Int,Any}()
-
-function (r::Metatheory.DynamicRule)(term)
-  # n == 1 means that exactly one term of the input (term,) was matched
-  success(bindings, n) =
-    if n == 1
-      bvals = [bindings[i] for i in 1:length(r.patvars)]
-      bvals = map(MyModule.get_value, bvals)
-      v = r.rhs_fun(term, nothing, bvals...)
-      if isnothing(v)
-        return nothing
-      end 
-      v = term isa MyModule.NodeID ? MyModule.intern!(v) : v
-      return(v)
-    end
-
-  try
-    return r.matcher(success, (term,), EMPTY_DICT)
-  catch err
-    rethrow(err)
-    throw(RuleRewriteError(r, term))
-  end
-end
 
 function training_data(n=typemax(Int))
     train_data_path = "../data/neural_rewrter/train.json"
@@ -76,7 +37,7 @@ end
 
 
 function prepare_dataset(n=typemax(Int))
-    samples = deserialize("../../data/training_data/size_heuristic_training_samples1.bin")
+    samples = deserialize("..data/training_data/size_heuristic_training_samples1.bin")
     samples = vcat(samples...)
     samples = sort(samples, by=x->MyModule.exp_size(x.initial_expr))
     # samples = sort(samples, by=x->length(x.proof))
@@ -153,16 +114,11 @@ function train(model, samples; max_depth = 60, max_expansions = 1000, proof_neig
         @show MyModule.cache_status()
         t = @elapsed samples = map(enumerate(samples)) do (i, old_sample)
             MyModule.reset_inference_caches()
-
-            # search_tree, solution = build_search_tree
-
-            # best_node = find_the_solution
-
-            t = @elapsed (soltree, smallest_node, root) = build_search_tree(model, old_sample.initial_expr, max_expansions, max_depth, new_all_symbols, sym_enc, theory)
+            t = @elapsed (soltree, smallest_node, root) = initialize_tree_search(model, intern!(old_sample.initial_expr), max_expansions, max_depth)
             sa = old_sample.goal_size
-            sb = MyModule.exp_size(smallest_node.ex)
+            sb = exp_size(smallest_node.ex)
             s = string(i,"  ", sa, "-->",sb, "  time to simplify: ", t)
-            # @show MyModule.cache_status()
+            
             if sa == sb
                 s = Base.AnnotatedString(s, [(1:length(s), :face, :white)])
             elseif sa > sb
@@ -173,7 +129,7 @@ function train(model, samples; max_depth = 60, max_expansions = 1000, proof_neig
                 println(s)
             end
             if sb ≤ sa
-                new_sample = _extract_training_data(smallest_node, soltree, root, proof_neighborhood, old_sample.initial_expr)
+                new_sample = _extract_training_data(smallest_node, soltree, root, proof_neighborhood)
                 ns = (ds = MyModule.deduplicate(new_sample.training_data), hp = new_sample.hp, hn = new_sample.hn, initial_expr = old_sample.initial_expr, goal_size = sb)
                 return(ns)
             else
@@ -237,7 +193,7 @@ model = ExprModel(
     );
     
 training_samples = prepare_dataset();
-epochs = 1000
+# epochs = 1000
 samples = map(training_samples) do sample
     ds, hp, hn, _ = MyModule.get_training_data_from_proof(sample.proof, sample.initial_expr)
     (; ds = MyModule.deduplicate(ds),
@@ -247,7 +203,7 @@ samples = map(training_samples) do sample
        goal_size = exp_size(sample.expression),
     )
 end
-train(model, samples)
+# train(model, samples)
 
 
 # data = [i.initial_expr for i in training_samples]

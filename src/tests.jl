@@ -307,3 +307,15 @@ function onlynodes_consistency(data)
         @assert intern!(back_ex) == nd
     end 
 end
+
+
+function test_rl_environment(env)
+    n_episode = 10
+    for _ in 1:n_episode
+        reset!(env)
+        while !is_terminated(env)
+            action = rand(action_space(env)) 
+            act!(env, action)
+        end
+    end
+end

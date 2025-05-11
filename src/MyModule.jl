@@ -13,6 +13,7 @@ using SparseArrays
 using LinearAlgebra
 using ChainRulesCore
 using Metatheory.TermInterface
+# using Metatheory: PatTerm, AbstractPat, DynamicRule, PatVar, PatSegment, @theory
 using MacroTools: isexpr, combinedef, namify, splitarg, splitdef
 
 include("memoization/memoize.jl")
@@ -51,17 +52,17 @@ end
 
 
 const EMPTY_DICT = Base.ImmutableDict{Int,Any}()
-function (r::Metatheory.DynamicRule)(term)
+function (r::DynamicRule)(term)
     # n == 1 means that exactly one term of the input (term,) was matched
     success(bindings, n) =
     if n == 1
         bvals = [bindings[i] for i in 1:length(r.patvars)]
-        bvals = map(MyModule.get_value, bvals)
+        bvals = map(get_value, bvals)
         v = r.rhs_fun(term, nothing, bvals...)
         if isnothing(v)
             return nothing
         end 
-        v = term isa MyModule.NodeID ? MyModule.intern!(v) : v
+        v = term isa NodeID ? intern!(v) : v
         return(v)
     end
     

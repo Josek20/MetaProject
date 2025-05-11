@@ -1,4 +1,24 @@
-# Embedding any subtree vcat(root node embedding, subtree embedding) 
+using MyModule
+using MyModule.Mill
+using MyModule.Flux
+using MyModule.DataStructures
+using Optimisers
+using Serialization
+using BenchmarkTools
+using ProfileCanvas
+
+using MyModule: load_data, preprosses_data_to_expressions
+using MyModule: exp_size, initialize_tree_search, all_expand, intern!, Node, build_tree, expand_node!, NodeID, TreePolicyModel, Node, push_to_tree!, extract_smallest_node, OnlyNode
+
+experiment_name = "monte_carlo_alpha_zero"
+train_data_path = "./data/neural_rewrter/train.json"
+train_data = load_data(train_data_path)[1:1_000]
+train_data = filter(x->!occursin("select", x[1]), train_data)
+train_data = preprosses_data_to_expressions(train_data)
+sorted_data = sort(train_data, by=x->MyModule.exp_size(x))
+data = sorted_data
+
+
 
 input_dim = 512
 hidden_dim = 256
@@ -85,6 +105,7 @@ function forward(ex, policy_model, value_model;max_expansions=50)
     smallest_node = current
     smallest_node_size = exp_size(ex)
     rules_applied = []
+    rewrite_sequence_subtree = []
     rewrite_sequence = [ex]
     for step in 1:max_expansions
         ex = current.ex
@@ -122,13 +143,14 @@ function forward(ex, policy_model, value_model;max_expansions=50)
         push!(current.children, next_current.node_id)
         current = next_current
         push!(rules_applied, rule_id)
-        push!(rewrite_sequence, subtree)
+        push!(rewrite_sequence_subtree, subtree)
+        push!(rewrite_sequence, current_exp)
         if smallest_node_size > current_size
             smallest_node_size = current_size
             smallest_node = current
         end
     end
-    return smallest_node, rewrite_sequence, rules_applied
+    return smallest_node, rewrite_sequence_subtree, rules_applied, rewrite_sequence
 end
 
  
@@ -136,16 +158,16 @@ function proper_loss(policy_model, value_model, rewriting_sequence, rewards, rul
     seq_len = length(rewards)
     Q = MyModule.heuristic(value_model, rewriting_sequence)
     P = MyModule.heuristic(policy_model, rewriting_sequence)
+    # Q = value_model(rewriting_sequence)
+    # P = policy_model(rewriting_sequence)
     v_tmp = 0
     p_tmp = 0
     for t in 1:seq_len - 1
         r = rewards[t:seq_len]
         g = gamma .^ (collect(0:seq_len-t))
-        tmp = sum(g .* r - Q[t:seq_len])
-        # @show tmp
+        tmp = abs(sum(g .* r - Q[t:seq_len]))
         v_tmp += tmp ^ 2
-        p_tmp += tmp * log(P[rules_applied[t], t])
-        # @show p_tmp
+        p_tmp += tmp * log(P[rules_applied[t], t] + 1e-10) # P contains Float32 to avoid log(0) have added 1e-10
     end
     return -p_tmp + (alpha * v_tmp) / seq_len 
 end
@@ -155,32 +177,57 @@ optimizer=ADAM()
 
 value_opt_state = Flux.setup(optimizer, value_model)
 policy_opt_state = Flux.setup(optimizer, policy_model)
-for ep in 1:1
-    t = @elapsed training_data = map(data) do ex
-        # tree_traces, rule_probs_traces, region_values_traces, rules_applied, subtree_embeddings_traces = forward(policy_model, value_model, heuristic, ex)
+epochs = 1
+inner_epochs = 10
+experiment_name = "test_no_boosting_ep$(epochs)_inep$(inner_epochs)_abs_loss"
+# @assert 0 == 1
+training_data = [(;subtree_embeddings_traces=nothing,rewards=[],rules_applied=[], rewrite_sequence=[], initial_expr=intern!(i), r=-1) for i in data]
+for ep in 1:epochs
+    t = @elapsed training_data = map(training_data) do d
+        ex = d.initial_expr
         @show ex
-        smallest_node, rewrite_sequence, rules_applied = forward(intern!(ex), policy_model, value_model;max_expansions=50)
+        smallest_node, rewrite_sequence_subtree, rules_applied, rewrite_sequence = forward(ex, policy_model, value_model; max_expansions=50)
+        best_size = exp_size.(rewrite_sequence[2:end])
+        # if min(best_size...) < exp_size(ex) || isnothing(d.subtree_embeddings_traces)
+        # @show rewrite_sequence[2:end][argmin(best_size)]
         rewards = Float32[]
         for i in 1:length(rewrite_sequence) - 1
             rew = exp_size(rewrite_sequence[i]) - exp_size(rewrite_sequence[i + 1])
             push!(rewards, rew)
         end
-        subtree_embeddings_traces = MyModule.no_reduce_multiple_fast_ex2mill([MyModule.expr(MyModule.nc, i) for i in rewrite_sequence[2:end]])
-        (;subtree_embeddings_traces=subtree_embeddings_traces,rewards=rewards,rules_applied=rules_applied, rewrite_sequence=rewrite_sequence[2:end])
+        subtree_embeddings_traces = MyModule.no_reduce_multiple_fast_ex2mill([MyModule.expr(MyModule.nc, i) for i in rewrite_sequence_subtree])
+        (;subtree_embeddings_traces=subtree_embeddings_traces,rewards=rewards,rules_applied=rules_applied, rewrite_sequence=rewrite_sequence[2:end], initial_expr=d.initial_expr, r=min(best_size...))
+        # else
+        #     d
+        # end
     end
     @show t
-    for _ in 1:1
+    for _ in 1:inner_epochs
         total_loss = 0
-        tt = @elapsed for (ind, (subtree_embeddings_traces, rewards, rules_applied)) in enumerate(training_data)
+        tt = @elapsed for (ind, (subtree_embeddings_traces, rewards, rules_applied, rewrite_sequence, _, _)) in enumerate(training_data)
+            # subtree_embeddings_traces = policy_model(subtree_embeddings_traces) # both networks will compute only the output of the embedding
             sa, grad = Flux.Zygote.withgradient(value_model, policy_model) do vm, pm
                 proper_loss(pm, vm, subtree_embeddings_traces, rewards, rules_applied)
             end
-            @show ind, sa
+            if isinf(sa)
+                serialize("models/neural_rewriter_value_model_loss_inf.bin", value_model)
+                serialize("models/neural_rewriter_policy_model_loss_inf.bin", policy_model)
+                break
+            end
+            if isnan(sa)
+                serialize("models/neural_rewriter_value_model_loss_nan.bin", value_model)
+                serialize("models/neural_rewriter_policy_model_loss_nan.bin", policy_model)
+                break
+            end
             total_loss += sa
             Optimisers.update!(value_opt_state, value_model, grad[1])
             Optimisers.update!(policy_opt_state, policy_model, grad[2])
         end
-        @show total_loss
+        @show total_loss / length(training_data)
         @show tt
     end
+    validation_stats = [exp_size(i.initial_expr) - i.r for i in training_data]
+    @show sum(validation_stats) / length(training_data)
 end
+serialize("models/trained_neural_rewriter_value_model_$(experiment_name).bin", value_model)
+serialize("models/trained_neural_rewriter_policy_model_$(experiment_name).bin", policy_model)

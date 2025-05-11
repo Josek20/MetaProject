@@ -16,9 +16,13 @@ end
 
 # action_space(env::EGraphEnv) = env.theory
 function action_space(env::EGraphEnv)
+    matched_rid = []
     for (ind, r) in enumerate(env.theory)
         for i in keys(env.egraph.classes)
-            r.ematcher!(env.egraph, ind, i)
+            res = r.ematcher!(env.egraph, ind, i)
+            if res
+                push!(matched_rid, ind)
+            end
         end
     end
     actions = []
@@ -30,7 +34,7 @@ function action_space(env::EGraphEnv)
         push!(actions, (bindings, rule, id, direction))
     end
     empty!(env.egraph.buffer)
-    return actions
+    return actions, matched_rid
 end
 
 state(env::EGraphEnv) = env.egraph

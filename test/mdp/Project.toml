@@ -1,5 +1,9 @@
 [deps]
+D3Trees = "e3df1716-f71e-5df9-9e2d-98e193103c45"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 MCTS = "e12ccd36-dcad-5f33-8774-9175229e7b33"
 MyModule = "98749e58-590c-4da3-a9b4-40346e7e69f8"
+POMDPGym = "23110f14-cb49-4285-84b1-33ab57423405"
 POMDPModelTools = "08074719-1b2a-587c-a292-00f91cc44415"
 POMDPs = "a93abf59-7444-517b-a68a-c42f96afdd7d"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
