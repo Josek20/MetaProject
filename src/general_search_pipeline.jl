@@ -9,6 +9,8 @@ end
 
 
 Node(ex, rule_applied, parent_id::UInt64, depth::Int) = Node(ex, rule_applied, UInt64[], parent_id, depth, hash(ex))
+Node1(ex, rule_applied, parent_id::UInt64, depth::Int) = Node(ex, rule_applied, UInt64[], parent_id, depth, hash(ex, hash(depth)))
+# Node1(ex, rule_applied, parent_id::UInt64, depth::Int) = Node(ex, rule_applied, UInt64[], parent_id, depth, hash(ex, parent_id))
 
 
 function push_to_tree!(soltree::Dict, new_node::Node)
@@ -29,6 +31,37 @@ function push_to_tree!(soltree::Dict, new_node::Node)
 end
 
 
+function expand_node1!(parent::Node, soltree, soltree1, open_list, model; theory=theory)
+    new_ex, rules_applied = all_expand(parent.ex, theory)
+    new_nodes = map(x->Node(x[1], x[2], parent.node_id, parent.depth + 1), zip(new_ex, rules_applied))
+    new_nodes1 = map(x->Node1(x[1], x[2], hash(parent.ex, hash(parent.depth)), parent.depth + 1), zip(new_ex, rules_applied))
+    new_nodes = filter(x->push_to_tree!(soltree, x), new_nodes)
+    new_nodes1 = filter(x->push_to_tree!(soltree1, x), new_nodes1)
+    isempty(new_nodes) && return
+    o = map(x->only(model(x.ex)), new_nodes)
+    for (v,n) in zip(o, new_nodes)
+        enqueue!(open_list, n, v)
+    end
+    nodes_ids = map(x->x.node_id, new_nodes)
+    append!(parent.children, nodes_ids)
+    nodes_ids2 = map(x->x.node_id, new_nodes1)
+    # append!(soltree1[hash(parent.ex, hash(parent.depth))].children, nodes_ids2)
+    append!(soltree1[new_nodes1[1].parent].children, nodes_ids2)
+end
+
+function expand_node2!(parent::Node, soltree, open_list, model; theory=theory)
+    new_ex, rules_applied = all_expand(parent.ex, theory)
+    not_filtered_new_nodes = map(x->Node1(x[1], x[2], parent.node_id, parent.depth + 1), zip(new_ex, rules_applied))
+    new_nodes = filter(x->push_to_tree!(soltree, x), not_filtered_new_nodes)
+    isempty(new_nodes) && return
+    o = map(x->only(model(x.ex)), new_nodes)
+    for (v,n) in zip(o, new_nodes)
+        enqueue!(open_list, n, v)
+    end
+    nodes_ids = map(x->x.node_id, not_filtered_new_nodes)
+    append!(parent.children, nodes_ids)
+end
+
 function expand_node!(parent::Node, soltree, open_list, model; theory=theory)
     new_ex, rules_applied = all_expand(parent.ex, theory)
     new_nodes = map(x->Node(x[1], x[2], parent.node_id, parent.depth + 1), zip(new_ex, rules_applied))
@@ -40,6 +73,26 @@ function expand_node!(parent::Node, soltree, open_list, model; theory=theory)
     end
     nodes_ids = map(x->x.node_id, new_nodes)
     append!(parent.children, nodes_ids)
+end
+
+
+function build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=1000, max_depth=10, epsilon=1.0)
+    expansions = 0
+    while !isempty(open_list)
+        expansions == max_expansions && break
+        if rand() > epsilon
+            node, _ = dequeue_pair!(open_list)
+        else
+            node, _ = rand(open_list)
+            dequeue!(open_list, node)
+        end
+        push!(close_list, node.node_id)
+
+        node.depth == max_depth && continue
+        
+        expand_node1!(node, soltree, soltree1, open_list, model)
+        expansions += 1
+    end
 end
 
 
@@ -58,6 +111,20 @@ function build_tree!(soltree, open_list, close_list, model; max_expansions=1000,
 end
 
 
+function build_tree1!(soltree, soltree1, open_list, close_list, model; max_expansions=1000, max_depth=10)
+    expansions = 0
+    while !isempty(open_list)
+        expansions == max_expansions && break
+        node, _ = dequeue_pair!(open_list)
+        push!(close_list, node.node_id)
+
+        node.depth == max_depth && continue
+        
+        expand_node1!(node, soltree, soltree1, open_list, model)
+        expansions += 1
+    end
+end
+
 function extract_smallest_node(soltree)
     smallest_node = nothing
     smallest_node_size = typemax(Int)
@@ -75,17 +142,38 @@ function extract_smallest_node(soltree)
 end
 
 
-function initialize_tree_search(ex, model; max_expansions=1000, max_depth=10)
-    open_list = PriorityQueue{Node, Float32}()
+function initialize_tree_search(ex, model; max_expansions=1000, max_depth=10, epsilon=1.0)
+    open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
     close_list = Set{UInt64}()
 
     soltree = Dict{UInt64, Node}()
+    soltree1 = Dict{UInt64, Node}()
     root = Node(ex, (), hash(ex), 0)
+    root1 = Node1(ex, (), hash(ex, hash(ex)), 0)
     soltree[root.node_id] = root
+    soltree1[root1.node_id] = root1
     o = only(model(root.ex))
     enqueue!(open_list, root, o)
-    build_tree!(soltree, open_list, close_list, model, max_expansions=max_expansions, max_depth=max_depth)
-
+    # build_tree!(soltree, open_list, close_list, model, max_expansions=max_expansions, max_depth=max_depth)
+    build_tree1!(soltree, soltree1, open_list, close_list, model, max_expansions=max_expansions, max_depth=max_depth)
     smallest_node = extract_smallest_node(soltree)
-    return(soltree, smallest_node, root)
+    return(soltree, smallest_node, root, soltree1)
+end
+
+
+function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_depth=10, epsilon=1.0)
+    open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    close_list = Set{UInt64}()
+
+    soltree = Dict{UInt64, Node}()
+    soltree1 = Dict{UInt64, Node}()
+    root = Node(ex, (), hash(ex), 0)
+    root1 = Node1(ex, (), hash(ex, hash(0)), 0)
+    soltree[root.node_id] = root
+    soltree1[root1.node_id] = root1
+    o = only(model(root.ex))
+    enqueue!(open_list, root, o)
+    build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=max_expansions, max_depth=max_depth, epsilon=epsilon)
+    smallest_node = extract_smallest_node(soltree)
+    return(soltree, smallest_node, root, soltree1)
 end
