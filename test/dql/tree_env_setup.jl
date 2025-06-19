@@ -1,7 +1,7 @@
 using MyModule
 
 experiment_name = "ppo"
-train_data_path = "../../data/neural_rewrter/train.json"
+train_data_path = "./data/neural_rewrter/train.json"
 train_data = load_data(train_data_path)[1:1_000]
 train_data = filter(x->!occursin("select", x[1]), train_data)
 train_data = preprosses_data_to_expressions(train_data)

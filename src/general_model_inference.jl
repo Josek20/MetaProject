@@ -1,4 +1,6 @@
-struct ExprModel{HM,A,JM,H}
+abstract type AbstractModel end
+
+struct ExprModel{HM,A,JM,H} <: AbstractModel
     head_model::HM
     aggregation::A
     args_model::JM    

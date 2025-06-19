@@ -1,4 +1,5 @@
 using CSV
+using Graphs
 using DataFrames
 using Plots
 using D3Trees
@@ -17,9 +18,9 @@ include("clean_dql.jl")
 
 hidden_size=64
 # epsilone_decay = 0.9 / 2.5e2
-epsilon = eps_start = 1.0
-eps_end = 0.01
-eps_decay = 0.95
+# epsilon = eps_start = 1.0
+# eps_end = 0.01
+# eps_decay = 0.95
 
 input_size = 64
 
