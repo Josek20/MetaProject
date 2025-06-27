@@ -10,7 +10,7 @@ end
 
 Node(ex, rule_applied, parent_id::UInt64, depth::Int) = Node(ex, rule_applied, UInt64[], parent_id, depth, hash(ex))
 # Node1(ex, rule_applied, parent_id::UInt64, depth::Int) = Node(ex, rule_applied, UInt64[], parent_id, depth, hash(ex, hash(depth)))
-Node1(ex, rule_applied, parent_id::UInt64, depth::Int) = Node(ex, rule_applied, UInt64[], parent_id, depth, hash(ex, parent_id))
+Node1(ex, rule_applied, parent_ex, parent_id::UInt64, depth::Int) = Node(ex, rule_applied, UInt64[], parent_id, depth, hash(ex, hash(parent_ex)))
 
 
 function push_to_tree!(soltree::Dict, new_node::Node)
@@ -37,9 +37,10 @@ function expand_node1!(parent::Node, soltree, soltree1, open_list, model; theory
     # new_nodes1 = map(x->Node1(x[1], x[2], hash(parent.ex, hash(parent.depth)), parent.depth + 1), zip(new_ex, rules_applied))
     # @show hash(parent.ex, hash(soltree[parent.parent].ex)
     # parent_id1 = parent.depth == 0 ? hash(parent.ex, hash(parent.ex)) : hash(parent.ex, hash(soltree[parent.parent].ex))
-    parent_id1 = parent.depth == 0 ? hash(parent.ex, hash(parent.ex)) : findfirst(x->x.ex == parent.ex, soltree1)
+    # parent_id1 = parent.depth == 0 ? hash(parent.ex, hash(parent.ex)) : findfirst(x->x.ex == parent.ex, soltree)
+    parent_id1 = parent.depth == 0 ? hash(parent.ex, hash(parent.ex)) : hash(parent.ex, hash(soltree[parent.parent].ex))
     # @show parent_id1
-    new_nodes1 = map(x->Node1(x[1], x[2], parent_id1, parent.depth + 1), zip(new_ex, rules_applied))
+    new_nodes1 = map(x->Node1(x[1], x[2], parent.ex, parent_id1, parent.depth + 1), zip(new_ex, rules_applied))
     new_nodes = filter(x->push_to_tree!(soltree, x), new_nodes)
     # new_nodes1 = filter(x->push_to_tree!(soltree1, x), new_nodes1)
     # new_nodes1 = filter(x->push_to_tree1!(soltree1, x), new_nodes1)

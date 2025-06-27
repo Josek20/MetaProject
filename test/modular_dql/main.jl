@@ -51,17 +51,44 @@ args_model = ProductModel(
     ffnn(2*hidden_size, hidden_size, 1)
     )
 
-# sampler = TreeSampler(max_steps=50, max_depth=100, epsilon=0.0, eps_decay=0.95, is_dag=false)
-sampler = RLSampler(max_steps=50, epsilon=0.0, eps_decay=0.95)
+sampler = TreeSampler(max_steps=50, max_depth=100, epsilon=1.0, eps_decay=0.50, is_directed=true, n_best=100, batch=64)
+# sampler = RLSampler(max_steps=50, epsilon=1.0, eps_decay=0.80)
 model = ExprModel(
     head_model,
     Mill.SegmentedSum(hidden_size),
     args_model,
     Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 1))
     );
-learner = DummyLerner(Flux.mse, 10, model)
+learner = DummyLerner(Flux.mse, model, max_iter=10)
 env = MyTreeEnv(data[1], model)
 
 pipeline = RLPipeline(env, model, sampler, learner)
 
-train!(pipeline, episodes=1)
+function full_validation(data, pipeline)
+    res = 0
+    validation_sampler = RLSampler(max_steps=50, epsilon=0.0, eps_decay=0.80)
+    for i in data
+        env = MyTreeEnv(i, model)
+        pipeline.env = env
+        traj = sample_trajectory(validation_sampler, pipeline.env, pipeline.model)
+        res += validation(traj)
+    end
+    return res / length(data)
+end
+# for ep in 1:2
+#     for i in data[1:1]
+#         @show i
+#         env = MyTreeEnv(i, model)
+#         pipeline.env = env
+#         pipeline.sampler.epsilon = 1.0
+#         train!(pipeline, episodes=10)
+#     end
+#     @show full_validation(data, pipeline)
+# end
+train!(pipeline, episodes=10)
+
+
+# Test 
+# traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
+
+# visualization(traj.soltree, pipeline.model, Dict())

@@ -319,3 +319,22 @@ function test_rl_environment(env)
         end
     end
 end
+
+function test_child_reach(soltree)
+    could_not_reach = []
+    for (id, n) in soltree
+        prev_n = n
+        
+        while true
+            next_n = soltree[prev_n.parent]
+            if next_n.ex == prev_n.ex
+                break
+            elseif next_n.depth >= prev_n.depth
+                push!(could_not_reach, n)
+                break
+            end
+            prev_n = next_n
+        end
+    end
+    @assert length(could_not_reach) == 0
+end

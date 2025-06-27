@@ -180,14 +180,81 @@ function dag2graph(soltree)
     end
     node_to_id = Dict(node => i for (i, node) in enumerate(all_nodes))
     # id_to_node = Dict(v => k for (k, v) in node_to_id)
+    # g = SimpleWeightedDiGraph(length(all_nodes))
     g = DiGraph(length(all_nodes))
-
+    mcache = Dict()
+    root_id = findfirst(x->x.depth == 0, soltree)
+    target_from_cache!(mcache, soltree[root_id], soltree)
     for (k, n) in soltree
+        parent = node_to_id[n.ex]
         for child in n.children
-            add_edge!(g, node_to_id[n.ex], node_to_id[soltree[child].ex])
+            ch = node_to_id[soltree[child].ex]
+            # add_edge!(g, parent, ch, mcache[soltree[child].ex])
+            add_edge!(g, parent, ch)
         end
     end 
     all_leafs = filter(x->length(x.children) == 0, collect(values(soltree)))
+    number_of_inner_nodes = length(all_nodes) - length(all_leafs)
+    smallest_leafs = sort(all_leafs, by=x->exp_size(x.ex))
+    all_leafs_id = map(x->node_to_id[x.ex], all_leafs)
     g_inv = reverse(g)
-    Graphs.bellman_ford_shortest_paths(g, root_id) 
+    # using GraphMakie
+    # using CairoMakie
+    fig, ax, plt = graphplot(g; node_labels=1:nv(g))
+    # bellman_ford_state.parents
+    # bellman_ford_state.dists
+    suttisfied_inner_nodes = 0
+    inner_nodes = Dict()
+    for leaf in smallest_leafs
+        bellman_ford_state = Graphs.bellman_ford_shortest_paths(g_inv, node_to_id[leaf.ex]) 
+        suttisfied_nodes = all_nodes[bellman_ford_state.dists .!= typemax(Int)]
+        inner_suttisfied_nodes = filter(x->x!=leaf.ex, suttisfied_nodes)
+        for inner_node in inner_suttisfied_nodes
+            if !haskey(inner_nodes, inner_node)
+                inner_nodes[inner_node] = leaf.ex
+                suttisfied_inner_nodes += 1
+            end
+        end
+        if suttisfied_inner_nodes == number_of_inner_nodes
+            break
+        end
+    end
+    return inner_nodes
+end
+
+
+function visualization(soltree, online_policy, target_values::Dict)
+    empty!(MyModule.memoize_cache(MyModule.general_cached_inference))
+    children = Vector[]
+    text = []
+    link_style = [""]
+    style = [""]
+    index_to_put = 0
+    current_i = 1
+    buff = []
+    sort_by_depth = sort(collect(values(soltree)), by=x->x.depth)
+    i = sort_by_depth[current_i]
+
+    append!(buff, [soltree[j] for j in i.children])
+    # push!(children, [soltree[j].ex for j in i.children])
+    current_range = 2:length(i.children) + 1
+    push!(children, collect(Any, current_range))
+    push!(text, string(expr(MyModule.nc, i.ex)))
+    # append!(text, [string(expr(MyModule.nc, soltree[j].ex)) for j in i.children])
+    while !isempty(buff) 
+    # for _ in 1:43
+        n = popfirst!(buff)
+        # @show n.ex
+        # r = exp_size(soltree[n.parent].ex) - exp_size(n.ex)
+        r = exp_size(i.ex) - exp_size(n.ex)
+        # r = target_values[n.ex]
+        push!(text, string(expr(MyModule.nc, n.ex)) * "\nPred:$(round(only(online_policy(n.ex)), digits=4))\nRew:$(r)")
+        # push!(text, string(expr(MyModule.nc, n.ex)) * "\nRew:$(r)")
+        current_range = current_range.stop + 1:current_range.stop + length(n.children)
+        push!(children, collect(Any, current_range))
+        append!(buff, [soltree[j] for j in n.children])
+    end
+    t = D3Tree(children, text=text, init_expand=30)
+    # t = D3Tree(children[2:end], text=text, style=style, link_style=link_style, init_expand=2,  svg_node_size=(2020, 2020))
+    inbrowser(t, "Mircosoft Edge")
 end

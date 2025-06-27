@@ -1,11 +1,11 @@
 update_epsilon(epsilon; eps_decay=0.95, eps_min=0.1) = max(eps_min, eps_decay * epsilon) == eps_min ? 0.0 : max(eps_min, eps_decay * epsilon)
 
-mutable struct MyTreeEnv <: AbstractEnvironment
-    s_init
-    s_current
-    t
-    is_done
-    policy_model
+mutable struct MyTreeEnv{SI, SC, T, D, PM} <: AbstractEnvironment
+    s_init::SI
+    s_current::SC
+    t::T
+    is_done::D
+    policy_model::PM
 end
 function MyTreeEnv(ex::Expr, policy_model)
     inex = intern!(ex)
