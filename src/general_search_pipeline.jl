@@ -181,7 +181,11 @@ end
 
 
 function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_depth=10, epsilon=1.0)
-    open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    if isa(model, ExprModel) || isa(model, Function)
+        open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    else
+        open_list = PriorityQueue{Node, Tuple{Float32, Float32}}(Base.Order.Reverse)
+    end
     close_list = Set{UInt64}()
 
     soltree = Dict{UInt64, Node}()

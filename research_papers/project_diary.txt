@@ -1,3 +1,13 @@
+01.03.2025 - 15.07.2025
+1) tried implementing different RL methods (PPO, A2C, MCTS, DQN)
+2) found why the RL methods do not produce results
+  a - all path eventually will lead to the same solution, if we use tree makes all the leaf nodes to have the same value
+  b - environment has a sparse rewards
+  c - regardless of reward shaping shorter solution will be preferred over best one that are further away.
+3) writting paper
+4) implemented abstract training pipeline to code efficiently
+
+
 01.02.2025 - 07.02.2025
 1) made clean code branch
 2) implementing mcts

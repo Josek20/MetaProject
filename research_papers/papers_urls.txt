@@ -8,3 +8,13 @@ https://inst.eecs.berkeley.edu/~cs294-260/sp24/papers/verifying-halide-trs.pdf
 https://people.csail.mit.edu/tzumao/tmp/learning_halide/algorithm_examples.html
 
 https://github.com/MilesCranmer/SymbolicRegression.jl/blob/master/examples/template_expression.jl
+
+
+
+https://arxiv.org/pdf/1911.02065
+https://arxiv.org/pdf/1805.07563
+https://arxiv.org/pdf/2102.09756
+https://arxiv.org/pdf/2102.03140
+https://arxiv.org/pdf/2004.06997
+https://arxiv.org/pdf/1811.00796
+https://arxiv.org/pdf/2408.08152

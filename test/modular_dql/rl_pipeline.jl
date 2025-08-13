@@ -9,6 +9,13 @@ mutable struct RLPipeline{E <: AbstractEnvironment, M <: AbstractModel, S <: Abs
     sampler::S
     learner::L
 end
+mutable struct SimpleRLPipeline{E <: AbstractEnvironment, M <: AbstractModel, S <: AbstractSampler, L <: AbstractLearner, TM <: AbstractModel}
+    env::E
+    model::M
+    sampler::S
+    learner::L
+    target_model::TM
+end
 clean_cache(model::AbstractModel) = nothing
 function clean_cache(model::ExprModel)
     empty!(MyModule.memoize_cache(MyModule.general_cached_inference))
@@ -27,6 +34,103 @@ function train!(pipeline::RLPipeline; episodes::Int=100)
        clean_cache(pipeline.model)
        println("Ep $(episode): lres, tres = $(results);epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2))")
     end
+end
+
+function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=100)
+    MyModule.reset_all_function_caches()
+    trajectories = []
+    loss = [(;ex=intern!(e), loss_over_time=Float32[]) for e in data]
+    train_validation = [(;ex=intern!(e), val=Vector{Tuple{Float32, Float32}}()) for e in data]
+    for episode in 1:episodes
+        trajectory_time = @elapsed trajectories = map(data) do d
+            pipeline.env.s_init = intern!(d)
+            reset!(pipeline.env)
+            # sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
+            sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model, pipeline.target_model)
+        end
+        clean_cache(pipeline.model)
+        update_time = @elapsed loss = map(zip(loss, trajectories)) do (ls, traj)
+            l = update_model!(pipeline.learner, pipeline.model, traj)
+            # (;ex=traj.states[end][end], )
+            push!(ls.loss_over_time, l)
+            ls 
+        end
+        update_epsilon!(pipeline.sampler)
+        if mod(episode, 10) == 0
+            pipeline.target_model = deepcopy(pipeline.model)
+        end
+        results = [0f0,0f0]
+        train_validation = map(zip(train_validation, trajectories)) do (val, traj)
+            tmp = validation2(pipeline, traj)
+            results .+= tmp
+            push!(val.val, tmp)
+            val
+        end
+        clean_cache(pipeline.model)
+        println("Ep $(episode): lres, tres = $(results / length(trajectories));epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2))")
+    end
+    return trajectories, (;loss_stats=loss, val_stats=train_validation)
+end
+
+function preprocessing(traj)
+    best_traj = argmin(exp_size.(traj.next_states))
+    traj.next_states = traj.next_states[1:best_traj]
+    traj.actions = traj.actions[1:best_traj]
+    traj.states = traj.states[1:best_traj]
+    traj.rewards = traj.rewards[1:best_traj]
+    traj.is_dones = traj.is_dones[1:best_traj]
+    return traj
+end
+function preprocessing(traj, target_model; γ=0.90)
+    # best_traj = argmin(exp_size.(traj.next_states))
+    best_traj = length(traj.next_states)
+    traj.next_states = traj.next_states[1:best_traj]
+    # pushfirst!(traj.next_states, traj.states[1])
+    traj.actions = traj.actions[1:best_traj]
+    traj.states = traj.states[1:best_traj]
+    traj.rewards = traj.rewards[1:best_traj]
+    for (ind,(s,sₜ)) in enumerate(zip(traj.states, traj.actions))
+        if ind != best_traj
+            # @show only.(target_model.(sₜ))
+            traj.rewards[ind] = traj.rewards[ind] + γ * maximum(only.(target_model.(sₜ)))
+        else
+            traj.rewards[ind] = traj.rewards[ind]
+        end
+    end
+    traj.is_dones = traj.is_dones[1:best_traj]
+    return traj
+end
+function train1!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=100)
+    MyModule.reset_all_function_caches()
+    trajectories = [Trajectory(1, NodeID[intern!(i)], NodeID[intern!(i)], Float32[0f0], NodeID[intern!(i)], Bool[false]) for i in data]
+    for episode in 1:episodes
+        trajectory_time = @elapsed trajectories = map(trajectories) do d
+            pipeline.env.s_init = d.states[1]
+            reset!(pipeline.env)
+            traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
+            # traj = preprocessing(traj)
+            # traj = preprocessing(traj, pipeline.target_model)
+            if exp_size(d.next_states[end]) > exp_size(traj.next_states[end]) || 
+                (exp_size(d.next_states[end]) == exp_size(traj.next_states[end]) && length(d.next_states) > length(traj.next_states))
+                return traj
+            else
+                return d
+            end
+        end
+        clean_cache(pipeline.model)
+        update_time = @elapsed for traj in trajectories
+            update_model!(pipeline.learner, pipeline.model, traj)
+        end
+        # pipeline.target_model = deepcopy(pipeline.model)
+        update_epsilon!(pipeline.sampler)
+        results = [0f0,0f0]
+        for traj in trajectories
+            results .+= validation2(pipeline, traj)
+        end
+        clean_cache(pipeline.model)
+        println("Ep $(episode): lres, tres = $(results / length(trajectories));epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2))")
+    end
+    return trajectories
 end
 
 function visualization(soltree, online_policy, target_values::Dict)
@@ -51,8 +155,8 @@ function visualization(soltree, online_policy, target_values::Dict)
     # for _ in 1:43
         n = popfirst!(buff)
         # @show n.ex
-        # r = exp_size(soltree[n.parent].ex) - exp_size(n.ex)
-        r = exp_size(i.ex) - exp_size(n.ex)
+        r = exp_size(soltree[n.parent].ex) - exp_size(n.ex)
+        # r = exp_size(i.ex) - exp_size(n.ex)
         # r = target_values[n.ex]
         push!(text, string(expr(MyModule.nc, n.ex)) * "\nPred:$(round(only(online_policy(n.ex)), digits=4))\nRew:$(r)")
         # push!(text, string(expr(MyModule.nc, n.ex)) * "\nRew:$(r)")

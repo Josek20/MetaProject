@@ -31,6 +31,7 @@ function action_space(env::MyTreeEnv)
 end
 function reward(env::MyTreeEnv, a, s)
     size_current = exp_size(a)
+    # size_init = exp_size(env.s_init)
     size_init = exp_size(s)
     return size_init - size_current
 end
