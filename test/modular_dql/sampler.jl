@@ -51,7 +51,7 @@ function push2traj!(trj::PolicyTrajectory, data::Tuple)
 end
 
 function update_epsilon!(sampler::AbstractSampler)
-    new_epsilon = max(0.15, sampler.eps_decay * sampler.epsilon) <= 0.15 ? 0.15 : max(0.15, sampler.eps_decay * sampler.epsilon)
+    new_epsilon = max(0.05, sampler.eps_decay * sampler.epsilon) <= 0.05 ? 0.05 : max(0.05, sampler.eps_decay * sampler.epsilon)
     sampler.epsilon = new_epsilon
 end
 
@@ -191,12 +191,12 @@ end
 
 
 isleaf(n::Node) = isempty(n.children)
-function target_from_cache!(cache, leaf::Node, soltree::Dict)
+function target_from_cache!(cache, leaf::Node, soltree::Dict; gamma=0.9)
     haskey(cache, leaf.ex) && return(cache[leaf.ex])
     r = exp_size(leaf.ex)
     root_id = findfirst(x->x.depth == 0, soltree)
     # root_id = leaf.parent
-    v = isleaf(leaf) ? (exp_size(soltree[root_id].ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + target_from_cache!(cache, soltree[ch], soltree) for ch in leaf.children)
+    v = isleaf(leaf) ? (exp_size(soltree[root_id].ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache!(cache, soltree[ch], soltree) for ch in leaf.children)
     cache[leaf.ex] = v
     return(v)
 end
@@ -207,21 +207,30 @@ function target_from_cache2!(cache, leaf::Node, soltree::Dict, root_node::Node; 
     r = exp_size(leaf.ex)
     # root_id = findfirst(x->x.depth == 0, soltree)
     # root_id = leaf.parent
-    v = isleaf(leaf) ? (exp_size(root_node.ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache2!(cache, soltree[ch], soltree, soltree[ch]) for ch in leaf.children)
+    v = isleaf(leaf) ? (exp_size(root_node.ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache2!(cache, soltree[ch], soltree, root_node) for ch in leaf.children)
+    # v = isleaf(leaf) ? (exp_size(soltree[leaf.parent].ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache2!(cache, soltree[ch], soltree, root_node) for ch in leaf.children)
     cache[leaf.ex] = v
     return(v)
 end
 
 function target_from_cache_value_network!(cache, leaf::Node, soltree::Dict, model::ExprModel; gamma=0.9)
-    haskey(cache, leaf.ex) && return(cache[leaf.ex])
     r = exp_size(leaf.ex)
-    # root_id = findfirst(x->x.depth == 0, soltree)
-    # root_id = leaf.parent
-    v = isleaf(leaf) ? (exp_size(soltree[leaf.parent].ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * only(model(soltree[x].ex)) for x in leaf.children)
+    if leaf.depth == 0
+        v = maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * only(model(soltree[x].ex)) for x in leaf.children)
+        cache[leaf.ex] = v
+        return(v)
+    end
+    if isleaf(leaf)
+        v = (exp_size(soltree[leaf.parent].ex) - r)
+    else
+        # check if has upper
+        v = maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * only(model(soltree[x].ex)) for x in leaf.children)
+    end
     cache[leaf.ex] = v
     target_from_cache_value_network!(cache, soltree[leaf.parent], soltree, model)
 end
-function sample_trajectory(sampler::TreeSampler, env::AbstractEnvironment, model::AbstractModel, target_model::AbstractModel)::TreeTrajectory
+
+function sample_trajectory(sampler::TreeSampler, env::AbstractEnvironment, model::AbstractModel, target_model::AbstractModel)::Trajectory
     # search_time = @elapsed soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search(d, policy; max_expansions=max_steps, max_depth=max_depth)
     soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=sampler.epsilon)
     if sampler.is_directed
@@ -231,36 +240,53 @@ function sample_trajectory(sampler::TreeSampler, env::AbstractEnvironment, model
     end
     mcache = Dict()
     all_leafs = filter(i->length(i.second.children) == 0, stree)
-    for (nid, lf) in all_leafs
+    sorted_leafs = sort(all_leafs, by=x->stree[x].depth, order=Base.Order.Reverse)
+    for (nid, lf) in sorted_leafs
         target_from_cache_value_network!(mcache, lf, stree, target_model)
     end
-    @assert length(mcache) == length(soltree)
-    trajectories = [leaf2trajectorie(lf, stree, root, mcache) for (nid, lf) in all_leafs]
-    sorted_trajectories = sort(trajectories, by=x->exp_size(root.ex) - exp_size(x[1][2]))
-
-    if sampler.n_best > 0
-        n_best_trajectories = last(sorted_trajectories, sampler.n_best)
+    if length(mcache) != length(soltree)
+        for (i,j) in soltree
+            if !haskey(mcache, j.ex)
+                @show i, j.ex
+            end
+        end
+        @assert length(mcache) == length(soltree)
+    end
+    trj = Trajectory()
+    push!(trj.states, state(env))
+    push!(trj.actions, state(env))
+    push!(trj.rewards, mcache[state(env)])
+    push!(trj.next_states, state(env))
+    push!(trj.is_dones, false)
+    for (ind,(i, j)) in enumerate(mcache)
+        if i == state(env)
+            continue
+        end
+        push!(trj.states, i)
+        push!(trj.actions, i)
+        push!(trj.rewards, j)
+        push!(trj.next_states, i)
+        push!(trj.is_dones, ind == length(mcache))
+    end
+    trj_rand = Trajectory()
+    for i in rand(1:length(trj.states), sampler.batch)
+        push!(trj_rand.states, trj.states[i])
+        push!(trj_rand.actions, trj.actions[i])
+        push!(trj_rand.rewards, trj.rewards[i])
+        push!(trj_rand.next_states, trj.next_states[i])
+        push!(trj_rand.is_dones, trj.is_dones[i])
+    end
+    if sampler.batch > 0
+        trj_rand.pointer = exp_size(smallest_node.ex)
+        return trj_rand
     else
-        n_best_trajectories = sorted_trajectories
+        trj.pointer = exp_size(smallest_node.ex)
+        return trj
     end
-    trj = TreeTrajectory()
-    for sorted_trajectory in n_best_trajectories
-        states = map(x->x[1], sorted_trajectory)
-        actions = map(x->x[2], sorted_trajectory)
-        rewards = map(x->x[3], sorted_trajectory)
-        next_states = map(x->x[4], sorted_trajectory)
-        is_dones = map(x->x[5], sorted_trajectory)
-        push!(trj.states, states)
-        push!(trj.actions, actions)
-        push!(trj.rewards, rewards)
-        push!(trj.next_states, next_states)
-        push!(trj.is_dones, is_dones)
-    end
-    return trj
 end
 
 
-function sample_trajectory(sampler::TreeSampler, env::AbstractEnvironment, model::AbstractModel)::TreeTrajectory
+function sample_trajectory(sampler::TreeSampler, env::AbstractEnvironment, model::AbstractModel)::Trajectory
     # search_time = @elapsed soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search(d, policy; max_expansions=max_steps, max_depth=max_depth)
     soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=sampler.epsilon)
     if sampler.is_directed
@@ -276,30 +302,42 @@ function sample_trajectory(sampler::TreeSampler, env::AbstractEnvironment, model
         target_from_cache!(mcache, stree[root_id], stree)
     end
     # @show length(mcache), length(soltree)
-    @assert length(mcache) == length(soltree)
-    all_leafs = filter(i->length(i.second.children) == 0, stree)
-    trajectories = [leaf2trajectorie(lf, stree, root, mcache) for (nid, lf) in all_leafs]
-    sorted_trajectories = sort(trajectories, by=x->exp_size(root.ex) - exp_size(x[1][2]))
-
-    if sampler.n_best > 0
-        n_best_trajectories = last(sorted_trajectories, sampler.n_best)
+    if length(mcache) != length(soltree)
+        for (i,j) in soltree
+            if !haskey(mcache, j.ex)
+                @show i, j.ex
+            end
+        end
+        @assert length(mcache) == length(soltree)
+    end
+    trj = Trajectory()
+    push!(trj.states, state(env))
+    push!(trj.actions, state(env))
+    push!(trj.rewards, mcache[state(env)])
+    push!(trj.next_states, state(env))
+    push!(trj.is_dones, false)
+    for (ind,(i, j)) in enumerate(mcache)
+        push!(trj.states, i)
+        push!(trj.actions, i)
+        push!(trj.rewards, j)
+        push!(trj.next_states, i)
+        push!(trj.is_dones, ind == length(mcache))
+    end
+    trj_rand = Trajectory()
+    for i in rand(1:length(trj.states), sampler.batch)
+        push!(trj_rand.states, trj.states[i])
+        push!(trj_rand.actions, trj.actions[i])
+        push!(trj_rand.rewards, trj.rewards[i])
+        push!(trj_rand.next_states, trj.next_states[i])
+        push!(trj_rand.is_dones, trj.is_dones[i])
+    end
+    if sampler.batch > 0
+        trj_rand.pointer = exp_size(smallest_node.ex)
+        return trj_rand
     else
-        n_best_trajectories = sorted_trajectories
+        trj.pointer = exp_size(smallest_node.ex)
+        return trj
     end
-    trj = TreeTrajectory()
-    for sorted_trajectory in n_best_trajectories
-        states = map(x->x[1], sorted_trajectory)
-        actions = map(x->x[2], sorted_trajectory)
-        rewards = map(x->x[3], sorted_trajectory)
-        next_states = map(x->x[4], sorted_trajectory)
-        is_dones = map(x->x[5], sorted_trajectory)
-        push!(trj.states, states)
-        push!(trj.actions, actions)
-        push!(trj.rewards, rewards)
-        push!(trj.next_states, next_states)
-        push!(trj.is_dones, is_dones)
-    end
-    return trj
 end
 
 function sample_trajectory(sampler::PlanningTreeSampler, env::AbstractEnvironment, model::AbstractModel)::Trajectory

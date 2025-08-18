@@ -100,16 +100,18 @@ end
 function update_model!(l::AbstractLearner, model::AbstractModel, traj::AbstractTrajectory)
     sampled_trajectory = sample(traj)
     loss = 0
+    input_processing_time = 0
+    learning_time = 0
     for inner_ep in 1:l.max_iter
         for trajectory in sampled_trajectory
             # @show trajectory
             # error("")
-            target_values, input_values = preprocess_trajectory(trajectory)
-            loss += compute_gradient!(target_values, input_values, model, l)
+            input_processing_time += @elapsed target_values, input_values = preprocess_trajectory(trajectory)
+            learning_time += @elapsed loss += compute_gradient!(target_values, input_values, model, l)
             # @show loss
         end
     end
     final_loss = loss / (l.max_iter * length(sampled_trajectory))
-    @show final_loss
+    @show final_loss, input_processing_time, learning_time 
     return final_loss
 end

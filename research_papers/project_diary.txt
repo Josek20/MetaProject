@@ -1,3 +1,11 @@
+13.08.2025
+1) Deadline for workshop 29.08.2025 (4 pages)
+2) Trying just simple DQN with different premutations
+3) Sometimes length(soltree) != length(mcache)
+4) writting paper
+5) Need to analyse MCTS performance
+
+
 01.03.2025 - 15.07.2025
 1) tried implementing different RL methods (PPO, A2C, MCTS, DQN)
 2) found why the RL methods do not produce results

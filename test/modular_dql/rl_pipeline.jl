@@ -35,7 +35,17 @@ function train!(pipeline::RLPipeline; episodes::Int=100)
        println("Ep $(episode): lres, tres = $(results);epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2))")
     end
 end
-
+function validation3(pipeline, data)
+    val_time = @elapsed trajectories = map(data) do d
+        pipeline.env.s_init = intern!(d)
+        reset!(pipeline.env)
+        sampler = pipeline.sampler
+        env = pipeline.env
+        soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), pipeline.model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=0.0)
+        return(exp_size(root.ex) - exp_size(smallest_node.ex))
+    end
+    return mean(trajectories), val_time
+end
 function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=100)
     MyModule.reset_all_function_caches()
     trajectories = []
@@ -60,14 +70,16 @@ function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=10
             pipeline.target_model = deepcopy(pipeline.model)
         end
         results = [0f0,0f0]
-        train_validation = map(zip(train_validation, trajectories)) do (val, traj)
-            tmp = validation2(pipeline, traj)
-            results .+= tmp
-            push!(val.val, tmp)
-            val
-        end
+        # train_validation = map(zip(train_validation, trajectories)) do (val, traj)
+        #     # tmp = validation2(pipeline, traj)
+        #     results[2] += exp_size(val.ex) - traj.pointer
+        #     push!(val.val, (0f0, exp_size(val.ex) - traj.pointer))
+        #     val
+        # end
         clean_cache(pipeline.model)
-        println("Ep $(episode): lres, tres = $(results / length(trajectories));epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2))")
+        res, val_time = validation3(pipeline, data)
+        # println("Ep $(episode): lres, tres = $(results / length(trajectories));epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2))")
+        println("Ep $(episode): lres, tres = $([0, res]);epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2)); validation took --> $(round(val_time, digits=2))")
     end
     return trajectories, (;loss_stats=loss, val_stats=train_validation)
 end
@@ -155,8 +167,8 @@ function visualization(soltree, online_policy, target_values::Dict)
     # for _ in 1:43
         n = popfirst!(buff)
         # @show n.ex
-        r = exp_size(soltree[n.parent].ex) - exp_size(n.ex)
-        # r = exp_size(i.ex) - exp_size(n.ex)
+        # r = exp_size(soltree[n.parent].ex) - exp_size(n.ex)
+        r = exp_size(i.ex) - exp_size(n.ex)
         # r = target_values[n.ex]
         push!(text, string(expr(MyModule.nc, n.ex)) * "\nPred:$(round(only(online_policy(n.ex)), digits=4))\nRew:$(r)")
         # push!(text, string(expr(MyModule.nc, n.ex)) * "\nRew:$(r)")

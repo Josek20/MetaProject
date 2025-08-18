@@ -12,6 +12,7 @@ using MyModule.Flux
 using MyModule.Mill
 using MyModule: all_expand, exp_size, Node, NodeID, intern!, expr, DeduplicatingNode, AbstractModel
 using Serialization
+Random.seed!(42)
 include("rl_pipeline.jl")
 include("my_env.jl")
 include("sampler.jl")
@@ -69,7 +70,7 @@ args_model = ProductModel(
     )
 
 # sampler = PlanningTreeSampler(max_steps=10, max_depth=100, epsilon=1.0, eps_decay=0.75, is_directed=false, n_best=10, batch=64)
-sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=true, n_best=-1, batch=64)
+sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
 # sampler = RLSampler1(max_steps=50, epsilon=1.0, eps_decay=0.80)
 # sampler = RLSampler(max_steps=50, epsilon=1.0, eps_decay=0.80)
 # sampler = DQNSampler(max_steps=100, epsilon=1.0, eps_decay=0.80)
@@ -88,7 +89,7 @@ target_model = ExprModel(
     );
 target_model = deepcopy(model)
 # model = DoubleHeadedModel(model, Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 1)))
-learner = DummyLerner(Flux.mse, model, max_iter=1)
+learner = DummyLerner(Flux.mse, model, max_iter=10)
 # learner = DummyLerner(Flux.crossentropy, model, max_iter=10)
 # learner = DummyLerner(my_reinforce_loss, model, max_iter=1)
 # learner = HeadLerner(Flux.mse, model, max_iter=50)
@@ -109,7 +110,7 @@ function full_validation(data, pipeline)
     return res / length(data)
 end
 
-function plot_stats(stats::NamedTuple)
+function plot_stats(stats::NamedTuple; exp_name="")
     if hasproperty(stats, :loss_stats)
         aggregated_loss = hcat(map(x->x.loss_over_time, training_stats.loss_stats)...)
         # plot(aggregated_loss)
@@ -120,7 +121,7 @@ function plot_stats(stats::NamedTuple)
         plot!(mean_loss[:], label="Mean Loss", lw=2, color=:red)
         plot!(mean_loss[:] .+ std_loss[:], ribbon=(std_loss[:]), fillalpha=0.2, linealpha=0, color=:red)
         plot!(mean_loss[:] .- std_loss[:], ribbon=(std_loss[:]), fillalpha=0.2, linealpha=0, color=:red)
-        savefig("stats/loss_stats12.png")
+        savefig("stats/loss_stats_$(exp_name).png")
     end
     if hasproperty(stats, :val_stats)
         aggregated_linear = hcat(map(x->map(y->first(y), x.val), training_stats.val_stats)...)
@@ -132,8 +133,31 @@ function plot_stats(stats::NamedTuple)
         plot!(mean_val[:], label="Mean Validation Reduction", lw=2, color=:red)
         plot!(mean_val[:] .+ std_val[:], ribbon=(std_val[:]), fillalpha=0.2, linealpha=0,color=:red)
         plot!(mean_val[:] .- std_val[:], ribbon=(std_val[:]), fillalpha=0.2, linealpha=0,color=:red)
-        savefig("stats/validation_stats12.png")
+        savefig("stats/validation_stats_$(exp_name).png")
     end
+end
+function get_convergence_stats(data, pipeline; epsilon=0.1, exp_name="")
+    convergence_stats = map(data) do d
+        pipeline.env.s_init = intern!(d)
+        reset!(pipeline.env)
+        sampler = pipeline.sampler
+        env = pipeline.env
+        model = pipeline.model
+        soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=0.0)
+        all_inner_nodes = filter(i->length(i.children) != 0, collect(values(soltree)))
+        # check if converged
+        converged = 0
+        for i in all_inner_nodes
+            all_children_nodes = map(x->soltree[x].ex, i.children)
+            all_values = only.(model.(all_children_nodes))
+            min_val = minimum(all_values)
+            max_val = maximum(all_values)
+            converged += max_val - min_val <= epsilon
+        end
+        (;ex=env.s_init, number_of_converged_parents=converged,total_nodes=length(all_inner_nodes))
+    end |> DataFrame
+    CSV.write("convergence_stats_$(exp_name).csv", convergence_stats)
+    return convergence_stats
 end
 # for ep in 1:2
 #     for i in data[1:1]
@@ -145,12 +169,17 @@ end
 #     end
 #     @show full_validation(data, pipeline)
 # end
-tmp1, training_stats = train!(pipeline, data[300:300], episodes=100)
-# plot_stats(training_stats)
+tmp1, training_stats = train!(pipeline, data[300:302], episodes=100)
+# exp_name = "second_DG2"
+exp_name = "first_DAG1"
+serialize("models/trained_DQN_$(exp_name)_ep$(100)_hidden$(hidden_size).bin", model)
+plot_stats(training_stats, exp_name=exp_name)
+c = get_convergence_stats(data[300:302], pipeline, epsilon=0.01, exp_name=exp_name)
+
 # tmp1 = train1!(pipeline, data[300:300]; episodes=100)
 # train!(pipeline; episodes=1000)
 # soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), pipeline.model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=sampler.epsilon)
-# soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), pipeline.model; max_expansions=50, max_depth=100, epsilon=0.0)
+soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), pipeline.model; max_expansions=50, max_depth=100, epsilon=0.0)
 # mcache = Dict()
 # root_id = findfirst(x->x.depth == 0, soltree)
 # target_from_cache2!(mcache, soltree[root_id], soltree, soltree[root_id])
@@ -160,4 +189,12 @@ tmp1, training_stats = train!(pipeline, data[300:300], episodes=100)
 # # Test 
 # traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
 # target_rew = Dict(k=>i for (k,i) in zip(traj.next_states, traj.rewards))
-# visualization(soltree, pipeline.model, Dict())
+visualization(soltree, pipeline.model, Dict())
+
+#           10178457       amd build_sc shuhaole  R       0:00      1 a11
+#           10178456       amd build_sc shuhaole  R       0:31      1 a11
+#           10178455       amd build_sc shuhaole  R       1:24      1 a11
+#           10178179       amd build_sc shuhaole  R    5:39:44      1 a08
+#           10178105       amd build_sc shuhaole  R    5:55:04      1 a11
+#           10178098       amd build_sc shuhaole  R    6:23:55      1 a11
+#           10178088       amd build_sc shuhaole  R    7:00:52      1 a11

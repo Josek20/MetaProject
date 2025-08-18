@@ -127,7 +127,8 @@ function validate_train(model, data)
         soltree, smallest_node, root = MyModule.initialize_tree_search(MyModule.intern!(ex), model, max_expansions=1000, max_depth=100)
         (; s₀ = MyModule.exp_size(root.ex), sₙ = MyModule.exp_size(smallest_node.ex), se = smallest_node.ex, pr = [])
     end |> DataFrame
-    CSV.write("stats/results_of_$(experiment_name)_ep$(epochs)_hidden$(hidden_size).csv", df)
+    # CSV.write("stats/results_of_$(experiment_name)_ep$(epochs)_hidden$(hidden_size).csv", df)
+    return df
 end
 
 self_boosted_train(model, data)

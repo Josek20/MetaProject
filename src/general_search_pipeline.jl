@@ -161,7 +161,7 @@ end
 
 
 function initialize_tree_search(ex, model; max_expansions=1000, max_depth=10, epsilon=1.0)
-    open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    open_list = PriorityQueue{Node, Float32}()
     close_list = Set{UInt64}()
 
     soltree = Dict{UInt64, Node}()
@@ -173,10 +173,11 @@ function initialize_tree_search(ex, model; max_expansions=1000, max_depth=10, ep
     soltree1[root1.node_id] = root1
     o = only(model(root.ex))
     enqueue!(open_list, root, o)
-    # build_tree!(soltree, open_list, close_list, model, max_expansions=max_expansions, max_depth=max_depth)
-    build_tree1!(soltree, soltree1, open_list, close_list, model, max_expansions=max_expansions, max_depth=max_depth)
+    build_tree!(soltree, open_list, close_list, model, max_expansions=max_expansions, max_depth=max_depth)
+    # build_tree1!(soltree, soltree1, open_list, close_list, model, max_expansions=max_expansions, max_depth=max_depth)
     smallest_node = extract_smallest_node(soltree)
-    return(soltree, smallest_node, root, soltree1)
+    # return(soltree, smallest_node, root, soltree1)
+    return(soltree, smallest_node, root)
 end
 
 
