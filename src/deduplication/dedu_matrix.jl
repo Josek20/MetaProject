@@ -44,7 +44,7 @@ function ChainRulesCore.rrule(::Type{DeduplicatedMatrix}, a, ii)
     function dedu_pullback(ȳ)
     	Ȳ = unthunk(ȳ)
     	δx = zeros(eltype(a), size(a))
-    	gather_cols!(δx, ȳ, ii, true,true)
+    	gather_cols!(δx, Ȳ, ii, true,true)
     	NoTangent(), δx, NoTangent()
     end
 

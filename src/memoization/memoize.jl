@@ -62,6 +62,18 @@ macro my_cache(args...)
             $u($(identargs...); $(identkws...))
         end
     end
+    # body = quote
+    #     k = $(tup)
+    #     # @show $(tup)
+    #     # k = (typeof($(tup))..., $(tup)...)
+    #     if isempty($fcache) || haskey($fcache, k)
+    #         get!($fcache, k) do
+    #             $u($(identargs...); $(identkws...))
+    #         end
+    #     else
+    #         $u($(identargs...); $(identkws...))
+    #     end
+    # end
 
     if length(kws) == 0
         def_dict[:body] = quote

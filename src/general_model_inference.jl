@@ -11,9 +11,10 @@ end
 Flux.@layer ExprModel
 
 
-@my_cache LRU(maxsize=100_000) function general_cached_inference(ex, ::Type{Expr}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+@my_cache LRU(maxsize=100_000) function general_expr_cached_inference(ex, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
     args, fun_name = get_head_and_args(ex)
-    args = general_cached_inference(args, model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
+    # @show ex
+    args = general_args_cached_inference(args, model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
     encoding = zeros(Float32, length(all_symbols))
     encoding[symbols_to_index[fun_name]] = 1
     head_model = model.head_model
@@ -24,7 +25,8 @@ Flux.@layer ExprModel
 end
 
 
-@my_cache LRU(maxsize=100_000) function general_cached_inference(ex, ::Type{Symbol}, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+@my_cache LRU(maxsize=10_000) function general_leaf_cached_inference(ex, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+    # @show ex
     symbol_index, encoding_value = get_leaf_args(ex)
     encoding = zeros(Float32, length(all_symbols))
     encoding[symbols_to_ind[symbol_index]] = encoding_value
@@ -37,16 +39,18 @@ end
 end
 
 
-function general_cached_inference(args::Vector, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
+function general_args_cached_inference(args::Vector, model; all_symbols=new_all_symbols, symbols_to_ind=sym_enc)
     l = length(args)
 
     tmp = []
     left_inference_type = get_inference_type(args[1])
-    left = general_cached_inference(args[1], left_inference_type, model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
+    # @show args
+    left = left_inference_type == Expr ? general_expr_cached_inference(args[1], model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind) : general_leaf_cached_inference(args[1], model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
     push!(tmp, left)
     if l == 2
         right_inference_type = get_inference_type(args[2])
-        right = general_cached_inference(args[2], right_inference_type, model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
+        # right = general_cached_inference(args[2], right_inference_type, model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
+        right = right_inference_type == Expr ? general_expr_cached_inference(args[2], model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind) : general_leaf_cached_inference(args[2], model, all_symbols=all_symbols, symbols_to_ind=symbols_to_ind)
         push!(tmp, right)
     end
     
@@ -63,7 +67,8 @@ end
 
 function (m::ExprModel)(x)
     inference_type = get_inference_type(x)
-    ds = general_cached_inference(x, inference_type, m)
+    # ds = general_cached_inference(x, inference_type, m)
+    ds = inference_type == Expr ? general_expr_cached_inference(x, m) : general_leaf_cached_inference(x, m)
     m.heuristic(ds)
 end
 

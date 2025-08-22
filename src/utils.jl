@@ -115,7 +115,8 @@ end
 function reset_all_function_caches()
     empty!(memoize_cache(exp_size))
     empty!(memoize_cache(all_expand))
-    empty!(memoize_cache(general_cached_inference))
+    empty!(memoize_cache(general_expr_cached_inference))
+    empty!(memoize_cache(general_leaf_cached_inference))
 end
 
 function cache_status()
@@ -123,11 +124,12 @@ function cache_status()
     node_cache = round(Base.summarysize(nc) / 1_000_000, digits = 2),
     exp_size = round(Base.summarysize(memoize_cache(exp_size)) / 1_000_000, digits = 2),
     all_expand = round(Base.summarysize(memoize_cache(all_expand)) / 1_000_000, digits = 2),
-    all_cached_inference = round(Base.summarysize(memoize_cache(general_cached_inference)) / 1_000_000, digits = 2),
+    all_cached_inference = round((Base.summarysize(memoize_cache(general_expr_cached_inference)) + Base.summarysize(memoize_cache(general_leaf_cached_inference))) / 1_000_000, digits = 2),
     )
 end
 
 
 function reset_inference_caches()
-    empty!(memoize_cache(general_cached_inference))
+    empty!(memoize_cache(general_expr_cached_inference))
+    empty!(memoize_cache(general_leaf_cached_inference))
 end

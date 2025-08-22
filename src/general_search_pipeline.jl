@@ -32,7 +32,7 @@ end
 
 
 function expand_node1!(parent::Node, soltree, soltree1, open_list, model; theory=theory)
-    new_ex, rules_applied = all_expand(parent.ex, theory)
+    @timeit TO "extracting all children" new_ex, rules_applied = all_expand(parent.ex, theory)
     new_nodes = map(x->Node(x[1], x[2], parent.node_id, parent.depth + 1), zip(new_ex, rules_applied))
     # new_nodes1 = map(x->Node1(x[1], x[2], hash(parent.ex, hash(parent.depth)), parent.depth + 1), zip(new_ex, rules_applied))
     # @show hash(parent.ex, hash(soltree[parent.parent].ex)
@@ -52,7 +52,7 @@ function expand_node1!(parent::Node, soltree, soltree1, open_list, model; theory
         end
     end
     isempty(new_nodes) && return
-    o = map(x->only(model(x.ex)), new_nodes)
+    @timeit TO "new children inference" o = map(x->only(model(x.ex)), new_nodes)
     for (v,n) in zip(o, new_nodes)
         enqueue!(open_list, n, v)
     end
@@ -96,19 +96,22 @@ end
 
 function build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=1000, max_depth=10, epsilon=1.0)
     expansions = 0
+    greedy_set = Set()
     while !isempty(open_list)
         expansions == max_expansions && break
-        if rand() > epsilon
-            node, _ = dequeue_pair!(open_list)
-        else
-            node, _ = rand(open_list)
-            dequeue!(open_list, node)
+        @timeit TO "choose node" begin
+            if rand() > epsilon
+                node, _ = dequeue_pair!(open_list)
+            else
+                node, _ = rand(open_list)
+                dequeue!(open_list, node)
+            end
         end
         push!(close_list, node.node_id)
-
+        # push!(greedy_set, node)
         node.depth == max_depth && continue
         
-        expand_node1!(node, soltree, soltree1, open_list, model)
+        @timeit TO "expand node" expand_node1!(node, soltree, soltree1, open_list, model)
         expansions += 1
     end
 end
@@ -148,6 +151,7 @@ function extract_smallest_node(soltree)
     smallest_node_size = typemax(Int)
     for (k, n) in soltree
         n.depth == 0 && continue
+        # @show n.ex
         ex_size = exp_size(n.ex)
         if ex_size < smallest_node_size
             smallest_node = n
@@ -182,11 +186,12 @@ end
 
 
 function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_depth=10, epsilon=1.0)
-    if isa(model, ExprModel) || isa(model, Function)
-        open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
-    else
-        open_list = PriorityQueue{Node, Tuple{Float32, Float32}}(Base.Order.Reverse)
-    end
+    # if isa(model, ExprModel) || isa(model, Function)
+    #     open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    # else
+    open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    # open_list = PriorityQueue{Node, Tuple{Float32, Float32}}(Base.Order.Reverse)
+    # end
     close_list = Set{UInt64}()
 
     soltree = Dict{UInt64, Node}()
@@ -198,7 +203,7 @@ function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_dept
     soltree1[root1.node_id] = root1
     o = only(model(root.ex))
     enqueue!(open_list, root, o)
-    build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=max_expansions, max_depth=max_depth, epsilon=epsilon)
-    smallest_node = extract_smallest_node(soltree)
+    @timeit TO "build tree epsilon" build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=max_expansions, max_depth=max_depth, epsilon=epsilon)
+    @timeit TO "extract smallest node" smallest_node = extract_smallest_node(soltree)
     return(soltree, smallest_node, root, soltree1)
 end

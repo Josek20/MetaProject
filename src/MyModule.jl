@@ -1,5 +1,6 @@
 module MyModule
-
+using TimerOutputs
+const TO = TimerOutput()
 using Flux
 using JSON
 using Metatheory

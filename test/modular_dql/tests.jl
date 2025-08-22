@@ -39,6 +39,18 @@ function create_test_model(;hidden_size=64, input_size=64)
         );
     return model
 end
+@testset "check model inference" begin
+    model = create_test_model()
+    @testset "check inference cache" begin
+        a = model(:(111 - 10 <= 1221))
+        @assert length(MyModule.memoize_cache(MyModule.general_leaf_cached_inference)) == 3
+    end
+    @testset "check inference values collision" begin
+        o1 = only(model(:(111 - 10 <= 1221)))
+        o2 = only(model(:(111 - 10 <= 1221)))
+        @assert o1 != o2
+    end
+end
 @testset "DQL Pipeline Test" begin
     ex = get_data()[1]
     @testset "linear trajectory" begin

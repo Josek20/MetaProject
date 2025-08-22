@@ -21,6 +21,7 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 TermInterface = "8ea1fca8-c5ef-4a55-8b96-4e9afe9c9a3c"
+TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [compat]
 ChainRulesCore = "1"
@@ -29,6 +30,7 @@ LinearAlgebra = "1.11.0"
 MacroTools = "0.5.15"
 Metatheory = "2.0.2"
 Optimisers = "0.3.4, 0.4"
+TimerOutputs = "0.5.29"
 
 [compt]
 FileIO = "1.16.3"
