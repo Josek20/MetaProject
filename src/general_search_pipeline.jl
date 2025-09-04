@@ -51,8 +51,16 @@ function expand_node1!(parent::Node, soltree, soltree1, open_list, model; theory
             soltree1[i.node_id] = i
         end
     end
-    isempty(new_nodes) && return
-    @timeit TO "new children inference" o = map(x->only(model(x.ex)), new_nodes)
+    if isempty(new_nodes)
+        nodes_ids2 = map(x->x.node_id, new_nodes1[new_nodes1_indices])
+        append!(soltree1[parent_id1].children, nodes_ids2)
+        return
+    end
+    @timeit TO "new children inference cached" o = map(x->only(model(x.ex)), new_nodes)
+    # @timeit TO "transfrom new children to Expr" expr_data = map(x->expr(MyModule.nc, x.ex), new_nodes)
+    # @timeit TO "transfrom new children into Mill structure" input_data = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(expr_data, sym_enc))
+    # @timeit TO "new_children inference batched" o = MyModule.heuristic(model, input_data)
+    
     for (v,n) in zip(o, new_nodes)
         enqueue!(open_list, n, v)
     end
@@ -99,14 +107,17 @@ function build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, mo
     greedy_set = Set()
     while !isempty(open_list)
         expansions == max_expansions && break
-        @timeit TO "choose node" begin
             if rand() > epsilon
-                node, _ = dequeue_pair!(open_list)
+                @timeit TO "choose node from queue" begin
+                    node, _ = dequeue_pair!(open_list)
+                end
             else
-                node, _ = rand(open_list)
-                dequeue!(open_list, node)
+                @timeit TO "choose node random sampled" begin
+                    node, _ = rand(open_list.xs)
+                    dequeue!(open_list, node)
+                end
+
             end
-        end
         push!(close_list, node.node_id)
         # push!(greedy_set, node)
         node.depth == max_depth && continue
@@ -189,6 +200,35 @@ function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_dept
     # if isa(model, ExprModel) || isa(model, Function)
     #     open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
     # else
+    if isa(model, Function)
+        open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    elseif size(model.heuristic.layers[end].weight)[1] == 2
+        open_list = PriorityQueue{Node, Tuple{Float32, Float32}}(Base.Order.Reverse)
+    else
+        open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    end
+    # end
+    close_list = Set{UInt64}()
+
+    soltree = Dict{UInt64, Node}()
+    soltree1 = Dict{UInt64, Node}()
+    root = Node(ex, (), hash(ex), 0)
+    # root1 = Node1(ex, (), hash(ex, hash(0)), 0)
+    root1 = Node(ex, (), UInt64[], hash(ex, hash(ex)), 0, hash(ex, hash(ex)))
+    soltree[root.node_id] = root
+    soltree1[root1.node_id] = root1
+    o = only(model(root.ex))
+    enqueue!(open_list, root, o)
+    @timeit TO "build tree epsilon" build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=max_expansions, max_depth=max_depth, epsilon=epsilon)
+    @timeit TO "extract smallest node" smallest_node = extract_smallest_node(soltree)
+    return(soltree, smallest_node, root, soltree1)
+end
+
+
+function initialize_tree_search_epsilon_for_parallel(ex, model; max_expansions=1000, max_depth=10, epsilon=1.0)
+    # if isa(model, ExprModel) || isa(model, Function)
+    #     open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
+    # else
     open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
     # open_list = PriorityQueue{Node, Tuple{Float32, Float32}}(Base.Order.Reverse)
     # end
@@ -205,5 +245,16 @@ function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_dept
     enqueue!(open_list, root, o)
     @timeit TO "build tree epsilon" build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=max_expansions, max_depth=max_depth, epsilon=epsilon)
     @timeit TO "extract smallest node" smallest_node = extract_smallest_node(soltree)
+    # Change interned to Expr
+    for (i,j) in soltree
+        tmp = MyModule.expr(MyModule.nc, j.ex)
+        soltree[i] = Node(tmp, j.rule_index, j.children, j.parent, j.depth, j.node_id)
+    end
+    for (i,j) in soltree1
+        tmp = MyModule.expr(MyModule.nc, j.ex)
+        soltree1[i] = Node(tmp, j.rule_index, j.children, j.parent, j.depth, j.node_id)
+    end 
+    root = soltree[root.node_id]
+    smallest_node = soltree[smallest_node.node_id]
     return(soltree, smallest_node, root, soltree1)
 end

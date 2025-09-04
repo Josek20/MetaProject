@@ -5,7 +5,7 @@ using MyModule
 using MyModule: all_expand, exp_size, Node, NodeID, intern!, expr, DeduplicatingNode, AbstractModel
 
 function get_data()
-    train_data_path = "./data/neural_rewrter/train.json"
+    train_data_path = "./data/neural_rewrter/val.json"
     train_data = load_data(train_data_path)[1:1_000]
     train_data = filter(x->!occursin("select", x[1]), train_data)
     train_data = preprosses_data_to_expressions(train_data)
@@ -15,8 +15,9 @@ function get_data()
 end
 
 data = get_data()
-max_steps = 10
+max_steps = 100
 max_depth = 100
+MyModule.reset_all_function_caches()
 res = map(data) do i
     tmp = intern!(i)
     soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(tmp, exp_size; max_expansions=max_steps, max_depth=max_depth)
@@ -30,4 +31,4 @@ res = map(data) do i
     (; s₀ = exp_size(root.ex), sₙ = exp_size(tmp), se = expr(MyModule.nc, tmp), pr = reverse(pr))
 end |> DataFrame
 @show mean(res[!, :s₀] - res[!, :sₙ])
-CSV.write("stats/results_of_greedy_baseline_steps$(max_steps).csv", res)
+# CSV.write("stats/results_of_greedy_baseline_steps$(max_steps).csv", res)

@@ -327,6 +327,8 @@ function test_child_reach(soltree)
         
         while true
             next_n = soltree[prev_n.parent]
+            # @show next_n
+            # @assert length(next_n.children) != 0
             if next_n.ex == prev_n.ex
                 break
             elseif next_n.depth >= prev_n.depth

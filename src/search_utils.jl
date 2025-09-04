@@ -30,6 +30,28 @@ function my_rewriter!(position::Vector{Int}, ex::Expr, rule)
     return nothing
 end
 
+@my_cache LRU(maxsize=10_000) function matched_expr_cached(ex::Union{Expr,Symbol,Number}, matchers::Vector)
+    matches = filter(em -> !isnothing(em[2]), collect(enumerate(rt(ex) for rt in matchers)))
+    return [i[1] for i in matches]
+end
+function new_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}})
+    if !isa(ex, Expr)
+        return
+    end
+    match_inds = matched_expr_cached(ex, matchers)
+
+    if !isempty(match_inds)
+        b = copy(trav_indexs)
+        append!(tmp, [(b, i) for i in match_inds])
+    end
+
+    for (ind, arg) in enumerate(ex.args)
+        push!(trav_indexs, ind)
+        new_traverse_expr!(arg, matchers, tree_ind, trav_indexs, tmp)
+        pop!(trav_indexs)
+    end
+end
+
 
 function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tree_ind::Int, trav_indexs::Vector{Int}, tmp::Vector{Tuple{Vector{Int}, Int}}, caching::LRU)
     if !isa(ex, Expr)
@@ -71,12 +93,12 @@ function old_traverse_expr!(ex::Union{Expr,Symbol,Number}, matchers::Vector, tre
     end
 end
 
-
-@my_cache LRU(maxsize=100_000) function all_expand(ex::Expr, theory)
-    cache = memoize_cache(all_expand)
+all_expand(ex::Int, theory) = [], []
+function all_expand(ex::Expr, theory)
     res = []
     tmp = Tuple{Vector{Int}, Int}[]
-    old_traverse_expr!(ex, theory, 1, Int64[], tmp, cache) 
+    # old_traverse_expr!(ex, theory, 1, Int64[], tmp, cache) 
+    new_traverse_expr!(ex, theory, 1, Int64[], tmp) 
     for (pl, r) in tmp
         old_ex = copy(ex)
         o = my_rewriter!(pl, old_ex, theory[r])

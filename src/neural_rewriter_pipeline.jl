@@ -129,10 +129,10 @@ function forward(ex, policy_model, value_model;max_expansions=50)
         #     push!(rewrite_sequence, subtree)
         #     break
         # end
-        root_embedding = MyModule.general_cached_inference(ex, Expr, policy_model)
+        root_embedding = MyModule.general_expr_cached_inference(ex, policy_model)
         o = map(tree_action) do (_, _, rule_id, subtree, _)
             # In the original paper concatenated the root embedding to the subtree
-            subtree_embedding = MyModule.general_cached_inference(subtree, Expr, policy_model)
+            subtree_embedding = MyModule.general_expr_cached_inference(subtree, policy_model)
             (only(value_model.heuristic(subtree_embedding)), only(policy_model.heuristic(subtree_embedding)[rule_id]))
         end
         min_index = argmax(o)
@@ -177,22 +177,23 @@ optimizer=ADAM()
 
 value_opt_state = Flux.setup(optimizer, value_model)
 policy_opt_state = Flux.setup(optimizer, policy_model)
-epochs = 1
+epochs = 10
 inner_epochs = 10
 experiment_name = "test_no_boosting_ep$(epochs)_inep$(inner_epochs)_abs_loss"
 # @assert 0 == 1
+MyModule.reset_all_function_caches()
 training_data = [(;subtree_embeddings_traces=nothing,rewards=[],rules_applied=[], rewrite_sequence=[], initial_expr=intern!(i), r=-1) for i in data]
 for ep in 1:epochs
     t = @elapsed training_data = map(training_data) do d
         ex = d.initial_expr
-        @show ex
+        # @show ex
         smallest_node, rewrite_sequence_subtree, rules_applied, rewrite_sequence = forward(ex, policy_model, value_model; max_expansions=50)
         best_size = exp_size.(rewrite_sequence[2:end])
         # if min(best_size...) < exp_size(ex) || isnothing(d.subtree_embeddings_traces)
         # @show rewrite_sequence[2:end][argmin(best_size)]
         rewards = Float32[]
         for i in 1:length(rewrite_sequence) - 1
-            rew = exp_size(rewrite_sequence[i]) - exp_size(rewrite_sequence[i + 1])
+            rew = exp_size(rewrite_sequence[i]) - exp_size(rewrite_sequence[i + 1]) - 1
             push!(rewards, rew)
         end
         subtree_embeddings_traces = MyModule.no_reduce_multiple_fast_ex2mill([MyModule.expr(MyModule.nc, i) for i in rewrite_sequence_subtree])
@@ -206,7 +207,7 @@ for ep in 1:epochs
         total_loss = 0
         tt = @elapsed for (ind, (subtree_embeddings_traces, rewards, rules_applied, rewrite_sequence, _, _)) in enumerate(training_data)
             # subtree_embeddings_traces = policy_model(subtree_embeddings_traces) # both networks will compute only the output of the embedding
-            sa, grad = Flux.Zygote.withgradient(value_model, policy_model) do vm, pm
+            sa, grad = Fluxk.Zygote.withgradient(value_model, policy_model) do vm, pm
                 proper_loss(pm, vm, subtree_embeddings_traces, rewards, rules_applied)
             end
             if isinf(sa)
@@ -226,6 +227,7 @@ for ep in 1:epochs
         @show total_loss / length(training_data)
         @show tt
     end
+    MyModule.reset_inference_caches()
     validation_stats = [exp_size(i.initial_expr) - i.r for i in training_data]
     @show sum(validation_stats) / length(training_data)
 end

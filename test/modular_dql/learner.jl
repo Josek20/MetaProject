@@ -23,13 +23,13 @@ function DummyLerner(loss_func::Function, model::ExprModel; lr=0.001, max_iter=1
     policy_params = Flux.setup(pol_optimizer, model)
     DummyLerner(loss_func, max_iter, policy_params)
 end
-function HeadLerner(loss_func::Function, model::DoubleHeadedModel; lr=0.001, max_iter=10)
-    pol_optimizer1 = ADAM(lr)
-    pol_optimizer2 = ADAM(lr)
-    policy_params1 = Flux.setup(pol_optimizer1, model.first_head)
-    policy_params2 = Flux.setup(pol_optimizer2, model.second_head)
-    HeadLerner(loss_func, max_iter, [policy_params1, policy_params2], model.first_head, model.second_head)
-end
+# function HeadLerner(loss_func::Function, model::DoubleHeadedModel; lr=0.001, max_iter=10)
+#     pol_optimizer1 = ADAM(lr)
+#     pol_optimizer2 = ADAM(lr)
+#     policy_params1 = Flux.setup(pol_optimizer1, model.first_head)
+#     policy_params2 = Flux.setup(pol_optimizer2, model.second_head)
+#     HeadLerner(loss_func, max_iter, [policy_params1, policy_params2], model.first_head, model.second_head)
+# end
 # function PolicyLerner(loss_func::Function, model::ExprModel; lr=0.001, max_iter=10)
 #     pol_optimizer = ADAM(lr)
 #     policy_params = Flux.setup(pol_optimizer, model)
@@ -69,23 +69,24 @@ function compute_gradient!(target_values, input_values, model::ExprModel, l::Dum
     Optimisers.update!(l.params, model, grad[1])
     return sa
 end
-function compute_gradient!(target_values, input_values, model::DoubleHeadedModel, l::HeadLerner)
-    values1 = first.(target_values)
-    values2 = map(x->x[2], target_values)
-    embeddings = model.main_body(input_values)
-    # @show input_values[1
-    sa1, grad = Flux.Zygote.withgradient(model.first_head) do oq
-        expected_values = vec(oq(embeddings))
-        l.loss_func(values1, expected_values)
-    end
-    Optimisers.update!(l.model_params[1], model.first_head, grad[1])
-    sa2, grad = Flux.Zygote.withgradient(model.second_head) do oq
-        expected_values = vec(oq(embeddings))
-        l.loss_func(values2, expected_values)
-    end
-    Optimisers.update!(l.model_params[2], model.second_head, grad[1])
-    return sa1 + sa2
-end
+
+# function compute_gradient!(target_values, input_values, model::DoubleHeadedModel, l::HeadLerner)
+#     values1 = first.(target_values)
+#     values2 = map(x->x[2], target_values)
+#     embeddings = model.main_body(input_values)
+#     # @show input_values[1
+#     sa1, grad = Flux.Zygote.withgradient(model.first_head) do oq
+#         expected_values = vec(oq(embeddings))
+#         l.loss_func(values1, expected_values)
+#     end
+#     Optimisers.update!(l.model_params[1], model.first_head, grad[1])
+#     sa2, grad = Flux.Zygote.withgradient(model.second_head) do oq
+#         expected_values = vec(oq(embeddings))
+#         l.loss_func(values2, expected_values)
+#     end
+#     Optimisers.update!(l.model_params[2], model.second_head, grad[1])
+#     return sa1 + sa2
+# end
 
 
 function sample(traj::AbstractTrajectory)

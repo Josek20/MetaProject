@@ -39,8 +39,25 @@ function create_test_model(;hidden_size=64, input_size=64)
         );
     return model
 end
+#### Test 
+# soltree, smallest_node, root = MyModule.initialize_tree_search(MyModule.intern!(data[300]), model, max_expansions=1000, max_depth=100)
+# test1 = @benchmark begin
+#     MyModule.reset_all_function_caches()
+#     map(x->model(x.ex), values(soltree))
+# end
+# test2 = @benchmark begin
+#     expr_data = map(x->expr(MyModule.nc, x.ex), values(soltree))
+#     input_data = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(expr_data, sym_enc))
+#     MyModule.heuristic(model, input_data)
+# end
+# test3 = @benchmark begin
+#     expr_data = map(x->expr(MyModule.nc, x.ex), values(soltree))
+#     input_data = MyModule.no_reduce_multiple_fast_ex2mill(expr_data, sym_enc)
+#     MyModule.heuristic(model, input_data)
+# end
 @testset "check model inference" begin
     model = create_test_model()
+    MyModule.reset_all_function_caches()
     @testset "check inference cache" begin
         a = model(:(111 - 10 <= 1221))
         @assert length(MyModule.memoize_cache(MyModule.general_leaf_cached_inference)) == 3

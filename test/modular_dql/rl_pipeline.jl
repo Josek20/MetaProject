@@ -18,7 +18,9 @@ mutable struct SimpleRLPipeline{E <: AbstractEnvironment, M <: AbstractModel, S 
 end
 clean_cache(model::AbstractModel) = nothing
 function clean_cache(model::ExprModel)
-    empty!(MyModule.memoize_cache(MyModule.general_cached_inference))
+    empty!(MyModule.memoize_cache(MyModule.general_expr_cached_inference))
+    empty!(MyModule.memoize_cache(MyModule.general_leaf_cached_inference))
+    # MyModule.reset_all_function_caches()
 end
 
 function train!(pipeline::RLPipeline; episodes::Int=100)
@@ -57,11 +59,13 @@ function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=10
             # @show d.initial_expr
             pipeline.env.s_init = d.initial_expr
             reset!(pipeline.env)
-            traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
-            # sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model, pipeline.target_model)
+            # traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
+            traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model, pipeline.target_model)
+
             input_values = get_input_values(traj)
             target = get_target(traj.rewards, pipeline.sampler)
-
+            # @show length(input_values.ii), traj.rewards, 
+            # @assert length(traj.rewards) * length(traj.rewards[1]) == length(input_values.ii) * 2 == length(target)
             return(;ds=input_values,rew=target,goal_size=-1, initial_expr=d.initial_expr, depth=traj.pointer)
         end
         # clean_cache(pipeline.model)
@@ -70,6 +74,7 @@ function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=10
             learning_time = 0
             loss = 0
             for (ind, s) in enumerate(samples)
+                # @show length(s.rew), length(s.ds.ii)
                 learning_time += @elapsed loss += compute_gradient!(s.rew, s.ds, pipeline.model, pipeline.learner)
             end
             loss_over_time += loss / length(samples)
@@ -83,7 +88,7 @@ function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=10
         @timeit TO "validation" res, val_time = validation3(pipeline, data)
         println("Ep $(episode): lres, tres = $([0, res]); loss = $(loss_over_time / 10);epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2)); validation took --> $(round(val_time, digits=2))")
     end
-    return trajectories, (;loss_stats=loss, val_stats=train_validation)
+    return samples, (;loss_stats=loss, val_stats=train_validation)
 end
 
 function preprocessing(traj)
@@ -124,18 +129,18 @@ function train1!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=1
         trajectory_time = @elapsed samples = map(samples) do d
             pipeline.env.s_init = d.initial_expr
             reset!(pipeline.env)
-            traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
-            # traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model, pipeline.target_model)
+            # traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
+            traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model, pipeline.target_model)
             # traj = preprocessing(traj)
             # smallest_node = traj.next_states[argmin(exp_size.(traj.next_states))]
             new_smallest_node_size = minimum(exp_size.(traj.next_states))
             # traj = preprocessing(traj, pipeline.target_model)
             if d.goal_size > new_smallest_node_size
                 input_values = get_input_values(traj)
-                target = get_target(traj.reward, pipeline.sampler)
+                target = get_target(traj.rewards, pipeline.sampler)
                 return(;ds=input_values,rew=target,goal_size=new_smallest_node_size, initial_expr=d.initial_expr, depth=traj.pointer)
             elseif (d.goal_size > new_smallest_node_size && d.depth > traj.pointer)
-                target = get_target(traj.reward, pipeline.sampler)
+                target = get_target(traj.rewards, pipeline.sampler)
                 input_values = get_input_values(traj)
                 return(;ds=input_values,rew=target,goal_size=new_smallest_node_size, initial_expr=d.initial_expr, depth=traj.pointer)
             else
@@ -219,16 +224,16 @@ function visualization_makie(soltree::Dict, model::ExprModel, mcache::Dict)
         depths[c] -= 2
         Point2f(12 * c, 12 * y)
     end
-    fig = Figure(resolution = (3000, 1000))  # Super wide
+    fig = Figure(resolution = (300, 100))  # Super wide
     ax = Axis(fig[1, 1])
     # fig, _, _ = graphplot(ax, g; layout=layout, edge_linestyle=:solid)
     graphplot!(ax, g; layout=layout)
     # fig, ax, plt = graphplot(g, layout=layout, edge_linestyle=:solid)
     # ax.xlimits = (-2, 10)
     # GraphMakie.xlims!(ax, -2, 10)
-    # for (i, pos) in enumerate(layout)
-    #     text!(ax, string(MyModule.expr(MyModule.nc, soltree[gid2id[i]].ex)); position=pos, align=(:center, :center), fontsize=14, color=:blue)
-    # end
+    for (i, pos) in enumerate(layout)
+        text!(ax, string(MyModule.expr(MyModule.nc, soltree[gid2id[i]].ex)); position=pos, align=(:center, :center), fontsize=14, color=:blue)
+    end
     display(fig)
     # fig, ax, plt = graphplot(g; layout=layout, nlabels=string.([MyModule.expr(MyModule.nc, soltree[gid2id[i]].ex) for i in 1:nv(g)]))
 end
@@ -241,13 +246,28 @@ function visualization_makie_in_circles(soltree::Dict, model::ExprModel, mcache:
             add_edge!(g, id2gid[node.parent], id2gid[node.node_id])
         end
     end
-    depths = countmap([n.depth for n in values(soltree)])
-    layout = map(values(soltree)) do node
-        c = node.depth
-        y = depths[c]
-        depths[c] -= 2
-        Point2f(12 * c, 12 * y)
+    # depths = countmap([n.depth for n in values(soltree)])
+    depth_dict = Dict(i=>[] for i in 1:10)
+    for (k, v) in soltree
+        v.depth == 0 && continue
+        push!(depth_dict[v.depth], v.node_id)
     end
+    for (depth, nodes) in depth_dict
+        n = length(nodes)
+        for (i, node) in enumerate(nodes)
+            θ = 2π * (i - 1) / n
+            r = depth * radious_step
+            x = r * cos(θ)
+            y = r * sin(θ)
+            position[node] = x, y
+        end
+    end
+    # layout = map(values(soltree)) do node
+    #     c = node.depth
+    #     y = depths[c]
+    #     depths[c] -= 2
+    #     Point2f(12 * c, 12 * y)
+    # end
 end
 
 # sample_trajectory(s::AbstractSampler, env::AbstractEnvironment, model::AbstractModel)::Trajectory = error("sample_trajectory not inmplemented")
