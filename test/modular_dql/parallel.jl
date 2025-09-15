@@ -64,7 +64,8 @@ target = ExprModel(
 @everywhere function not_boosted(d, sampler, traj)
     input_values = get_input_values(traj)
     target = get_target(traj.rewards, sampler)
-    (;ds=input_values,rew=target,goal_size=-1, initial_expr=d.initial_expr, depth=traj.pointer)
+    new_smallest_node_size = minimum(exp_size.(traj.next_states))
+    (;ds=input_values,rew=target,goal_size=new_smallest_node_size, initial_expr=d.initial_expr, depth=traj.pointer)
 end
 @everywhere function boosted(d, sampler, traj)
     input_values = get_input_values(traj)
@@ -73,13 +74,14 @@ end
     if d.goal_size > new_smallest_node_size
         input_values = get_input_values(traj)
         target = get_target(traj.rewards, sampler)
+        # goal_size = exp_size(traj.states[1]) - new_smallest_node_size
         # return(;ds=input_values,rew=target,goal_size=new_smallest_node_size, initial_expr=d.initial_expr, depth=traj.pointer)
-        return(;ds=input_values,rew=target,goal_size=-1, initial_expr=d.initial_expr, depth=traj.pointer)
+        return(;ds=input_values,rew=target,goal_size=new_smallest_node_size, initial_expr=d.initial_expr, depth=traj.pointer)
     elseif (d.goal_size > new_smallest_node_size && d.depth > traj.pointer)
         target = get_target(traj.rewards, sampler)
         input_values = get_input_values(traj)
         # return(;ds=input_values,rew=target,goal_size=new_smallest_node_size, initial_expr=d.initial_expr, depth=traj.pointer)
-        return(;ds=input_values,rew=target,goal_size=-1, initial_expr=d.initial_expr, depth=traj.pointer)
+        return(;ds=input_values,rew=target,goal_size=traj.goal_size, initial_expr=d.initial_expr, depth=traj.pointer)
     else
         return(d)
     end
@@ -87,9 +89,11 @@ end
 function train(model, data, target_model)
     @everywhere model = $model
     @everywhere target_model = $target_model
-    @everywhere is_target = false
+    save_model_path = "models/dqn_first_2nd_20ep/"
+    @show save_model_path
     learner = DummyLerner(Flux.mse, model, max_iter=10)
     epochs = 2
+    @everywhere is_target = false
     @everywhere is_boosted = false
     @everywhere sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
     # @everywhere sampler = DAGSampler(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
@@ -124,12 +128,12 @@ function train(model, data, target_model)
             loss_over_time += loss / length(samples)
         end
         update_epsilon!(sampler)
-        if mod(e, 10) == 0
+        if mod(e, 2) == 0
             target_model = deepcopy(model)
         end
-        res = 0.0
+        res = mean(map(x->exp_size(intern!(x.initial_expr)) - x.goal_size, samples))
         val_time = 0.0
-        serialize("models/test_ep$(e).bin", model)
+        serialize(save_model_path * "test_ep$(e).bin", model)
         println("Ep $(e): lres, tres = $([0, res]); loss = $(loss_over_time / 10);epsilon=$(round(sampler.epsilon, digits=2)); trajectory took --> $(round(search_time, digits=2)); update took --> $(round(update_time, digits=2)); validation took --> $(round(val_time, digits=2))")
     end
 end

@@ -74,9 +74,9 @@ args_model = ProductModel(
     )
 
 # sampler = PlanningTreeSampler(max_steps=10, max_depth=100, epsilon=1.0, eps_decay=0.75, is_directed=false, n_best=10, batch=64)
-# sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
+sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
 # sampler = DGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
-sampler = DAGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128)
+# sampler = DAGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128)
 
 # sampler = TreeSampler2Values(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
 
@@ -178,19 +178,25 @@ function validate_trained_linear(pipeline, data, names)
     CSV.write("stats/linear_results_of_$(names)_hidden$(hidden_size).csv", df)
     # return df
 end
-function validate_train_tree(pipeline, data, names)
+function validate_train_tree(pipeline, data, names; path="stats/")
     MyModule.reset_all_function_caches()
-    df = map(data) do ex
+    df = map(enumerate(data)) do (ind,ex)
+        if mod(ind, 100) == 0
+            empty!(MyModule.nc)
+            MyModule.reset_all_function_caches()
+        end
         pipeline.env.s_init = intern!(ex)
         reset!(pipeline.env)
         sampler = pipeline.sampler
         env = pipeline.env
         model = pipeline.model
         # Base.Filesystem.touch("$(dir_name)/$(ex)")
-        soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=0.0)
-        (; s₀ = MyModule.exp_size(root.ex), sₙ = MyModule.exp_size(smallest_node.ex), se = smallest_node.ex, pr = [])
+        
+        t = @elapsed soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=0.0)
+        println("ind=$(ind), ex=$(ex), time=$(t)")
+        (; s₀ = MyModule.exp_size(root.ex), sₙ = MyModule.exp_size(smallest_node.ex), se = expr(MyModule.nc,smallest_node.ex), pr = [])
     end |> DataFrame
-    CSV.write("stats/results_of_$(names)_hidden$(hidden_size).csv", df)
+    CSV.write(path * "results_of_$(names)_hidden$(hidden_size).csv", df)
 end
 function get_convergence_stats(data, pipeline; epsilon=0.1, exp_name="")
     convergence_stats = map(data) do d
@@ -227,6 +233,8 @@ end
 #     @show full_validation(data, pipeline)
 # end
 tmp1, training_stats = train!(pipeline, data[1:10], episodes=1)
+# 291
+# validate_train_tree(pipeline, data, "trained_test_DQN_first_DG_not_boosted_ep$(18)_batch128_gamma1", path="stats/dqn_first_4th_20ep/")
 #=
 MyModule.reset_all_function_caches()
 empty!(MyModule.nc)

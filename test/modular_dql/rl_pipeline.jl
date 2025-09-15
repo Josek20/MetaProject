@@ -59,8 +59,8 @@ function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=10
             # @show d.initial_expr
             pipeline.env.s_init = d.initial_expr
             reset!(pipeline.env)
-            # traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
-            traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model, pipeline.target_model)
+            traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
+            # traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model, pipeline.target_model)
 
             input_values = get_input_values(traj)
             target = get_target(traj.rewards, pipeline.sampler)

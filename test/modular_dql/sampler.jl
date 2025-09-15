@@ -231,33 +231,44 @@ end
 
 
 isleaf(n::Node) = isempty(n.children)
-function target_from_cache!(cache, leaf::Node, soltree::Dict; gamma=0.9)
+function target_from_cache!(cache, leaf::Node, soltree::Dict; gamma=1.0)
     haskey(cache, leaf.ex) && return(cache[leaf.ex])
     r = exp_size(leaf.ex)
     root_id = findfirst(x->x.depth == 0, soltree)
     # root_id = leaf.parent
-    v = isleaf(leaf) ? (exp_size(soltree[root_id].ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache!(cache, soltree[ch], soltree) for ch in leaf.children)
+    if isleaf(leaf)
+        v = (exp_size(soltree[root_id].ex) - r)
+    else
+        v = maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache!(cache, soltree[ch], soltree) for ch in leaf.children)
+        v = max(0, v)
+    end
     cache[leaf.ex] = v
     return(v)
 end
 
 
-function target_from_cache2!(cache, leaf::Node, soltree::Dict, root_node::Node; gamma=0.9)
+function target_from_cache2!(cache, leaf::Node, soltree::Dict, root_node::Node; gamma=1.0)
     # haskey(cache, leaf.ex) && return(cache[leaf.ex])
     r = exp_size(leaf.ex)
     # root_id = findfirst(x->x.depth == 0, soltree)
     # root_id = leaf.parent
-    v = isleaf(leaf) ? (exp_size(root_node.ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache2!(cache, soltree[ch], soltree, root_node) for ch in leaf.children)
+    if isleaf(leaf)
+        v = (exp_size(root_node.ex) - r)
+    else
+        v = maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache2!(cache, soltree[ch], soltree, root_node) for ch in leaf.children)
+        v = max(0, v)
+    end
     # v = isleaf(leaf) ? (exp_size(soltree[leaf.parent].ex) - r) : maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * target_from_cache2!(cache, soltree[ch], soltree, root_node) for ch in leaf.children)
     cache[leaf.ex] = v
     return(v)
 end
 
 
-function target_from_cache_value_network!(cache, leaf::Node, soltree::Dict, model::ExprModel; gamma=0.9)
+function target_from_cache_value_network!(cache, leaf::Node, soltree::Dict, model::ExprModel; gamma=1.0)
     r = exp_size(leaf.ex)
     if leaf.depth == 0
         v = maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * only(model(soltree[x].ex)) for x in leaf.children)
+        v = max(0, v)
         cache[leaf.ex] = v
         return(v)
     end
@@ -266,6 +277,7 @@ function target_from_cache_value_network!(cache, leaf::Node, soltree::Dict, mode
     else
         # check if has upper
         v = maximum(exp_size(soltree[leaf.parent].ex) - r + gamma * only(model(soltree[x].ex)) for x in leaf.children)
+        v = max(0, v)
     end
     cache[leaf.ex] = v
     target_from_cache_value_network!(cache, soltree[leaf.parent], soltree, model)
@@ -283,24 +295,26 @@ function is_upper(leaf_node, soltree1, initial_leaf)
 end
 
 
-function update_cache!(cache, leaf, soltree; gamma=0.9)
+function update_cache!(cache, leaf, soltree; gamma=1.0)
     if leaf.depth == 0 || leaf.node_id == leaf.parent
         return
     end
     parent = soltree[leaf.parent]
     children = parent.children
     r = exp_size(leaf.ex)
-    cache[parent.ex] = maximum(exp_size(parent.ex) - r + gamma * cache[soltree[x].ex] for x in children)
+    v = maximum(exp_size(parent.ex) - r + gamma * cache[soltree[x].ex] for x in children)
+    cache[parent.ex] = max(0, v)
     update_cache!(cache, parent, soltree)
 end
-function update_cache!(cache, leaf, soltree, target_model; gamma=0.9)
+function update_cache!(cache, leaf, soltree, target_model; gamma=1.0)
     if leaf.depth == 0 || leaf.node_id == leaf.parent
         return
     end
     parent = soltree[leaf.parent]
     children = parent.children
     r = exp_size(leaf.ex)
-    cache[parent.ex] = maximum(exp_size(parent.ex) - r + gamma * only(target_model(soltree[x].ex)) for x in children)
+    v = maximum(exp_size(parent.ex) - r + gamma * only(target_model(soltree[x].ex)) for x in children)
+    cache[parent.ex] = max(0, v)
     update_cache!(cache, parent, soltree)
 end
 
