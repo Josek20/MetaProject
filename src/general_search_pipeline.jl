@@ -91,7 +91,7 @@ function expand_node!(parent::Node, soltree, open_list, model; theory=theory)
 end
 
 
-function build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=1000, max_depth=10, epsilon=1.0)
+function build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=1000, max_depth=10, epsilon=1.0, gamma=1.0)
     expansions = 0
     greedy_set = Set()
     start_time = time()
@@ -116,7 +116,7 @@ function build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, mo
         # push!(greedy_set, node)
         node.depth == max_depth && continue
         
-        @timeit TO "expand node" expand_node1!(node, root, soltree, soltree1, open_list, model)
+        @timeit TO "expand node" expand_node1!(node, root, soltree, soltree1, open_list, model, gamma=gamma)
         expansions += 1
     end
 end
@@ -174,7 +174,7 @@ function initialize_tree_search(ex, model; max_expansions=1000, max_depth=10, ep
 end
 
 
-function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_depth=10, epsilon=1.0)
+function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_depth=10, epsilon=1.0, gamma=1.0)
     # if isa(model, ExprModel) || isa(model, Function)
     #     open_list = PriorityQueue{Node, Float32}(Base.Order.Reverse)
     # else
@@ -197,7 +197,7 @@ function initialize_tree_search_epsilon(ex, model; max_expansions=1000, max_dept
     soltree1[root1.node_id] = root1
     o = only(model(root.ex))
     enqueue!(open_list, root, o)
-    @timeit TO "build tree epsilon" build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=max_expansions, max_depth=max_depth, epsilon=epsilon)
+    @timeit TO "build tree epsilon" build_tree_epsilon_greedy!(soltree, soltree1, open_list, close_list, model; max_expansions=max_expansions, max_depth=max_depth, epsilon=epsilon, gamma=gamma)
     @timeit TO "extract smallest node" smallest_node = extract_smallest_node(soltree)
     return(soltree, smallest_node, root, soltree1)
 end

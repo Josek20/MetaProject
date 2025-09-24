@@ -14,7 +14,19 @@ function get_res(paths;epochs=20)
     return tmp
 end
 
-function process_model(paths::Vector{String})
+function get_conv_res(paths;epochs=20)
+    tmp = map(paths) do path_name
+        res = map(1:epochs) do e
+            path = replace(path_name, "ep\$(ep)" => "ep$(e)")
+            df = CSV.read(path, DataFrame)
+            # df[!,2] = isnan.(df[!,2]) ? 0.0 : df[!,2]
+            mean(df[!,2])
+        end
+    end
+    return tmp
+end
+
+function process_model(paths::Vector{String}; get_res::Function=get_res)
     res = hcat(get_res(paths)...)
     means = vec(mean(res, dims=2))
     stds = vec(std(res, dims=2))
@@ -88,8 +100,8 @@ function plot_all_results()
     plot(size=(800, 600), xlabel="Epochs", ylabel="Mean simplification", title="Model Comparison on Test Set")
 
     for (label, data) in models_results
-        means_test, _ = process_model(data.test)
-        plot!(1:length(means_test), means_test, label="$label Test Mean", lw=2)
+        means_test, _ = process_model(data.train)
+        plot!(1:length(means_test), means_test, label="$label Mean", lw=2)
     end
     plot!()
 end
@@ -167,6 +179,470 @@ function plot_all_results_gamma()
     end
     plot!()
 end
+
+
+function plot_fixed_results_gamma()
+    models_results = Dict(
+        "Planning" => (
+            train=["stats/planning_4th_20ep/results_of_test_heuristic_boosted_1h_heuristic_ep\$(ep)_hidden64.csv",
+                "stats/planning_3rd_20ep/results_of_test_heuristic_boosted_1h_heuristic_ep\$(ep)_hidden64.csv",
+                "stats/planning_2nd_20ep/results_of_test_heuristic_boosted_1h_heuristic_ep\$(ep)_hidden64.csv"],
+            test=["stats/planning_4th_20ep/results_of_test_heuristic_boosted_1h_test_heuristic_ep\$(ep)_hidden64.csv",
+                "stats/planning_3rd_20ep/results_of_test_heuristic_boosted_1h_test_heuristic_ep\$(ep)_hidden64.csv",
+                "stats/planning_2nd_20ep/results_of_test_heuristic_boosted_1h_test_heuristic_ep\$(ep)_hidden64.csv"]
+        ),
+        # VL 1 and 2 on Tree
+        "VL Tree" => (
+            train_gamma1=["stats/dqn_first_Tree_gamma1/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_2nd/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_3rd/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_Tree_gamma1/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_2nd/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_3rd/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_Tree_gamma09/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv", 
+            "stats/dqn_first_Tree_gamma09_2nd/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_3rd/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_Tree_gamma09/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_2nd/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_3rd/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_Tree_gamma08/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_2nd/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_3rd/results_of_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_Tree_gamma08/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_2nd/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_3rd/results_of_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP Tree" => (
+            train_gamma1=["stats/dqn_second_Tree_gamma1/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_2nd/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_3rd/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_Tree_gamma1/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_2nd/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_3rd/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_Tree_gamma09/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_2nd/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_3rd/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_Tree_gamma09/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_2nd/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_3rd/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_Tree_gamma08/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_2nd/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_3rd/results_of_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_Tree_gamma08/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_2nd/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_3rd/results_of_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+        # VL 1 and 2 on DAG
+        "VL DAG" => (
+            train_gamma1=["stats/dqn_first_DAG_gamma1/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_2nd/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_3rd/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_DAG_gamma1/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_2nd/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_3rd/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_DAG_gamma09/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_2nd/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_3rd/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_DAG_gamma09/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_2nd/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_3rd/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_DAG_gamma08/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_2nd/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_3rd/results_of_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_DAG_gamma08/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_2nd/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_3rd/results_of_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP DAG" => (
+            train_gamma1=["stats/dqn_second_DAG_gamma1/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_2nd/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_3rd/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_DAG_gamma1/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_2nd/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_3rd/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_DAG_gamma09/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_2nd/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_3rd/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_DAG_gamma09/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_2nd/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_3rd/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_DAG_gamma08/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_2nd/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_3rd/results_of_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_DAG_gamma08/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_2nd/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_3rd/results_of_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+        # VL 1 and 2 on DG
+        "VL DG" => (
+            train_gamma1=["stats/dqn_first_DG_gamma1/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_2nd/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_3rd/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_DG_gamma1/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_2nd/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_3rd/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_DG_gamma09/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_2nd/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_3rd/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_DG_gamma09/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_2nd/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_3rd/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_DG_gamma08/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_2nd/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_3rd/results_of_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_DG_gamma08/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_2nd/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_3rd/results_of_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP DG" => (
+            train_gamma1=["stats/dqn_second_DG_gamma1/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_2nd/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_3rd/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_DG_gamma1/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_2nd/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_3rd/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_DG_gamma09/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_2nd/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_3rd/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_DG_gamma09/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_2nd/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_3rd/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_DG_gamma08/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_2nd/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_3rd/results_of_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_DG_gamma08/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_2nd/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_3rd/results_of_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+    )
+
+    plot(size=(800, 600), xlabel="Epochs", ylabel="Mean simplification", title="Model Comparison on Training Set")
+    res = Dict()
+    for (label, data) in models_results
+        if label == "Planning"
+            means_test, _ = process_model(data.train)
+            plot!(1:length(means_test), means_test, label="$label Mean", lw=2)
+        else
+            means_test, _ = process_model(data.train_gamma1)
+            # res[label] = means_test[end]
+            plot!(1:length(means_test), means_test, label="$label γ=8", lw=2)
+        end
+    end
+    plot!()
+end
+
+
+
+function plot_fixed_conv_results_gamma()
+    models_conv_results = Dict(
+        "Planning" => (
+            train=["stats/planning_4th_20ep/convergence_stats_heuristic_ep\$(ep).csv",
+                "stats/planning_3rd_20ep/convergence_stats_heuristic_ep\$(ep).csv",
+                "stats/planning_2nd_20ep/convergence_stats_heuristic_ep\$(ep).csv"],
+            test=["stats/planning_4th_20ep/convergence_stats_test_heuristic_ep\$(ep).csv",
+                "stats/planning_3rd_20ep/convergence_stats_test_heuristic_ep\$(ep).csv",
+                "stats/planning_2nd_20ep/convergence_stats_test_heuristic_ep\$(ep).csv"]
+        ),
+        # VL 1 and 2 on Tree
+        "VL Tree" => (
+            train_gamma1=["stats/dqn_first_Tree_gamma1/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_2nd/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_3rd/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_Tree_gamma1/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_2nd/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_3rd/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_Tree_gamma09/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv", 
+            "stats/dqn_first_Tree_gamma09_2nd/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_3rd/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_Tree_gamma09/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_2nd/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_3rd/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_Tree_gamma08/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_2nd/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_3rd/convergence_stats_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_Tree_gamma08/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_2nd/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_3rd/convergence_stats_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP Tree" => (
+            train_gamma1=["stats/dqn_second_Tree_gamma1/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_2nd/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_3rd/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_Tree_gamma1/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_2nd/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_3rd/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_Tree_gamma09/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_2nd/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_3rd/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_Tree_gamma09/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_2nd/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_3rd/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_Tree_gamma08/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_2nd/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_3rd/convergence_stats_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_Tree_gamma08/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_2nd/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_3rd/convergence_stats_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+        # VL 1 and 2 on DAG
+        "VL DAG" => (
+            train_gamma1=["stats/dqn_first_DAG_gamma1/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_2nd/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_3rd/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_DAG_gamma1/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_2nd/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_3rd/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_DAG_gamma09/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_2nd/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_3rd/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_DAG_gamma09/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_2nd/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_3rd/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_DAG_gamma08/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_2nd/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_3rd/convergence_stats_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_DAG_gamma08/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_2nd/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_3rd/convergence_stats_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP DAG" => (
+            train_gamma1=["stats/dqn_second_DAG_gamma1/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_2nd/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_3rd/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_DAG_gamma1/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_2nd/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_3rd/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_DAG_gamma09/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_2nd/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_3rd/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_DAG_gamma09/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_2nd/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_3rd/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_DAG_gamma08/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_2nd/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_3rd/convergence_stats_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_DAG_gamma08/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_2nd/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_3rd/convergence_stats_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+        # VL 1 and 2 on DG
+        "VL DG" => (
+            train_gamma1=["stats/dqn_first_DG_gamma1/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_2nd/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_3rd/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_DG_gamma1/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_2nd/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_3rd/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_DG_gamma09/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_2nd/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_3rd/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_DG_gamma09/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_2nd/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_3rd/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_DG_gamma08/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_2nd/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_3rd/convergence_stats_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_DG_gamma08/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_2nd/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_3rd/convergence_stats_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP DG" => (
+            train_gamma1=["stats/dqn_second_DG_gamma1/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_2nd/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_3rd/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_DG_gamma1/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_2nd/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_3rd/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_DG_gamma09/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_2nd/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_3rd/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_DG_gamma09/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_2nd/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_3rd/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_DG_gamma08/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_2nd/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_3rd/convergence_stats_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_DG_gamma08/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_2nd/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_3rd/convergence_stats_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+    )
+
+    plot(size=(800, 600), xlabel="Epochs", ylabel="Mean stds of children values", title="Model Comparison on Training Set")
+    res = Dict()
+    for (label, data) in models_conv_results
+        if label == "Planning" || label == "VL DAG" || label == "RTDP DAG"
+            # means_test, _ = process_model(data.test, get_res=get_conv_res)
+            # plot!(1:length(means_test), means_test, label="$label Mean", lw=2)
+        else
+            means_test, _ = process_model(data.test_gamma08, get_res=get_conv_res)
+            # res[label] = means_test[end]
+            plot!(1:length(means_test), means_test, label="$label γ=0.8", lw=2)
+        end
+    end
+    plot!()
+end
+
+
+function plot_fixed_filtered_conv_results_gamma()
+    models_filtered_conv_results = Dict(
+        "Planning" => (
+            train=["stats/planning_4th_20ep/convergence_stats_filtered_heuristic_ep\$(ep).csv",
+                "stats/planning_3rd_20ep/convergence_stats_filtered_heuristic_ep\$(ep).csv",
+                "stats/planning_2nd_20ep/convergence_stats_filtered_heuristic_ep\$(ep).csv"],
+            test=["stats/planning_4th_20ep/convergence_stats_filtered_test_heuristic_ep\$(ep).csv",
+                "stats/planning_3rd_20ep/convergence_stats_filtered_test_heuristic_ep\$(ep).csv",
+                "stats/planning_2nd_20ep/convergence_stats_filtered_test_heuristic_ep\$(ep).csv"]
+        ),
+        # VL 1 and 2 on Tree
+        "VL Tree" => (
+            train_gamma1=["stats/dqn_first_Tree_gamma1/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_2nd/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_3rd/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_Tree_gamma1/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_2nd/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_Tree_gamma1_3rd/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_Tree_gamma09/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv", 
+            "stats/dqn_first_Tree_gamma09_2nd/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_3rd/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_Tree_gamma09/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_2nd/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_Tree_gamma09_3rd/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_Tree_gamma08/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_2nd/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_3rd/convergence_stats_filtered_trained_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_Tree_gamma08/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_2nd/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_Tree_gamma08_3rd/convergence_stats_filtered_trained_test_DQN_first_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP Tree" => (
+            train_gamma1=["stats/dqn_second_Tree_gamma1/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_2nd/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_3rd/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_Tree_gamma1/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_2nd/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_Tree_gamma1_3rd/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_Tree_gamma09/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_2nd/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_3rd/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_Tree_gamma09/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_2nd/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_Tree_gamma09_3rd/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_Tree_gamma08/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_2nd/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_3rd/convergence_stats_filtered_trained_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_Tree_gamma08/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_2nd/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_Tree_gamma08_3rd/convergence_stats_filtered_trained_test_DQN_second_Tree_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+        # VL 1 and 2 on DAG
+        "VL DAG" => (
+            train_gamma1=["stats/dqn_first_DAG_gamma1/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_2nd/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_3rd/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_DAG_gamma1/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_2nd/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DAG_gamma1_3rd/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_DAG_gamma09/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_2nd/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_3rd/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_DAG_gamma09/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_2nd/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DAG_gamma09_3rd/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_DAG_gamma08/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_2nd/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_3rd/convergence_stats_filtered_trained_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_DAG_gamma08/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_2nd/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DAG_gamma08_3rd/convergence_stats_filtered_trained_test_DQN_first_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP DAG" => (
+            train_gamma1=["stats/dqn_second_DAG_gamma1/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_2nd/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_3rd/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_DAG_gamma1/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_2nd/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DAG_gamma1_3rd/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_DAG_gamma09/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_2nd/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_3rd/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_DAG_gamma09/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_2nd/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DAG_gamma09_3rd/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_DAG_gamma08/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_2nd/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_3rd/convergence_stats_filtered_trained_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_DAG_gamma08/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_2nd/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DAG_gamma08_3rd/convergence_stats_filtered_trained_test_DQN_second_DAG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+        # VL 1 and 2 on DG
+        "VL DG" => (
+            train_gamma1=["stats/dqn_first_DG_gamma1/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_2nd/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_3rd/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_first_DG_gamma1/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_2nd/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_first_DG_gamma1_3rd/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_first_DG_gamma09/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_2nd/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_3rd/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_first_DG_gamma09/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_2nd/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_first_DG_gamma09_3rd/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_first_DG_gamma08/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_2nd/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_3rd/convergence_stats_filtered_trained_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_first_DG_gamma08/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_2nd/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_first_DG_gamma08_3rd/convergence_stats_filtered_trained_test_DQN_first_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        "RTDP DG" => (
+            train_gamma1=["stats/dqn_second_DG_gamma1/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_2nd/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_3rd/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            test_gamma1=["stats/dqn_second_DG_gamma1/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_2nd/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv",
+            "stats/dqn_second_DG_gamma1_3rd/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma1_hidden64.csv"],
+            train_gamma09=["stats/dqn_second_DG_gamma09/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_2nd/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_3rd/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            test_gamma09=["stats/dqn_second_DG_gamma09/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_2nd/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv",
+            "stats/dqn_second_DG_gamma09_3rd/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma09_hidden64.csv"],
+            train_gamma08=["stats/dqn_second_DG_gamma08/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_2nd/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_3rd/convergence_stats_filtered_trained_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+            test_gamma08=["stats/dqn_second_DG_gamma08/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_2nd/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv",
+            "stats/dqn_second_DG_gamma08_3rd/convergence_stats_filtered_trained_test_DQN_second_DG_not_boosted_ep\$(ep)_batch128_gamma08_hidden64.csv"],
+        ),
+        
+    )
+
+    plot(size=(800, 600), xlabel="Epochs", ylabel="Mean stds of children values", title="Model Comparison on Training Set")
+    res = Dict()
+    for (label, data) in models_conv_results
+        if label == "Planning" || label == "VL DAG" || label == "RTDP DAG"
+            # means_test, _ = process_model(data.test, get_res=get_conv_res)
+            # plot!(1:length(means_test), means_test, label="$label Mean", lw=2)
+        else
+            means_test, _ = process_model(data.test_gamma08, get_res=get_conv_res)
+            # res[label] = means_test[end]
+            plot!(1:length(means_test), means_test, label="$label γ=0.8", lw=2)
+        end
+    end
+    plot!()
+end
+
 
 
 function plot_linear_results()
@@ -306,3 +782,21 @@ res2 = split(res_first_boosted, "\n")
 res_first_boosted = Meta.parse.(map(x->x[2], split.(res2, ":  ")[1:end-1]))
 
 plot(1:length(res_first_boosted), [res_first_boosted, res_second_boosted], label=["DQN first Tree" "DQN second DG"], xlabel="Epochs", ylabel="Mean simplification")
+
+
+for k in ["VL Tree", "VL DAG", "VL DG", "RTDP Tree", "RTDP DAG", "RTDP DG"]
+    println("$(k)")
+    a1,b1 = process_model(models_filtered_conv_results[k].train_gamma08,get_res=get_conv_res)
+    print("& $(round(a1[end], digits=2)) ± $(round(b1[end], digits=2)) ")
+    a2,b2 = process_model(models_filtered_conv_results[k].train_gamma09,get_res=get_conv_res)
+    print("& $(round(a2[end], digits=2)) ± $(round(b2[end], digits=2)) ")
+    a3,b3 = process_model(models_filtered_conv_results[k].train_gamma1,get_res=get_conv_res)
+    print("& $(round(a3[end], digits=2)) ± $(round(b3[end], digits=2)) ")
+    a4,b4 = process_model(models_filtered_conv_results[k].test_gamma08,get_res=get_conv_res)
+    print("& $(round(a4[end], digits=2)) ± $(round(b4[end], digits=2)) ")
+    a5,b5 = process_model(models_filtered_conv_results[k].test_gamma09,get_res=get_conv_res)
+    print("& $(round(a5[end], digits=2)) ± $(round(b5[end], digits=2)) ")
+    a6,b6 = process_model(models_filtered_conv_results[k].test_gamma1,get_res=get_conv_res)
+    print("& $(round(a6[end], digits=2)) ± $(round(b6[end], digits=2)) ")
+    println()
+end

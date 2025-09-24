@@ -7,9 +7,11 @@ using MyModule.Mill
 using Serialization
 using Optimisers
 using Statistics
+using Random
+Random.seed!(42)
 
 experiment_name = "test_heuristic_boosted_1h"
-train_data_path = "./data/neural_rewrter/train.json"
+train_data_path = "./data/neural_rewrter/val.json"
 train_data = load_data(train_data_path)[1:1_000]
 train_data = filter(x->!occursin("select", x[1]), train_data)
 train_data = preprosses_data_to_expressions(train_data)
@@ -76,6 +78,10 @@ function self_boosted_train(model, data, epochs=10, initial_steps=100, initial_d
                 println("$(ex) -> $(MyModule.expr(MyModule.nc, smallest_node.ex))")
                 training_data, hp, hn, _, _ = MyModule.extract_training_data(smallest_node, soltree, root)
                 return(;ds=MyModule.deduplicate(training_data), hp=hp, hn=hn, goal_size=MyModule.exp_size(smallest_node.ex), initial_expr=i.initial_expr)
+            elseif MyModule.exp_size(smallest_node.ex) == goal_size && smallest_node.depth < length(i.hp)
+                println("$(ex) -> $(MyModule.expr(MyModule.nc, smallest_node.ex))")
+                training_data, hp, hn, _, _ = MyModule.extract_training_data(smallest_node, soltree, root)
+                return(;ds=MyModule.deduplicate(training_data), hp=hp, hn=hn, goal_size=MyModule.exp_size(smallest_node.ex), initial_expr=i.initial_expr)
             else
                 return(i)
             end
@@ -96,6 +102,12 @@ function self_boosted_train(model, data, epochs=10, initial_steps=100, initial_d
             violations = [MyModule.hardloss(model, sample) for sample in samples]
             @show (t, sum(violations), quantile(violations, 0:0.1:1))
         end
+        serialize("models/trained_heuristic_$(experiment_name)_ep$(ep)_hidden$(hidden_size).bin", model)
+
+        # if length(MyModule.nc.nodes) > 2_000_000
+        #     empty!(MyModule.nc)
+        #     empty!(MyModule.memoize_cache(MyModule.all_expand))
+        # end
         empty!(MyModule.memoize_cache(MyModule.general_cached_inference))
     end
 
@@ -107,13 +119,16 @@ function validate_train(model, data, names)
     empty!(MyModule.memoize_cache(MyModule.general_cached_inference))
     empty!(MyModule.memoize_cache(MyModule.exp_size))
     df = map(data) do ex
-        soltree, smallest_node, root = MyModule.initialize_tree_search(MyModule.intern!(ex), model, max_expansions=1000, max_depth=100)
+        soltree, smallest_node, root = MyModule.initialize_tree_search(MyModule.intern!(ex), model, max_expansions=100, max_depth=100)
         (; s₀ = MyModule.exp_size(root.ex), sₙ = MyModule.exp_size(smallest_node.ex), se = smallest_node.ex, pr = [])
     end |> DataFrame
-    CSV.write("stats/results_of_$(experiment_name)_$(names)_hidden$(hidden_size).csv", df)
+    CSV.write("stats/results_of_$(names)_hidden$(hidden_size).csv", df)
+    return df
 end
 
-# self_boosted_train(model, data, 1)
+validate_train(exp_size, data, "greedy_val")
+# self_boosted_train(model, data[500:700], 5)
+# self_boosted_train(model, data, 10, 1000)
 # #model = deserialize("models/trained_heuristic_test_heuristic_boosted_1h_ep10_hidden64.bin")
 # validate_train(model, data, "train")
 

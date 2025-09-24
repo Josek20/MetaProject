@@ -39,8 +39,8 @@ Base.only(t::Matrix{Float32}) = size(t)[1] > 1 ? Tuple(vec(t)) : first(t)
 Base.vec(t::Tuple{Float32, Float32}) = t
 Base.isless(a::Tuple{Float32, Float32}, b::Tuple{Float32, Float32}) = a[1] < b[1] || (a[1] == b[1] && a[2] < b[2])
 Base.round(t::Tuple{Float32, Float32}, m::RoundingMode{:Nearest}; digits::Int64) = t
-function get_data()
-    train_data_path = "./data/neural_rewrter/train.json"
+function get_data(;path="train.json")
+    train_data_path = "./data/neural_rewrter/$(path)"
     train_data = load_data(train_data_path)[1:1_000]
     train_data = filter(x->!occursin("select", x[1]), train_data)
     train_data = preprosses_data_to_expressions(train_data)
@@ -74,15 +74,14 @@ args_model = ProductModel(
     )
 
 # sampler = PlanningTreeSampler(max_steps=10, max_depth=100, epsilon=1.0, eps_decay=0.75, is_directed=false, n_best=10, batch=64)
-sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
-# sampler = DGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
-# sampler = DAGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128)
+sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=0.6)
+# sampler = DGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=false, n_best=-1, batch=128, gamma=0.9)
+# sampler = DAGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=0.6)
+# sampler = LinearSampler(max_steps=1000, max_depth=100, epsilon=0.0, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=1)
 
 # sampler = TreeSampler2Values(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
-
 # sampler = RLSampler1(max_steps=50, epsilon=1.0, eps_decay=0.80)
 # sampler = RLSampler(max_steps=50, epsilon=1.0, eps_decay=0.80)
-# sampler = DQNSampler(max_steps=100, epsilon=1.0, eps_decay=0.80)
 
 model = ExprModel(
     head_model,
@@ -198,29 +197,45 @@ function validate_train_tree(pipeline, data, names; path="stats/")
     end |> DataFrame
     CSV.write(path * "results_of_$(names)_hidden$(hidden_size).csv", df)
 end
-function get_convergence_stats(data, pipeline; epsilon=0.1, exp_name="")
+function get_convergence_stats(data, pipeline, names; path="stats/")
     convergence_stats = map(data) do d
         pipeline.env.s_init = intern!(d)
         reset!(pipeline.env)
         sampler = pipeline.sampler
         env = pipeline.env
         model = pipeline.model
-        soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=0.0)
+        soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(state(env), model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=0.0, gamma=sampler.gamma)
         all_inner_nodes = filter(i->length(i.children) != 0, collect(values(soltree)))
         # check if converged
-        converged = 0
-        for i in all_inner_nodes
+        stds_values = map(all_inner_nodes) do i
             all_children_nodes = map(x->soltree[x].ex, i.children)
-            all_values = only.(model.(all_children_nodes))
-            min_val = minimum(all_values)
-            max_val = maximum(all_values)
-            converged += max_val - min_val <= epsilon
+            all_values = [exp_size(root.ex) - exp_size(i.ex) + sampler.gamma * only(model(j)) for j in all_children_nodes]
+            return length(all_values) > 1 ? std(all_values) : 0
         end
-        (;ex=env.s_init, number_of_converged_parents=converged,total_nodes=length(all_inner_nodes))
+        # (;ex=env.s_init, number_of_converged_parents=converged,total_nodes=length(all_inner_nodes))
+        # (;ex=env.s_init, mean_std=mean(stds_values),total_nodes=length(all_inner_nodes))
+        filtered_stds = filter(!=(0),stds_values)
+        (;ex=env.s_init, mean_std=mean(filtered_stds),filtered_total_nodes=length(filtered_stds), total_nodes=length(all_inner_nodes))
     end |> DataFrame
-    CSV.write("stats/convergence_stats_$(exp_name).csv", convergence_stats)
+    CSV.write(path * "convergence_stats_$(names)_hidden$(hidden_size).csv", convergence_stats)
     return convergence_stats
 end
+
+# model_path = "models/dqn_first_Tree_gamma1/"
+# for i in 1:2
+#     if i == 1
+#         wich_one = "trained_"
+#         data = get_data(;path="train.json")
+#     else
+#         wich_one = "trained_test_"
+#         data = get_data(;path="test.json")
+#     end
+#     for ep in 1:20
+#         model = deserialize(model_path * "trained_parallel_DQN_second_DG_not_boosted_ep$(ep)_batch128_gamma1_for_graph_stats.bin")
+#         pipeline.model = model
+#         validate_train_tree(pipeline, data, wich_one * "DQN_second_DG_not_boosted_ep$(ep)_batch128_gamma1", path="stats/dqn_first_Tree_gamma1/")
+#     end
+# end
 
 # for ep in 1:2
 #     for i in data[1:1]
@@ -232,7 +247,16 @@ end
 #     end
 #     @show full_validation(data, pipeline)
 # end
-tmp1, training_stats = train!(pipeline, data[1:10], episodes=1)
+tmp1, training_stats = train!(pipeline, data[900:910], episodes=1)
+# plot_res = map(1:19) do ep
+#     pipeline.model = deserialize("models/trained_DQN_linear_ep$(ep)_for_graph_stats.bin")
+#     res = map(data) do d
+#         pipeline.env.s_init = intern!(d)
+#         traj = sample_trajectory(pipeline.sampler, pipeline.env, pipeline.model)
+#         exp_size(env.s_init) - minimum(exp_size.(traj.next_states))
+#     end
+#     mean(res)
+# end
 # 291
 # validate_train_tree(pipeline, data, "trained_test_DQN_first_DG_not_boosted_ep$(18)_batch128_gamma1", path="stats/dqn_first_4th_20ep/")
 #=

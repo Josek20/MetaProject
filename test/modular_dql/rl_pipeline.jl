@@ -68,6 +68,7 @@ function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=10
             # @assert length(traj.rewards) * length(traj.rewards[1]) == length(input_values.ii) * 2 == length(target)
             return(;ds=input_values,rew=target,goal_size=-1, initial_expr=d.initial_expr, depth=traj.pointer)
         end
+        println("finished search")
         # clean_cache(pipeline.model)
         loss_over_time = 0
         @timeit TO "train" update_time = @elapsed for _ in 1:10
@@ -85,7 +86,8 @@ function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=10
             pipeline.target_model = deepcopy(pipeline.model)
         end
         clean_cache(pipeline.model)
-        @timeit TO "validation" res, val_time = validation3(pipeline, data)
+        # @timeit TO "validation" res, val_time = validation3(pipeline, data)
+        res, val_time = 0, 0
         println("Ep $(episode): lres, tres = $([0, res]); loss = $(loss_over_time / 10);epsilon=$(round(pipeline.sampler.epsilon, digits=2)); update took --> $(round(update_time, digits=2)); trajectory took --> $(round(trajectory_time, digits=2)); validation took --> $(round(val_time, digits=2))")
     end
     return samples, (;loss_stats=loss, val_stats=train_validation)
