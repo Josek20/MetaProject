@@ -57,7 +57,8 @@ function expand_node1!(parent::Node, root::Node, soltree, soltree1, open_list, m
         append!(soltree1[parent_id1].children, nodes_ids2)
         return
     end
-    @timeit TO "new children inference cached" o = map(x->exp_size(root.ex) - exp_size(x.ex) + gamma * only(model(x.ex)), new_nodes)
+    # @timeit TO "new children inference cached" o = map(x->exp_size(root.ex) - exp_size(x.ex) + gamma * only(model(x.ex)), new_nodes)
+    @timeit TO "new children inference cached" o = map(x->only(model(x.ex)), new_nodes)
     # @timeit TO "transfrom new children to Expr" expr_data = map(x->expr(MyModule.nc, x.ex), new_nodes)
     # @timeit TO "transfrom new children into Mill structure" input_data = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(expr_data, sym_enc))
     # @timeit TO "new_children inference batched" o = MyModule.heuristic(model, input_data)

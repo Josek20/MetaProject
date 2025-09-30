@@ -110,8 +110,9 @@ mutable struct TreeSampler2Values <: AbstractSampler
     is_directed::Bool
     n_best::Int
     batch::Int
+    gamma::Float32
 end
-TreeSampler2Values(;max_steps=50, max_depth=100, epsilon=0.0, eps_decay=0.95, is_directed=false, n_best=-1, batch=64) = TreeSampler2Values(max_steps, max_depth, epsilon, eps_decay, is_directed, n_best, batch)
+TreeSampler2Values(;max_steps=50, max_depth=100, epsilon=0.0, eps_decay=0.95, is_directed=false, n_best=-1, batch=64, gamma=1.0) = TreeSampler2Values(max_steps, max_depth, epsilon, eps_decay, is_directed, n_best, batch, gamma)
 Trajectory(sampler::TreeSampler2Values) =  Trajectory(1, NodeID[], NodeID[], Vector{Vector{Float32}}(), NodeID[], Bool[])
 
 
@@ -680,7 +681,7 @@ function sample_trajectory(sampler::TreeSampler, env, model::AbstractModel)::Tra
 end
 
 sample_trajectory(sampler::TreeSampler2Values, env::AbstractEnvironment, model::AbstractModel) = sample_trajectory(sampler, MyModule.intern!(state(env)), model)
-sample_trajectory(sampler::TreeSampler, env::Expr, model::AbstractModel) = sample_trajectory(sampler, MyModule.intern!(env), model)
+sample_trajectory(sampler::TreeSampler2Values, env::Expr, model::AbstractModel) = sample_trajectory(sampler, MyModule.intern!(env), model)
 function sample_trajectory(sampler::TreeSampler2Values, env, model::AbstractModel)::Trajectory
     soltree, smallest_node, root, soltree1 = MyModule.initialize_tree_search_epsilon(env, model; max_expansions=sampler.max_steps, max_depth=sampler.max_depth, epsilon=sampler.epsilon)
     if sampler.is_directed
@@ -694,7 +695,7 @@ function sample_trajectory(sampler::TreeSampler2Values, env, model::AbstractMode
     # @assert length(all_inner_nodes_expr) + length(all_leafs) == length(soltree)
     # @show typeof(all_leafs)
     number_of_inner_nodes = length(stree) - length(all_leafs)
-    sorted_leafs = sort(all_leafs, by=x->(exp_size(x.ex), x.depth))
+    sorted_leafs = sort(all_leafs, by=x->(exp_size(root.ex) - exp_size(x.ex), x.depth))
     # filter inner
     filtered_sorted_leafs = filter(x->!(x.ex in all_inner_nodes_expr), sorted_leafs)
     unfiltered_sorted_leafs = filter(x->x.ex in all_inner_nodes_expr, sorted_leafs)
@@ -734,7 +735,7 @@ function sample_trajectory(sampler::TreeSampler2Values, env, model::AbstractMode
             n = pr
         end
     end
-    # @show inner_to_leaf
+    # @show inner_to_leaf 
     # @show length(inner_to_leaf), length(soltree)
     # @show length(inner_to_leaf), length(soltree)
     # set_diff = setdiff(Set(map(x->x.ex,values(soltree))), Set(keys(inner_to_leaf)))

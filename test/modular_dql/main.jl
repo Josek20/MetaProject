@@ -19,18 +19,18 @@ Random.seed!(42)
 include("rl_pipeline.jl")
 include("my_env.jl")
 include("sampler.jl")
-mutable struct DoubleHeadedModel{MB, FH, SH} <: AbstractModel
-    main_body::MB
-    first_head::FH
-    second_head::SH
-end
+# mutable struct DoubleHeadedModel{MB, FH, SH} <: AbstractModel
+#     main_body::MB
+#     first_head::FH
+#     second_head::SH
+# end
 # (m::DoubleHeadedModel)(x) = (only(m.first_head(x)), only(m.second_head(x)))
-DoubleHeadedModel(m::ExprModel, b::Chain) = DoubleHeadedModel(m, m.heuristic, b)
-function (m::DoubleHeadedModel)(x)
-    inference_type = MyModule.get_inference_type(x)
-    ds = MyModule.general_cached_inference(x, inference_type, m.main_body)
-    return (only(m.first_head(ds)), only(m.second_head(ds)))
-end
+# DoubleHeadedModel(m::ExprModel, b::Chain) = DoubleHeadedModel(m, m.heuristic, b)
+# function (m::DoubleHeadedModel)(x)
+#     inference_type = MyModule.get_inference_type(x)
+#     ds = MyModule.general_cached_inference(x, inference_type, m.main_body)
+#     return (only(m.first_head(ds)), only(m.second_head(ds)))
+# end
 
 include("learner.jl")
 
@@ -74,12 +74,12 @@ args_model = ProductModel(
     )
 
 # sampler = PlanningTreeSampler(max_steps=10, max_depth=100, epsilon=1.0, eps_decay=0.75, is_directed=false, n_best=10, batch=64)
-sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=0.6)
+# sampler = TreeSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=0.6)
 # sampler = DGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=false, n_best=-1, batch=128, gamma=0.9)
 # sampler = DAGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=0.6)
 # sampler = LinearSampler(max_steps=1000, max_depth=100, epsilon=0.0, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=1)
 
-# sampler = TreeSampler2Values(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
+sampler = TreeSampler2Values(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
 # sampler = RLSampler1(max_steps=50, epsilon=1.0, eps_decay=0.80)
 # sampler = RLSampler(max_steps=50, epsilon=1.0, eps_decay=0.80)
 
@@ -87,13 +87,13 @@ model = ExprModel(
     head_model,
     Mill.SegmentedSum(hidden_size),
     args_model,
-    Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 1))
+    Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 2))
     );
 target_model = ExprModel(
     head_model,
     Mill.SegmentedSum(hidden_size),
     args_model,
-    Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 1))
+    Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 2))
     );
 target_model = deepcopy(model)
 # model = DoubleHeadedModel(model, Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 1)))
