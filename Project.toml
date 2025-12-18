@@ -29,7 +29,7 @@ Flux = "0.16.5"
 LinearAlgebra = "1.11.0"
 MacroTools = "0.5.15"
 Metatheory = "2.0.2"
-Optimisers = "0.3.4, 0.4"
+Optimisers = "0.4"
 TimerOutputs = "0.5.29"
 
 [compt]
