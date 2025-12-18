@@ -10,6 +10,7 @@ using DataStructures
 using Base.Threads
 using LRUCache
 using SimpleChains
+using StatsBase
 using SparseArrays
 using LinearAlgebra
 using ChainRulesCore

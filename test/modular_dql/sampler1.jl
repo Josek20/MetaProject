@@ -417,8 +417,12 @@ function sample_trajectory(sampler::PPOLinearSampler, env::AbstractEnvironment, 
     reset!(env)
     traj = Trajectory()
     inputs_actions = [[env.s_init]]
-    for t in 1:sampler.max_steps
-        possible_actions = action_space(env)
+    start_time = time()
+    total_action_time = 0
+    rollout_time = @elapsed for t in 1:sampler.max_steps
+        action_time = @elapsed possible_actions = action_space(env)
+	#@show length(possible_actions), action_time
+	total_action_time += action_time
         weights = [only(model(x)) for x in possible_actions]
         node_index = StatsBase.sample(1:length(weights), Weights(softmax(weights)))
         a = possible_actions[node_index]
@@ -435,25 +439,28 @@ function sample_trajectory(sampler::PPOLinearSampler, env::AbstractEnvironment, 
         if is_done
             break
         end
+        if time() - start_time > 10.0
+            break
+        end
     end
+    println("Have finished the search took $(total_action_time), roll time $(rollout_time)")
     # possible_actions = action_space(env)
     # push!(inputs_actions, possible_actions)
     reset!(env)
 
     # @show traj.rewards
-    empty!(MyModule.memoize_cache(MyModule.general_leaf_cached_inference))
-    empty!(MyModule.memoize_cache(MyModule.general_expr_cached_inference))
     returns = zeros(Float32, length(traj.rewards))
     inputs_set = []
     for t in length(traj.rewards):-1:1
-        next_vl = maximum(map(x->only(value_model(x)), inputs_actions[t+1]))
-        current_vl = maximum(map(x->only(value_model(x)), inputs_actions[t]))
-        Aₜ = traj.rewards[t] + sampler.gamma * next_vl - current_vl
+        next_vl = map(x->only(value_model(x)), inputs_actions[t+1])
+        current_vl = map(x->only(value_model(x)), inputs_actions[t])
+        Aₜ = traj.rewards[t] + sampler.gamma * maximum(next_vl) - maximum(current_vl)
         returns[t] = Aₜ
         push!(inputs_set, inputs_actions[t][argmax(current_vl)])
     end
     tmp = [MyModule.expr(MyModule.nc, x) for x in inputs_set]
-    vl_ds = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(tmp, sym_enc))
+    took_time = @elapsed vl_ds = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(tmp, sym_enc))
+    println("Have finished value targets processing $(length(tmp)), took $(took_time)")
 
     # prepare the actions
     inputs_set = []
@@ -466,7 +473,7 @@ function sample_trajectory(sampler::PPOLinearSampler, env::AbstractEnvironment, 
     end
 
     tmp = [MyModule.expr(MyModule.nc, x) for x in inputs_set]
-    ds = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(tmp, sym_enc))
+    took_time = @elapsed ds = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(tmp, sym_enc))
     inputs_ids = []
     for i in inputs_actions
         tmp = []
@@ -475,6 +482,7 @@ function sample_trajectory(sampler::PPOLinearSampler, env::AbstractEnvironment, 
         end
         push!(inputs_ids, tmp)
     end
+    println("Have finished actor targets processing $(length(tmp)), took $(took_time)")
     tmp = vcat(traj.states[1], traj.next_states)
     depth = argmin(exp_size.(tmp))
     node_ex = tmp[depth]
@@ -798,57 +806,69 @@ function sample_trajectory(sampler::PPOTreeSampler, env, policy::AbstractModel, 
         Gₜ = 0
         inputs_vec = []
         value_inputs_vec = []
-        rews = []
+        rews = Float32[]
+	    v_returns = Float32[]
         for (ind, (pos_action, possible_actions, tree)) in enumerate(targets)
             if ind == 1
                 rew = minimum(x->exp_size(soltree[x].ex), tree) - exp_size(smallest_node.ex)
             else
                 rew = minimum(x->exp_size(soltree[x].ex), tree) - minimum(x->exp_size(soltree[x].ex), targets[ind - 1][3])
             end
-            Gₜ = rew + sampler.gamma * Gₜ
-            # current_values = map(x->only(value_model(soltree[x].ex)), tree)
-            current_values = map(x->only(value_model(soltree[x].ex)), vcat(pos_action, possible_actions))
+            # @show Gₜ
+            # Aₜ = Gₜ - only(value_model(soltree[pos_action].ex))
+            current_values = map(x->only(value_model(soltree[x].ex)), tree)
             if ind == 1
-                next_values = map(x->only(value_model(soltree[x].ex)), soltree[smallest_node.parent].children)
+                Aₜ = rew - maximum(current_values)
+	    	    G = rew
             else
-                next_targ = targets[ind-1]
-                next_targ = vcat(next_targ[1], next_targ[2])
-                next_values = map(x->only(value_model(soltree[x].ex)), next_targ)
+                next_a =targets[ind - 1][1]
+                next_values = map(x->only(value_model(soltree[x].ex)), targets[ind-1][3])
+                Aₜ = rew + sampler.gamma * maximum(next_values) - maximum(current_values)
+		        G = rew + sampler.gamma * maximum(next_values)
             end
-            Aₜ = rew + sampler.gamma * maximum(next_values) - maximum(current_values)
             # @show Aₜ
             input_values = [expr(MyModule.nc, soltree[i].ex) for i in vcat(pos_action, possible_actions)]
             input_values = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(input_values, sym_enc))
             push!(inputs_vec, input_values)
             push!(value_inputs_vec, tree[argmax(current_values)])
-            # push!(rews, Gₜ)
             push!(rews, Aₜ)
+            push!(v_returns, G)
         end
         # input_values = [expr(MyModule.nc, soltree[i].ex) for (i, _, _) in targets]
         input_values = [expr(MyModule.nc, soltree[i].ex) for i in value_inputs_vec]
         v_inputs = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(input_values, sym_enc))
-        return (;rewards=rews, inputs=(inputs_vec, v_inputs), smallest_node=smallest_node)
+        return (;rewards=(rews, v_returns), inputs=(inputs_vec, v_inputs), smallest_node=smallest_node)
     else
         Gₜ = 0
         inputs_vec = []
         value_inputs_vec = []
         softmax_ids = []
         selected_ids = []
-        rews = []
+        rews = Float32[]
+	    v_returns = Float32[]
         reversed_tree_history = reverse(tree_history)
         for (ind, (tree_node_ids, possible_actions, selected_action_index)) in enumerate(reversed_tree_history)
-            if ind == 1
-                continue
+            if ind == 1 
+                rew = minimum(x->exp_size(soltree[x].ex), tree_node_ids) - minimum(x->exp_size(x.ex), collect(values(soltree)))
+            else
+                rew = minimum(x->exp_size(soltree[x].ex), tree_node_ids) - minimum(x->exp_size(soltree[x].ex), reversed_tree_history[ind - 1][1])
             end
-            rew = minimum(x->exp_size(soltree[x].ex), tree_node_ids) - minimum(x->exp_size(soltree[x].ex), reversed_tree_history[ind - 1][1])
-
             current_values = map(x->only(value_model(soltree[x].ex)), tree_node_ids)
-
-            next_values = map(x->only(value_model(soltree[x].ex)), reversed_tree_history[ind - 1][1])
-            Aₜ = rew + sampler.gamma * maximum(next_values) - maximum(current_values)
+            if ind == 1
+                # Aₜ = rew - only(value_model(soltree[possible_actions[selected_action_index]].ex))
+                Aₜ = rew - maximum(current_values)
+	    	    G = rew
+            else
+                # _, next_possible_actions, next_selected_action_index = reversed_tree_history[ind - 1]
+                # next_a = next_possible_actions[next_selected_action_index]
+                next_values = map(x->only(value_model(soltree[x].ex)), reversed_tree_history[ind - 1][1])
+                # Aₜ = rew + sampler.gamma * only(value_model(soltree[next_a].ex)) - only(value_model(soltree[possible_actions[selected_action_index]].ex))
+                Aₜ = rew + sampler.gamma * maximum(next_values) - maximum(current_values)
+		        G = rew + sampler.gamma * maximum(next_values)
+            end
             push!(value_inputs_vec, tree_node_ids[argmax(current_values)])
             # @show Gₜ
-            if ind == 2
+            if ind == 1
                 append!(inputs_vec, possible_actions)
                 push!(softmax_ids, collect(1:length(possible_actions)))
                 push!(selected_ids, selected_action_index)
@@ -877,6 +897,7 @@ function sample_trajectory(sampler::PPOTreeSampler, env, policy::AbstractModel, 
                 end
             end
             push!(rews, Aₜ)
+            push!(v_returns, G)
         end
         @timeit TO "get nodes for inputs" begin
             input_values = [expr(MyModule.nc, soltree[i].ex) for i in inputs_vec]
@@ -886,7 +907,7 @@ function sample_trajectory(sampler::PPOTreeSampler, env, policy::AbstractModel, 
         # v_inputs = [expr(MyModule.nc, soltree[pa[sid]].ex) for (_,pa,sid) in reversed_tree_history]
         v_inputs = [expr(MyModule.nc, soltree[i].ex) for i in value_inputs_vec]
         v_inputs = MyModule.deduplicate(MyModule.no_reduce_multiple_fast_ex2mill(v_inputs, sym_enc))
-        return (;rewards=rews, inputs=(input_values, v_inputs), smallest_node=smallest_node, softmax_ids=softmax_ids, selected_ids=selected_ids)
+        return (;rewards=(rews, v_returns), inputs=(input_values, v_inputs), smallest_node=smallest_node, softmax_ids=softmax_ids, selected_ids=selected_ids)
     end
 end
 

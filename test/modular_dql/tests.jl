@@ -63,7 +63,7 @@ end
         @assert length(MyModule.memoize_cache(MyModule.general_leaf_cached_inference)) == 3
     end
     @testset "check inference values collision" begin
-        o1 = only(model(:(111 - 10 <= 1221)))
+        o1 = only(model(:(10 - 111 <= 1221)))
         o2 = only(model(:(111 - 10 <= 1221)))
         @assert o1 != o2
     end

@@ -64,6 +64,8 @@ function train!(pipeline::SimpleRLPipeline, data::Vector{Expr}; episodes::Int=10
 
             input_values = get_input_values(traj)
             target = get_target(traj.rewards, pipeline.sampler)
+            # input_values = traj.input_values
+            # target = traj.rewards
             # @show length(input_values.ii), traj.rewards, 
             # @assert length(traj.rewards) * length(traj.rewards[1]) == length(input_values.ii) * 2 == length(target)
             return(;ds=input_values,rew=target,goal_size=-1, initial_expr=d.initial_expr, depth=traj.pointer)

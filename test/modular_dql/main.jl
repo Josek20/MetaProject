@@ -12,12 +12,15 @@ using MyModule.Flux
 using MyModule.Mill
 using MyModule: all_expand, exp_size, Node, NodeID, intern!, expr, DeduplicatingNode, AbstractModel
 using Serialization
+using StatsBase
 using TimerOutputs
 const TO = TimerOutput()
 reset_timer!(TO)
 Random.seed!(42)
 include("rl_pipeline.jl")
 include("my_env.jl")
+include("neural_rewriter_env.jl")
+
 include("sampler.jl")
 # mutable struct DoubleHeadedModel{MB, FH, SH} <: AbstractModel
 #     main_body::MB
@@ -33,7 +36,6 @@ include("sampler.jl")
 # end
 
 include("learner.jl")
-
 Base.only(t::Tuple{Float32, Float32}) = t
 Base.only(t::Matrix{Float32}) = size(t)[1] > 1 ? Tuple(vec(t)) : first(t)
 Base.vec(t::Tuple{Float32, Float32}) = t
@@ -61,14 +63,14 @@ end
 
 head_model = ProductModel(
     (;head = ffnn(length(new_all_symbols), hidden_size, 1),
-      args = ffnn(hidden_size, hidden_size, 1),  
+    args = ffnn(hidden_size, hidden_size, 1),  
         ),
     ffnn(2*hidden_size, hidden_size, 1)
     )
 
 args_model = ProductModel(
     (;args = ffnn(hidden_size, hidden_size, 1),  
-      position = Dense(2,hidden_size),  
+    position = Dense(2,hidden_size),  
         ),
     ffnn(2*hidden_size, hidden_size, 1)
     )
@@ -79,7 +81,15 @@ args_model = ProductModel(
 # sampler = DAGSampler(max_steps=100, max_depth=100, epsilon=0.5, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=0.6)
 # sampler = LinearSampler(max_steps=1000, max_depth=100, epsilon=0.0, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=1)
 
-sampler = TreeSampler2Values(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
+# sampler = TreeSampler2Values(max_steps=100, max_depth=100, epsilon=1.0, eps_decay=0.80, is_directed=false, n_best=-1, batch=128)
+# sampler = Tree2TreeSampler(max_steps=100, max_depth=100, epsilon=0.0, eps_decay=0.80, is_directed=true, n_best=-1, batch=128, gamma=1)
+# sampler = PolicyLinearSampler(max_steps=100, max_depth=100, n_best=-1, batch=128, gamma=1)
+# sampler = QTreeSampler(max_steps=1000, max_depth=100, epsilon=0.0, eps_decay=0.80, n_best=-1, batch=128, gamma=0.99)
+# sampler = PolicyTreeSampler(max_steps=100, max_depth=100, n_best=-1, batch=128, gamma=0.99, solution=false)
+# sampler = A2CSampler(max_steps=100, max_depth=100, batch=128, gamma=0.99)
+# sampler = PPOTreeSampler(max_steps=100, max_depth=100, batch=128, gamma=0.99, solution=false)
+# sampler = PolicyLinearSampler(max_steps=100, max_depth=100, batch=128, n_best=-1, gamma=0.9)
+sampler = PPOLinearSampler(max_steps=100, max_depth=100, batch=128, n_best=-1, gamma=0.9)
 # sampler = RLSampler1(max_steps=50, epsilon=1.0, eps_decay=0.80)
 # sampler = RLSampler(max_steps=50, epsilon=1.0, eps_decay=0.80)
 
@@ -87,21 +97,22 @@ model = ExprModel(
     head_model,
     Mill.SegmentedSum(hidden_size),
     args_model,
-    Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 2))
+    Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 1))
     );
 target_model = ExprModel(
     head_model,
     Mill.SegmentedSum(hidden_size),
     args_model,
-    Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 2))
+    Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 1))
     );
 target_model = deepcopy(model)
 # model = DoubleHeadedModel(model, Chain(Dense(input_size, hidden_size, relu), Dense(hidden_size, 1)))
-learner = DummyLerner(Flux.mse, model, max_iter=10)
+# learner = DummyLerner(Flux.mse, model, max_iter=10, lr=0.0005)
+learner = PolicyLerner(Flux.mse, model, max_iter=10)
 # learner = DummyLerner(Flux.crossentropy, model, max_iter=10)
 # learner = DummyLerner(my_reinforce_loss, model, max_iter=1)
 # learner = HeadLerner(Flux.mse, model, max_iter=50)
-env = MyTreeEnv(data[300], model)
+env = MyTreeEnv(data[1], model)
 
 pipeline = SimpleRLPipeline(env, model, sampler, learner, target_model)
 # pipeline = RLPipeline(env, model, sampler, learner)
@@ -220,7 +231,23 @@ function get_convergence_stats(data, pipeline, names; path="stats/")
     CSV.write(path * "convergence_stats_$(names)_hidden$(hidden_size).csv", convergence_stats)
     return convergence_stats
 end
-
+# tmp1 = sample_trajectory(sampler, data[1], model, target_model)
+# for (ind,i) in enumerate(data)
+#     @show ind, i
+#     tmp1 = sample_trajectory(sampler, i, models_test)
+# end
+# for ep in 1:100
+#     search_time = @elapsed all_targets = map(data[end-2: end]) do d
+#         tmp1 = sample_trajectory(sampler, d, model)
+#         new_tmp = (;rew=tmp1.rewards, ds=tmp1.inputs, softmax_ids=tmp1.softmax_ids, selected_ids=tmp1.selected_ids)
+#     end
+#     @show search_time
+#     for new_tmp in all_targets
+#         learning_time = @elapsed loss = compute_gradient1!(new_tmp, model, learner)
+#         @show learning_time, loss
+#     end
+#     MyModule.reset_all_function_caches()
+# end
 # model_path = "models/dqn_first_Tree_gamma1/"
 # for i in 1:2
 #     if i == 1
@@ -247,7 +274,8 @@ end
 #     end
 #     @show full_validation(data, pipeline)
 # end
-tmp1, training_stats = train!(pipeline, data[900:910], episodes=1)
+# tmp1, training_stats = train!(pipeline, data[1:1], episodes=1)
+
 # plot_res = map(1:19) do ep
 #     pipeline.model = deserialize("models/trained_DQN_linear_ep$(ep)_for_graph_stats.bin")
 #     res = map(data) do d

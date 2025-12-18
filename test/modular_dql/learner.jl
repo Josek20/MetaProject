@@ -12,11 +12,18 @@ mutable struct HeadLerner{LF, MI, P, FH, SH} <: AbstractLearner
     second_head::SH
 end
 
-# mutable struct PolicyLerner{LF, MI, P} <: AbstractLearner
-#     loss_func::LF
-#     max_iter::MI
-#     params::P
-# end
+mutable struct PolicyLerner{LF, MI, P} <: AbstractLearner
+    loss_func::LF
+    max_iter::MI
+    params::P
+end
+
+mutable struct PPOLerner{PM, VM, MI, E} <: AbstractLearner
+    policy_params::PM
+    value_params::VM
+    max_iter::MI
+    ϵ::E
+end
 
 function DummyLerner(loss_func::Function, model::ExprModel; lr=0.001, max_iter=10)
     pol_optimizer = ADAM(lr)
@@ -30,11 +37,20 @@ end
 #     policy_params2 = Flux.setup(pol_optimizer2, model.second_head)
 #     HeadLerner(loss_func, max_iter, [policy_params1, policy_params2], model.first_head, model.second_head)
 # end
-# function PolicyLerner(loss_func::Function, model::ExprModel; lr=0.001, max_iter=10)
-#     pol_optimizer = ADAM(lr)
-#     policy_params = Flux.setup(pol_optimizer, model)
-#     DummyLerner(loss_func, max_iter, policy_params)
-# end
+function PolicyLerner(loss_func::Function, model::ExprModel; lr=0.001, max_iter=10)
+    pol_optimizer = ADAM(lr)
+    policy_params = Flux.setup(pol_optimizer, model)
+    PolicyLerner(loss_func, max_iter, policy_params)
+end
+
+function PPOLerner(policy::ExprModel, value_model::ExprModel; lr_p=0.001, lr_v=0.001, max_iter=10, ϵ=0.2)
+    pol_optimizer = ADAM(lr_p)
+    val_optimizer = ADAM(lr_v)
+    policy_params = Flux.setup(pol_optimizer, policy)
+    value_params = Flux.setup(val_optimizer, value_model)
+    PPOLerner(policy_params, value_params, max_iter, ϵ)
+end
+
 Flux.mse(x::Tuple) = Flux.mse(x...)
 Flux.crossentropy(x::Tuple) = Flux.crossentropy(reverse(x)...)
 my_reinforce_loss(x::Tuple) = mean(- log.(x[2]) .* x[1])
@@ -60,6 +76,8 @@ function compute_gradient!(target_values, input_values::Tuple, model::ExprModel,
     Optimisers.update!(l.params, model, grad[1])
     return sa
 end
+
+
 function compute_gradient!(target_values, input_values, model::ExprModel, l::DummyLerner)
     sa, grad = Flux.Zygote.withgradient(model) do oq
         expected_values = vec(MyModule.heuristic(oq, input_values))
@@ -70,6 +88,116 @@ function compute_gradient!(target_values, input_values, model::ExprModel, l::Dum
     return sa
 end
 
+
+function compute_gradient!(returns, input_values, model::ExprModel, l::PolicyLerner; eps=1e-8)
+    sa, grad = Flux.Zygote.withgradient(model) do oq
+        loss = 0
+        for (G_t,i) in zip(returns, input_values)
+            # probs = softmax(vec(MyModule.heuristic(oq, i)))
+            # a = clamp(probs[1], eps, 1.0)
+            # log_prob = log(a)   # log prob of selected action
+            log_prob = logsoftmax(all_actions_values[i])[k]
+            loss += -log_prob * G_t
+        end
+        return loss
+    end
+    Optimisers.update!(l.params, model, grad[1])
+    return sa
+end
+
+function compute_gradient1!(traj, model::ExprModel, l::PolicyLerner; eps=1e-8)
+    returns = traj.rew
+    input_values = traj.ds
+    softmax_ids = traj.softmax_ids
+    selected_ids = traj.selected_ids
+    sa, grad = Flux.Zygote.withgradient(model) do oq
+        loss = 0
+        all_actions_values = vec(MyModule.heuristic(oq, input_values))
+        for (G_t,i,k) in zip(returns, softmax_ids, selected_ids)
+            # probs = softmax(all_actions_values[i])
+            # a = clamp(probs[k], eps, 1.0)
+            # @show a, G_t
+            # log_prob = log(a)   # log prob of selected action
+            log_prob = logsoftmax(all_actions_values[i])[k]
+            loss += -log_prob * G_t
+        end
+        return loss
+    end
+    Optimisers.update!(l.params, model, grad[1])
+    return sa
+end
+
+function compute_gradient!(inputs_values::NamedTuple, policy::ExprModel, old_policy::ExprModel, value_model::ExprModel, l::PPOLerner; eps=1e-8)
+    policy_input_values, value_input_values = input_values
+    # value
+    vsa, grad = Flux.Zygote.withgradient(value_model) do vm
+        outs = vec(MyModule.heuristic(vm, value_input_values))
+        Flux.mse(outs, returns)
+    end
+end
+
+function compute_gradient1!(traj, policy::ExprModel, old_policy::ExprModel, value_model::ExprModel, l::PPOLerner; eps=1e-8)
+    println("inside the loss")
+    policy_input_values, value_input_values = traj.ds
+    advantage, returns = traj.rew
+    softmax_ids = traj.softmax_ids
+    selected_ids = traj.selected_ids
+    # value
+    vsa, grad = Flux.Zygote.withgradient(value_model) do vm
+        outs = vec(MyModule.heuristic(vm, value_input_values))
+        Flux.mse(outs, returns)
+    end
+    Optimisers.update!(l.value_params, value_model, grad[1])
+    # policy
+    psa, grad = Flux.Zygote.withgradient(policy) do oq
+        outs = vec(MyModule.heuristic(oq, policy_input_values))
+        outs_old = vec(MyModule.heuristic(old_policy, policy_input_values))
+        loss = map(enumerate(zip(softmax_ids, selected_ids, advantage))) do (ind, (sid, i, Aₜ))
+            # prob = Flux.softmax(outs[sid])[i]
+            # prob_old = Flux.softmax(outs_old[sid])[i]
+            prob = logsoftmax(outs[sid])[i]
+            prob_old = logsoftmax(outs_old[sid])[i]
+            ratio = exp(prob - prob_old)
+
+            clipped_ratio = clamp(ratio, 1 - l.ϵ, 1 + l.ϵ)
+            policy_loss = min(ratio * Aₜ, clipped_ratio * Aₜ)
+            -policy_loss
+        end
+        return mean(loss)
+    end
+    Optimisers.update!(l.policy_params, policy, grad[1])
+    return vsa + psa
+end
+function compute_gradient!(returns, input_values, policy::ExprModel, old_policy::ExprModel, value_model::ExprModel, l::PPOLerner; eps=1e-8)
+    println("inside the loss")
+    policy_input_values, value_input_values = input_values
+    advantage, returns = returns
+    # value
+    vsa, grad = Flux.Zygote.withgradient(value_model) do vm
+        outs = vec(MyModule.heuristic(vm, value_input_values))
+        Flux.mse(outs, returns)
+    end
+    Optimisers.update!(l.value_params, value_model, grad[1])
+    # policy
+    psa, grad = Flux.Zygote.withgradient(policy) do oq
+        loss = map(enumerate(zip(policy_input_values, advantage))) do (ind, (inp, Aₜ))
+            outs = vec(MyModule.heuristic(oq, inp))
+            outs_old = vec(MyModule.heuristic(old_policy, inp))
+            # prob = Flux.softmax(outs)[1]
+            # prob_old = Flux.softmax(outs_old)[1]
+            prob = logsoftmax(outs)[1]
+            prob_old = logsoftmax(outs_old)[1]
+            ratio = exp(log(clamp(prob, eps, 1.0)) - log(clamp(prob_old, eps, 1.0)))
+
+            clipped_ratio = clamp(ratio, 1 - l.ϵ, 1 + l.ϵ)
+            policy_loss = min(ratio * Aₜ, clipped_ratio * Aₜ)
+            -policy_loss
+        end
+        return mean(loss)
+    end
+    Optimisers.update!(l.policy_params, policy, grad[1])
+    return vsa + psa
+end
 # function compute_gradient!(target_values, input_values, model::DoubleHeadedModel, l::HeadLerner)
 #     values1 = first.(target_values)
 #     values2 = map(x->x[2], target_values)
